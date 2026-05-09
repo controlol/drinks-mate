@@ -8,7 +8,7 @@ The model is designed for phase 1 (local-only) but with phase 2 (cloud sync) con
 
 ### DrinkEntry
 
-A single recorded drink.
+A single recorded drink. Created via [features.md → F1 Log a drink](./features.md#f1--log-a-drink); displayed on [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home) and [→ S3 History](./user-experience.md#s3--history).
 
 | Field          | Type                  | Notes                                                                          |
 | -------------- | --------------------- | ------------------------------------------------------------------------------ |
@@ -33,7 +33,7 @@ Soft-deleted records are filtered out everywhere in the UI. They exist so that p
 
 ### DrinkPreset
 
-A named, pre-configured drink that the user can pick when logging. See [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation) for the feature spec.
+A named, pre-configured drink that the user can pick when logging. Functional spec: [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation). User-facing management: [user-experience.md → S4 Settings](./user-experience.md#s4--settings) ("Manage drinks") and [→ S2 Log drink](./user-experience.md#s2--log-drink) (preset picker + advanced editor).
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
@@ -97,7 +97,7 @@ The list is fixed for phase 1 and phase 2. Custom user-defined types are a later
 
 ### UserPreferences
 
-A single per-device record holding the user's settings.
+A single per-device record holding the user's settings. Edited via [user-experience.md → S4 Settings](./user-experience.md#s4--settings); functional contract in [features.md → F6 Settings](./features.md#f6--settings).
 
 | Field                    | Type                  | Notes                                                       |
 | ------------------------ | --------------------- | ----------------------------------------------------------- |
@@ -122,7 +122,7 @@ A single per-device record holding the user's settings.
 
 #### UserProfile
 
-Collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)). Used by both the hydration-goal suggestion and the Party Session BAC estimate.
+Collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)). Used by the hydration-goal suggestion ([features.md → F2](./features.md#f2--daily-hydration-goal)) and the Party Session BAC estimate ([party-session.md → Required user inputs](./party-session.md#required-user-inputs)).
 
 | Field        | Type           | Notes                                                                                                  |
 | ------------ | -------------- | ------------------------------------------------------------------------------------------------------ |
@@ -135,7 +135,7 @@ The profile is conceptually part of preferences but kept as a separate logical r
 
 ### PartySession
 
-A discrete drinking occasion. There is at most one active session (`endedAt IS NULL`) at any time. See [party-session.md](./party-session.md).
+A discrete drinking occasion. There is at most one active session (`endedAt IS NULL`) at any time. Functional spec: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Behaviour and BAC algorithm: [party-session.md](./party-session.md). UI surface: [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home).
 
 | Field         | Type                  | Notes                                                                                |
 | ------------- | --------------------- | ------------------------------------------------------------------------------------ |
@@ -157,7 +157,7 @@ A session auto-ends 12 hours after the most recently logged alcoholic drink with
 
 ### PartySessionPrice
 
-A per-session, per-preset price override. Lets the user set festival/party prices that differ from the regular menu price without ever modifying the underlying `DrinkPreset`. See [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session) for the user-facing flow.
+A per-session, per-preset price override. Lets the user set festival/party prices that differ from the regular menu price without ever modifying the underlying `DrinkPreset`. User-facing flow: [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session). Functional summary: [features.md → F12](./features.md#f12--party-session-opt-in).
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
@@ -185,7 +185,7 @@ When a `DrinkEntry` is logged during an active session and `useSessionPrices` is
 
 ### Meal
 
-A meal logged within a `PartySession`. Influences the BAC modifier for drinks consumed inside the meal's active window. See [party-session.md → Meals](./party-session.md#meals) for the algorithm.
+A meal logged within a `PartySession`. Influences the BAC modifier for drinks consumed inside the meal's active window. Algorithm and UI: [party-session.md → Meals](./party-session.md#meals). Functional summary: [features.md → F12](./features.md#f12--party-session-opt-in).
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |

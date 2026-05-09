@@ -2,6 +2,8 @@
 
 A Party Session is an opt-in, session-based feature in phase 1. While a session is active, the user can log alcoholic drinks and see an **estimate** of their current blood alcohol concentration (BAC). The user can also set a personal cap and see when they are approaching it.
 
+**Related docs.** Functional summary: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Storage: [data-model.md → PartySession](./data-model.md#partysession), [→ PartySessionPrice](./data-model.md#partysessionprice), [→ Meal](./data-model.md#meal). Profile inputs: [data-model.md → UserProfile](./data-model.md#userprofile). UI surface: [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home) (active-session section), [→ S2 Log drink](./user-experience.md#s2--log-drink) (alcoholic types appear).
+
 ## Why session-based
 
 Alcohol consumption is bursty — it happens on specific occasions, not continuously. An always-on "alcohol mode" would add visual noise on the many days when a user has zero alcohol. A session frames the experience: explicit start, explicit (or automatic) end, BAC UI present only when it is actually relevant.
@@ -100,7 +102,7 @@ The rule is applied **per orphan drink**:
 
 ## Required user inputs
 
-The BAC estimate uses the user's profile, which is partly collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)) and partly completed the first time the user tries to start a Party Session.
+The BAC estimate uses the user's profile, which is partly collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)) and partly completed the first time the user tries to start a Party Session. Stored in [data-model.md → UserProfile](./data-model.md#userprofile).
 
 | Field        | Required for Party Mode? | Source                                               | Used for                              |
 | ------------ | ------------------------ | ---------------------------------------------------- | ------------------------------------- |
@@ -120,6 +122,8 @@ The BAC estimate uses the user's profile, which is partly collected during onboa
 The user can change any profile value at any time from settings; subsequent BAC estimates use the new values, but already-recorded sessions are not retroactively recomputed.
 
 ## Meals
+
+Stored as [data-model.md → Meal](./data-model.md#meal) records, scoped to a single `PartySession`.
 
 Food in the stomach slows alcohol absorption, lowering peak BAC and shifting it later in time. The app accounts for this in a deliberately lightweight way — meals are a small part of the experience, not leading.
 
@@ -198,6 +202,8 @@ The chosen multipliers (0.95 / 0.85 / 0.75) are conservative compared to publish
 For simplicity, only meals attached to the **active** session contribute to the modifier. A meal logged in a previous session that would technically still be in window does not carry over. This is a known small inaccuracy, accepted in exchange for a clean session-scoped model.
 
 ## Pricing during a session
+
+Stored as [data-model.md → PartySessionPrice](./data-model.md#partysessionprice) override rows, with the session's token configuration on [PartySession](./data-model.md#partysession).
 
 Festivals, bars, and house parties usually have different prices than a user's normal-day reference (and often use a token system instead of money). Party Mode supports both without ever modifying the user's regular drink presets.
 

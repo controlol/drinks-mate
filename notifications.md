@@ -2,6 +2,8 @@
 
 Reminders are a core part of the value proposition: the app exists in part to nudge users to drink throughout the day. This document describes how reminders should behave.
 
+**Related docs.** Functional summary: [features.md → F5 Reminder notifications](./features.md#f5--reminder-notifications). Settings UI: [user-experience.md → S4 Settings](./user-experience.md#s4--settings). Toggle storage: [data-model.md → UserPreferences](./data-model.md#userpreferences) (`remindersEnabled`, `inactivityReminderEnabled`, `weeklySummaryEnabled`, `bacOnLockScreenEnabled`, `defaultDrinkPresetId`). Party-Mode-specific notifications: [party-session.md → Notifications during a session](./party-session.md#notifications-during-a-session).
+
 ## Principles
 
 1. **Spread, don't cram.** Reminders should encourage steady intake throughout the day. The point is *not* to flag a shortfall at 22:00 — it is to keep the user on pace.

@@ -13,6 +13,8 @@ This document describes the screens and primary flows of Drinks Mate. Visual des
 
 ### S1 — Today (home)
 
+Functional spec: [features.md → F3 Today view](./features.md#f3--today-view).
+
 The default screen on app launch. Shows:
 
 - A prominent visual indicator of progress toward today's goal (e.g. a filling shape or ring) with the numeric value and goal alongside.
@@ -24,6 +26,8 @@ The default screen on app launch. Shows:
   - **Active session:** the entry point is replaced by a more prominent BAC section. Its full content list (current BAC, BAC line chart, cap progress, drinks count, total grams, time elapsed, meal indicator, session-prices control, session totals, End session action) is the canonical [party-session.md → Today view during a session](./party-session.md#today-view-during-a-session) list. Treat that list as authoritative; this S1 description does not duplicate it.
 
 ### S2 — Log drink
+
+Functional spec: [features.md → F1 Log a drink](./features.md#f1--log-a-drink). Drink presets: [features.md → F14](./features.md#f14--drink-presets-and-customisation).
 
 Reached from the primary action on the home screen. Presented as a **drawer that opens from the bottom of the screen and may expand to take up the entire screen**. The drawer has two phases: pick a drink, then edit and confirm.
 
@@ -62,6 +66,8 @@ Options 3 and 4 are typically offered together as a split button or a small menu
 
 ### S3 — History
 
+Functional spec: [features.md → F4 History](./features.md#f4--history).
+
 Reached from a tab or menu. The screen has:
 
 - A **range selector** at the top: Weekly / Monthly, with paging controls to step backwards and forwards through past periods.
@@ -71,6 +77,8 @@ Reached from a tab or menu. The screen has:
 Charts are read-only. Editing always happens via the day drill-down or the today view.
 
 ### S4 — Settings
+
+Functional spec: [features.md → F6 Settings](./features.md#f6--settings). Underlying storage: [data-model.md → UserPreferences](./data-model.md#userpreferences) and [→ UserProfile](./data-model.md#userprofile).
 
 The settings screen is grouped into the following sections, in this order. This list is the canonical settings spec — [features.md → F6 Settings](./features.md#f6--settings) mirrors it.
 
@@ -103,6 +111,8 @@ The settings screen is grouped into the following sections, in this order. This 
 7. **About / version**.
 
 ### S5 — Onboarding (first launch only)
+
+Goal calculation: [features.md → F2](./features.md#f2--daily-hydration-goal). Stored in: [data-model.md → UserPreferences](./data-model.md#userpreferences) and [→ UserProfile](./data-model.md#userprofile).
 
 Onboarding creates a profile that the rest of the app builds on. Steps are presented in this order:
 

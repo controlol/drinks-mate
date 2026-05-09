@@ -10,10 +10,12 @@ Phase 1 is the full product as far as a phase-1-only user is concerned. There is
 
 The user can record a drink by:
 
-- Picking a **drink preset** (default or custom — see F14). The preset supplies name, beverage type, volume, ABV, icon, and optional price. The user can adjust volume or ABV before confirming.
+- Picking a **drink preset** (default or custom — see [F14](#f14--drink-presets-and-customisation)). The preset supplies name, beverage type, volume, ABV, icon, and optional price. The user can adjust volume or ABV before confirming.
 - Adjusting the **time** of consumption. Defaults to "now"; the user can adjust to log retroactively.
 
 Logging must be reachable in at most two taps from the home screen for the most common cases (e.g. tapping the "Glass of water" quick-log preset on the today view).
+
+**See also:** screen flow in [user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink); each logged drink is stored as a [DrinkEntry](./data-model.md#drinkentry).
 
 ### F2 — Daily hydration goal
 
@@ -23,6 +25,8 @@ Logging must be reachable in at most two taps from the home screen for the most 
 - Progress toward the goal resets at the **day boundary**, which is configurable in settings and defaults to **05:00 local time**. The day boundary applies to both goal tracking and reminder scheduling — see [notifications.md → Configuration](./notifications.md#configuration).
 - The suggestion is informational only and does not constitute medical advice. Conditions like pregnancy, kidney disease, or specific clinical diets are not factored in.
 
+**See also:** stored on [data-model.md → UserPreferences](./data-model.md#userpreferences) as `dailyGoalMl`; the suggestion reads `weightKg` from [UserProfile](./data-model.md#userprofile).
+
 ### F3 — Today view
 
 The home screen shows:
@@ -30,9 +34,11 @@ The home screen shows:
 - Current intake total versus the daily goal (with a visual progress indicator).
 - A list of drinks logged today, ordered by time, each showing beverage type, volume, and time.
 - A primary action to log a new drink.
-- Quick-log shortcuts: a small horizontal row of drink presets (see F14). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
+- Quick-log shortcuts: a small horizontal row of drink presets (see [F14](#f14--drink-presets-and-customisation)). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
 
 The user can edit or delete an entry from the today view (e.g. logged the wrong size).
+
+**See also:** screen layout in [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home); the today list is a query over [DrinkEntry](./data-model.md#drinkentry) records whose `consumedAt` falls within the current day window.
 
 ### F4 — History
 
@@ -59,6 +65,8 @@ Maximum-BAC bars are clearly labelled as estimates everywhere they appear — sa
 
 Tapping any day on any chart drills into that day, showing total intake, goal, the drink list, and (when relevant) any `PartySession` summary including peak BAC, total alcoholic drinks, and meals logged.
 
+**See also:** screen layout in [user-experience.md → S3 History](./user-experience.md#s3--history); charts are computed from [DrinkEntry](./data-model.md#drinkentry), [PartySession](./data-model.md#partysession), and [Meal](./data-model.md#meal) records.
+
 ### F5 — Reminder notifications
 
 See [notifications.md → Notification types](./notifications.md#notification-types) for full detail. In short, phase 1 has four independently-toggleable notification types:
@@ -69,6 +77,8 @@ See [notifications.md → Notification types](./notifications.md#notification-ty
 - **Party Mode notifications** (default OFF) — two opt-in notifications introduced by Party Mode (approaching cap, sober estimate). See [party-session.md → Notifications during a session](./party-session.md#notifications-during-a-session).
 
 All notifications are scheduled locally on the device. Phase 1 has no push infrastructure. Anti-spam rules are baked in: no notification fires when it would be redundant (e.g. user just logged a drink, user already hit goal today, user dismissed without acting → no retry).
+
+**See also:** the per-type firing rules and copy live in [notifications.md → Notification types](./notifications.md#notification-types); toggles are stored on [UserPreferences](./data-model.md#userpreferences) (`remindersEnabled`, `inactivityReminderEnabled`, `weeklySummaryEnabled`, `bacOnLockScreenEnabled`).
 
 ### F6 — Settings
 
@@ -174,23 +184,27 @@ Icons are monochrome so they accept the `iconColor` tint cleanly. Default colour
 
 Resolved values (name, volume, ABV, price, icon, colour) are **snapshotted** onto each `DrinkEntry` at log time. Editing or deleting a preset later does **not** modify already-logged entries. See [data-model.md → Snapshot semantics — log immutability](./data-model.md#snapshot-semantics--log-immutability).
 
+**See also:** the entity schemas live in [data-model.md → DrinkPreset](./data-model.md#drinkpreset) and [→ DrinkEntry](./data-model.md#drinkentry).
+
 ### F12 — Party Session (opt-in)
 
 A session-based feature in phase 1 that lets the user track alcoholic drinks during a discrete drinking occasion and see an estimated blood alcohol concentration (BAC). BAC is shown in **g/L** as the primary unit, with **mmol/L** alongside as a secondary unit.
 
-- The user explicitly **starts** a party session from the today view. There is at most one active session at a time.
+- The user explicitly **starts** a party session from the today view. There is at most one active session at a time. See [party-session.md → Starting a session](./party-session.md#starting-a-session).
 - A session **ends** in one of two ways:
   - Manually, by tapping "End session".
-  - Automatically, **12 hours after the most recently logged alcoholic drink** (or after `startedAt` if none were logged). The auto-end is computed lazily — no background timer is required.
-- **Party Mode requires a birthday.** Onboarding collects gender + weight (and optionally height + birthday). If birthday is missing when the user first tries to start a session, the app prompts for it (with height as a skippable bonus). If the resulting age is under 18, the app shows a friendly message and lets the user re-enter the date — birthdays cannot be validated, and the gate is informational rather than enforcement.
-- BAC algorithm is **data-driven**: Watson TBW model when both height and birthday are present, Widmark fallback otherwise.
-- During an active session: the log-drink flow gains alcoholic beverage types (`beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`) with default ABV values the user can override per entry; the today view gains a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress.
-- A single, skippable **meal prompt** at session start (Small / Medium / Large / Skip), with the option to add or edit a meal during the session. Meals reduce the absorbed BAC of drinks consumed within their active window. There is **no** per-drink food prompt.
+  - Automatically, **12 hours after the most recently logged alcoholic drink** (or after `startedAt` if none were logged). The auto-end is computed lazily — no background timer is required. See [party-session.md → Ending a session](./party-session.md#ending-a-session) and [data-model.md → Auto-end semantics](./data-model.md#auto-end-semantics).
+- **Party Mode requires a birthday.** Onboarding collects gender + weight (and optionally height + birthday). If birthday is missing when the user first tries to start a session, the app prompts for it (with height as a skippable bonus). If the resulting age is under 18, the app shows a friendly message and lets the user re-enter the date — birthdays cannot be validated, and the gate is informational rather than enforcement. See [party-session.md → Required user inputs](./party-session.md#required-user-inputs).
+- BAC algorithm is **data-driven**: Watson TBW model when both height and birthday are present, Widmark fallback otherwise. See [party-session.md → BAC estimation algorithm](./party-session.md#bac-estimation-algorithm).
+- During an active session: the log-drink flow gains alcoholic beverage types (`beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`) with default ABV values the user can override per entry; the today view gains a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress. See [party-session.md → Today view during a session](./party-session.md#today-view-during-a-session).
+- A single, skippable **meal prompt** at session start (Small / Medium / Large / Skip), with the option to add or edit a meal during the session. Meals reduce the absorbed BAC of drinks consumed within their active window. There is **no** per-drink food prompt. See [party-session.md → Meals](./party-session.md#meals) and [data-model.md → Meal](./data-model.md#meal).
 - **Session-scoped pricing.** Each session can carry per-drink price overrides that replace the user's regular menu prices for the duration of the session — money or token-based. The user's underlying drink presets are never modified by Party Mode actions. At session start, the user can copy prices from the most recently ended session in one tap. During the session, a "Manage prices" view lets them edit overrides; a toggle switches session pricing on/off live without losing the values. Session totals show money (grouped by currency) and tokens separately. See [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session) and [data-model.md → PartySessionPrice](./data-model.md#partysessionprice).
-- Logging an alcoholic drink while no session is active **prompts** the user to start a session — never starts one implicitly. The user can decline; the drink is logged either way.
-- The user can set a personal cap (g/L, with the mmol/L equivalent shown), persistent across sessions. The cap is a personal goal, not a safety threshold.
-- Two optional session-only notifications: "approaching cap" and "estimated BAC back to 0".
+- Logging an alcoholic drink while no session is active **prompts** the user to start a session — never starts one implicitly. The user can decline; the drink is logged either way. See [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active).
+- The user can set a personal cap (g/L, with the mmol/L equivalent shown), persistent across sessions. The cap is a personal goal, not a safety threshold. See [party-session.md → BAC goal (cap)](./party-session.md#bac-goal-cap).
+- Two optional session-only notifications: "approaching cap" and "estimated BAC back to 0". See [party-session.md → Notifications during a session](./party-session.md#notifications-during-a-session).
 - The estimate **must always** be presented as an estimate. The UI must never frame it as a fitness-to-drive indicator. See [party-session.md](./party-session.md) for the full spec, the algorithm, the disclaimer requirements, and references.
+
+**See also:** sessions and their drinks/meals/prices are stored as [PartySession](./data-model.md#partysession), [Meal](./data-model.md#meal), and [PartySessionPrice](./data-model.md#partysessionprice) entities; the under-18 gate and BAC algorithm read from [UserProfile](./data-model.md#userprofile).
 
 ## Phase 2 — Accounts, cloud sync, and social
 
