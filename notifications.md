@@ -20,7 +20,7 @@ The user can configure, in settings:
 - **Interval** — how often to remind. Default: **every 90 minutes**. The user can pick from a small set of values, e.g. 60 / 90 / 120 minutes.
 - **Inactivity reminder** — independent on/off toggle. Default **ON**.
 - **Weekly summary** — independent on/off toggle. Default **ON**.
-- **Default drink** — beverage type and volume used by both the notification quick-log action and the reminder volume calculation. Default: **water, 200 ml**. See [data-model.md](data-model.md) UserPreferences.
+- **Default drink** — a reference to one of the user's `DrinkPreset` records (must be non-alcoholic). Used by both the notification quick-log action and as the "glass" unit in the reminder volume calculation. Defaults to the seeded "Glass of water" preset (water, 200 ml). See `UserPreferences.defaultDrinkPresetId` in [data-model.md](data-model.md) for the field details and fallback behaviour when the referenced preset is missing.
 
 The day boundary (when "today" rolls over) is also configurable, defaulting to **05:00**. It applies to goal tracking and reminder scheduling alike — see features F2.
 
@@ -128,7 +128,7 @@ Used when the previous reminder fired and the user did **not** log a drink befor
 
 #### Inactivity reminder
 
-A once-per-day re-engagement nudge for users who have logged nothing today **and** logged at least one drink in the last 7 days. See "Notification types" below.
+A once-per-day re-engagement nudge for users who have logged nothing today, gated by the universal inactive-user silence rule (covered above). See "Notification types" below for the full firing conditions.
 
 - "Hey, did you forget to log? Tap to add what you've had today."
 - "We haven't seen anything from you yet today — log a drink?"
@@ -146,14 +146,6 @@ Once per week, summarising the previous week's goal achievement. See "Notificati
 - `0/7` — "A slow week — every day is a fresh start. Tap to see your chart."
 - `7/7` — "Perfect week: **7/7** days at goal 💧 nice."
 
-#### Lock-screen visibility
-
-Standard hydration, missed-timer, inactivity, and weekly-summary notifications contain nothing sensitive and are always safe to render on the lock screen.
-
-BAC-related content from Party Mode is gated by a user setting — **"Show BAC on lock screen"**, default **ON** (`UserPreferences.bacOnLockScreenEnabled`). With the default in place, BAC values are rendered in full inside Party Mode notification bodies and visible on the lock-screen preview. When the user turns the setting off, Party Mode notifications either omit the BAC value from the visible body or render with the platform's "hidden content" preview style, depending on what each platform supports.
-
-The setting label and copy in the UI is neutral and does not justify the option ("Show your estimated BAC on the lock screen"); we surface the choice without recommending either side.
-
 ### Notification quick-log action
 
 Notifications expose a single in-line action button: **"Log {default_drink}"** (e.g. "Log water · 200 ml"). Tapping the action logs the user's configured default drink at the current time **without opening the app**.
@@ -163,7 +155,7 @@ Notifications expose a single in-line action button: **"Log {default_drink}"** (
 - Tapping the body of the notification (not the action) opens the app on the today view, ready to log a different drink.
 - Logging via the action resets the reminder interval the same way an in-app log does.
 
-The default drink (beverage type + volume) is configurable in the user's profile/settings (see [data-model.md](data-model.md) UserPreferences).
+The default drink is a reference to one of the user's `DrinkPreset` records (must be non-alcoholic), configured in settings — see [data-model.md](data-model.md) `UserPreferences.defaultDrinkPresetId`.
 
 ### Permissions
 
@@ -212,6 +204,18 @@ The fire time (Sunday 20:00 local) is a fixed phase 1 default and not user-confi
 ### 4. Party Mode notifications (default OFF)
 
 Two opt-in notifications introduced by Party Mode (approaching cap, sober estimate). See [party-session.md](party-session.md). These are independent of the hydration types above and do not fire outside active sessions.
+
+## Lock-screen visibility
+
+A behaviour concern, not a copy concern — kept separate from the notification copy section above.
+
+Standard hydration, missed-timer, inactivity, and weekly-summary notifications contain nothing sensitive and are always safe to render on the lock screen.
+
+BAC-related content from Party Mode is gated by a user setting — **"Show BAC on lock screen"**, default **ON** (`UserPreferences.bacOnLockScreenEnabled`). With the default in place, BAC values are rendered in full inside Party Mode notification bodies and visible on the lock-screen preview. When the user turns the setting off, Party Mode notifications either omit the BAC value from the visible body or render with the platform's "hidden content" preview style, depending on what each platform supports.
+
+The setting label and copy in the UI is neutral and does not justify the option ("Show your estimated BAC on the lock screen"); we surface the choice without recommending either side.
+
+The toggle is configured under **Settings → Party Mode** — see [user-experience.md](user-experience.md) S4.
 
 ## Anti-spam principles
 

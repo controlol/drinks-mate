@@ -18,8 +18,7 @@ Logging must be reachable in at most two taps from the home screen for the most 
 ### F2 — Daily hydration goal
 
 - The user has a daily intake goal expressed in millilitres.
-- The goal is set during onboarding as part of profile creation (see [user-experience.md](user-experience.md) S5). The onboarding flow pre-fills a **personalised suggestion** of `~24 ml × weight_kg`, rounded to the nearest 100 ml — based on the clinical rule of thumb for adult beverage intake. The user can accept the suggestion or override it.
-- Default fallback if weight is not yet set: **2000 ml**.
+- The goal is set during onboarding as part of profile creation (see [user-experience.md](user-experience.md) S5). The onboarding flow pre-fills a **personalised suggestion** of `30 ml × weight_kg`, rounded to the nearest 100 ml — based on the clinical rule of thumb for adult daily water intake. For the default 70 kg user, this gives **2100 ml**. The user can accept the suggestion or override it.
 - The user can change the goal in settings at any time after onboarding.
 - Progress toward the goal resets at the **day boundary**, which is configurable in settings and defaults to **05:00 local time**. The day boundary applies to both goal tracking and reminder scheduling — see [notifications.md](notifications.md).
 - The suggestion is informational only and does not constitute medical advice. Conditions like pregnancy, kidney disease, or specific clinical diets are not factored in.
@@ -65,7 +64,7 @@ Tapping any day on any chart drills into that day, showing total intake, goal, t
 See [notifications.md](notifications.md) for full detail. In short, phase 1 has four independently-toggleable notification types:
 
 - **Hydration reminder** (default ON) — fires at the configured interval (default 90 min) during active hours (default 08:00–22:00) when the user is below goal and at least `interval` has passed since the last log. Recommends a specific volume in 0.5-glass increments, computed from the user's pace deficit (min 0.5 glass, max 2). Copy adapts when the previous reminder was missed (acknowledges the gap kindly without nagging). Reaching the goal cancels remaining same-day reminders. Notifications expose a **quick-log action** to log the user's default drink without opening the app.
-- **Inactivity reminder** (default ON) — once-per-day, at noon local (snapped into active hours), if the user has logged nothing today **and** has logged at least one drink in the last 7 days. Skipped for churned users.
+- **Inactivity reminder** (default ON) — once-per-day, at noon local (snapped into active hours), when the user has logged nothing today and is not silenced by the inactive-user rule (≥ 7 days since the last engagement, where engagement is the most recent log or the install date — whichever is more recent). See [notifications.md](notifications.md).
 - **Weekly summary** (default ON) — once-per-week on Sunday 20:00 local, telling the user how many of the seven days they hit their goal (e.g. "5/7"). Tapping opens the History view scoped to the past week.
 - **Party Mode notifications** (default OFF) — two opt-in notifications introduced by Party Mode (approaching cap, sober estimate). See [party-session.md](party-session.md).
 
@@ -73,14 +72,35 @@ All notifications are scheduled locally on the device. Phase 1 has no push infra
 
 ### F6 — Settings
 
-- Daily goal (default 2000 ml; suggested during onboarding from `~24 ml × weight_kg`).
-- Day boundary (default 05:00 local time).
-- Reminder configuration (on/off, active hours, frequency).
-- Default drink (a reference to one of the user's drink presets; defaults to "Glass of water" — water, 200 ml). Used by both the notification quick-log action and the per-reminder recommended-volume calculation. Restricted to non-alcoholic presets.
-- Manage drinks — create, edit, hide, delete, and reorder drink presets (see F14).
-- Units: **metric by default** (millilitres for volume, kilograms for weight, centimetres for height, °C). The user can switch the display to imperial (fluid ounces, pounds, inches, °F); conversion happens **at the UI level only**. The local database always stores metric values. See [data-model.md](data-model.md).
-- Currency: `EUR` (default), `USD`, or `GBP`. Used as the default currency when creating new drink presets and as the display currency in single-currency aggregations. Existing presets and historical entries are not retroactively changed. See [data-model.md](data-model.md) "Currency".
-- About / version information.
+The settings screen exposes every persisted preference. The canonical grouping, ordering, and labels live in [user-experience.md](user-experience.md) S4. This is a functional summary; if anything here disagrees with S4, S4 wins.
+
+1. **Hydration**
+   - **Daily goal** — suggested during onboarding from `30 ml × weight_kg` rounded to the nearest 100 ml; 2100 ml for the default 70 kg user. Editable.
+   - **Day boundary** — default 05:00 local time.
+2. **Reminders** — see [notifications.md](notifications.md).
+   - Master on/off.
+   - Active hours (default 08:00–22:00).
+   - Interval (default 90 min).
+   - Inactivity reminder toggle (default ON).
+   - Weekly summary toggle (default ON).
+   - **Default drink** — reference to one of the user's drink presets; restricted to non-alcoholic. Defaults to the seeded "Glass of water" preset. Used by the notification quick-log action and as the "glass" unit in the per-reminder recommended-volume calculation.
+3. **Drinks**
+   - **Manage drinks** — create, edit, hide, delete, and reorder drink presets (see F14).
+4. **Profile** — used by the goal suggestion and the BAC algorithm in Party Mode. See [data-model.md](data-model.md) UserProfile.
+   - Gender (male / female / unspecified).
+   - Weight (kg).
+   - Height (cm, optional).
+   - Birthday (optional but required to use Party Mode).
+5. **Party Mode**
+   - Personal cap (g/L, optional).
+   - "Approaching cap" notification toggle (default OFF).
+   - "Sober estimate" notification toggle (default OFF).
+   - **"Show BAC on lock screen"** toggle (default ON).
+   - Reference legal limits (informational only).
+6. **Display & format**
+   - **Units** — **metric by default** (millilitres, kilograms, centimetres, °C). The user can switch the display to imperial (fl oz, lb, in, °F); conversion happens at the UI layer only. See [data-model.md](data-model.md).
+   - **Currency** — `EUR` (default), `USD`, or `GBP`. Used as the default for new drink presets and as the display currency in single-currency aggregations. Existing presets and historical entries are never retroactively changed. See [data-model.md](data-model.md) "Currency".
+7. **About / version**.
 
 ### F7 — Local-first storage
 
@@ -164,7 +184,7 @@ A session-based feature in phase 1 that lets the user track alcoholic drinks dur
   - Automatically, **12 hours after the most recently logged alcoholic drink** (or after `startedAt` if none were logged). The auto-end is computed lazily — no background timer is required.
 - **Party Mode requires a birthday.** Onboarding collects gender + weight (and optionally height + birthday). If birthday is missing when the user first tries to start a session, the app prompts for it (with height as a skippable bonus). If the resulting age is under 18, the app shows a friendly message and lets the user re-enter the date — birthdays cannot be validated, and the gate is informational rather than enforcement.
 - BAC algorithm is **data-driven**: Watson TBW model when both height and birthday are present, Widmark fallback otherwise.
-- During an active session: the log-drink flow gains alcoholic beverage types (beer, wine, spirit, cocktail, other) with default ABV values the user can override per entry; the today view gains a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress.
+- During an active session: the log-drink flow gains alcoholic beverage types (`beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`) with default ABV values the user can override per entry; the today view gains a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress.
 - A single, skippable **meal prompt** at session start (Small / Medium / Large / Skip), with the option to add or edit a meal during the session. Meals reduce the absorbed BAC of drinks consumed within their active window. There is **no** per-drink food prompt.
 - **Session-scoped pricing.** Each session can carry per-drink price overrides that replace the user's regular menu prices for the duration of the session — money or token-based. The user's underlying drink presets are never modified by Party Mode actions. At session start, the user can copy prices from the most recently ended session in one tap. During the session, a "Manage prices" view lets them edit overrides; a toggle switches session pricing on/off live without losing the values. Session totals show money (grouped by currency) and tokens separately. See [party-session.md](party-session.md) and [data-model.md](data-model.md) `PartySessionPrice`.
 - Logging an alcoholic drink while no session is active **prompts** the user to start a session — never starts one implicitly. The user can decline; the drink is logged either way.

@@ -103,7 +103,7 @@ A single per-device record holding the user's settings.
 | ------------------------ | --------------------- | ----------------------------------------------------------- |
 | `installedAt`            | timestamp             | Set once when the local database is first created on this device. Never changes thereafter. Used as a tie-breaker for the inactive-user silence rule (see [notifications.md](notifications.md)) — `max(latestDrinkLog.consumedAt, installedAt)` is the user's "last engagement" time. |
 | `username`               | string                | Set during onboarding. Min 3, max 30 characters. See "Username character rules" below. Used locally as a friendly label; reserved as the basis for friend discovery in phase 2. |
-| `dailyGoalMl`            | integer               | Set during onboarding (suggested via `24 ml × weight_kg`, rounded to nearest 100 ml). Stored in metric; UI may display imperial. |
+| `dailyGoalMl`            | integer               | Set during onboarding (suggested via `30 ml × weight_kg`, rounded to nearest 100 ml). Stored in metric; UI may display imperial. |
 | `unitsDisplay`           | enum                  | `metric` (default) / `imperial`. Affects display only — all stored values are metric. |
 | `currency`               | enum                  | `EUR` (default) / `USD` / `GBP`. Used as the default currency for new drink presets; affects how prices are displayed in aggregations. Stored prices on existing presets and entries are not changed when this preference changes. See "Currency" below. |
 | `remindersEnabled`       | boolean               | Default true once the user has granted permission.          |
@@ -117,6 +117,8 @@ A single per-device record holding the user's settings.
 | `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md](notifications.md). |
 | `bacCapGramsPerL`        | decimal \| null       | Optional personal cap, stored canonically in g/L. Null means no cap is set. The UI shows g/L as primary and mmol/L as secondary. Persistent across sessions. |
 | `updatedAt`              | timestamp             | Used by phase 2 sync.                                       |
+
+**Phase 2 sync notes for `UserPreferences`.** `[OPEN]` — confirm which preferences travel across devices vs. stay per-device. Recommended split: `dailyGoalMl`, `unitsDisplay`, `currency`, `dayBoundary`, `defaultDrinkPresetId`, `bacCapGramsPerL`, and the notification-type toggles sync; the reminder schedule (`reminderStartTime`, `reminderEndTime`, `reminderIntervalMin`) stays per-device since a user's phone and tablet may want different windows. `installedAt` is per-device by definition.
 
 #### UserProfile
 
@@ -149,6 +151,10 @@ A discrete drinking occasion. There is at most one active session (`endedAt IS N
 | `updatedAt`   | timestamp             | Updated on every change. Used by phase 2 sync.                                       |
 | `deletedAt`   | timestamp \| null     | Soft-delete marker, same semantics as `DrinkEntry`.                                  |
 
+#### Auto-end semantics
+
+A session auto-ends 12 hours after the most recently logged alcoholic drink within the session (or 12 hours after `startedAt` if none were logged). The check is run lazily — on app foreground, today-view open, drink log, and settings open — and `endedAt` is set to the correct 12-hour mark, **not** to the time the app happened to notice. This keeps history correct even after long absences.
+
 ### PartySessionPrice
 
 A per-session, per-preset price override. Lets the user set festival/party prices that differ from the regular menu price without ever modifying the underlying `DrinkPreset`. See [party-session.md](party-session.md) for the user-facing flow.
@@ -176,10 +182,6 @@ The mutual-exclusivity constraint is enforced at the validation layer; the stora
 #### Snapshot at log time
 
 When a `DrinkEntry` is logged during an active session and `useSessionPrices` is `true`, the price applied is the matching `PartySessionPrice` if one exists, falling back to the preset's `regularPrice*` otherwise. The values written into `DrinkEntry` (`priceMinor`/`currency` *or* `priceTokens`/`tokenValueMinor`/`tokenValueCurrency`) are snapshots — see "Snapshot semantics — log immutability" above.
-
-#### Auto-end semantics
-
-A session auto-ends 12 hours after the most recently logged alcoholic drink within the session (or 12 hours after `startedAt` if none were logged). The check is run lazily — on app foreground, today-view open, drink log, and settings open — and `endedAt` is set to the correct 12-hour mark, **not** to the time the app happened to notice. This keeps history correct even after long absences.
 
 ### Meal
 
@@ -216,8 +218,6 @@ When a user retroactively logs an alcoholic drink (i.e. with a past `consumedAt`
 
 This rule applies only when the new drink's `consumedAt` falls strictly inside `[startedAt, endedAt)`. Drinks whose `consumedAt` falls before any session, after every session, or in a gap between sessions remain unattached (orphans), subject to the absorption rules described in [party-session.md](party-session.md).
 
-In phase 2, preferences also sync. `[OPEN]` — confirm whether reminder schedule travels across devices or is per-device. Recommended: schedule is per-device (a user's phone and tablet may want different reminder windows), goal and units are synced.
-
 ## Phase-2-only entities (defined here for forward-compatibility, not built in phase 1)
 
 These entities **must not exist** in the phase 1 build. They are listed so the phase 1 schema does not collide with them later.
@@ -230,7 +230,14 @@ Phase 2 design produces full schemas for these.
 
 ## Relationships (phase 1)
 
-`DrinkEntry` is independent — it has no foreign keys in phase 1. Daily totals are computed by querying live entries (where `deletedAt IS NULL`) whose `consumedAt` falls within the day window defined by `UserPreferences.dayBoundary`.
+`DrinkEntry` carries one explicit foreign key: `partySessionId` (nullable, → `PartySession`). For non-alcoholic drinks and orphan alcoholic drinks it is null; for in-session and absorbed-orphan alcoholic drinks it points to the owning session. Membership rules are detailed under "Meal → Relationship to DrinkEntry".
+
+`DrinkEntry` does **not** carry a foreign key to `DrinkPreset` — preset values are snapshotted onto the entry at log time per the immutability principle.
+
+Other queries:
+
+- **Daily totals** — live entries (`deletedAt IS NULL`) whose `consumedAt` falls within the day window defined by `UserPreferences.dayBoundary`.
+- **Session membership** — `partySessionId` is authoritative; do not infer membership from `consumedAt` alone.
 
 In phase 2, `DrinkEntry` records gain an implicit owner (the signed-in account) on the server side, but the local representation does not change.
 

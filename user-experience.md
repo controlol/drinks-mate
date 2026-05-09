@@ -19,7 +19,9 @@ The default screen on app launch. Shows:
 - A list of today's logged drinks, newest first, each row showing beverage icon/type, volume, and time. Tapping a row opens edit/delete.
 - A primary "Log drink" action (large, bottom of screen).
 - A row of quick-log presets above or beside the primary action — tapping a preset logs that drink immediately at the current time, with a brief confirmation that can be undone.
-- A **Party Session** control. When no session is active, this is a small, understated entry point — a low-emphasis tile or link-style row placed below the primary hydration content. Party Mode is a secondary feature; the entry point should never compete with hydration progress, the log-drink action, or the today drinks list. When a session is active, the entry point is replaced by a more prominent section showing the current estimated BAC in **g/L** (primary) with the **mmol/L** equivalent alongside (secondary), projected decay, progress against the user's cap (if set), drinks-this-session count, and an "End session" action. See [party-session.md](party-session.md).
+- A **Party Session** control:
+  - **No active session:** a small, understated entry point — a low-emphasis tile or link-style row placed below the primary hydration content. Party Mode is a secondary feature; the entry point should never compete with hydration progress, the log-drink action, or the today drinks list.
+  - **Active session:** the entry point is replaced by a more prominent BAC section. Its full content list (current BAC, BAC line chart, cap progress, drinks count, total grams, time elapsed, meal indicator, session-prices control, session totals, End session action) is the canonical "Today view during a session" list in [party-session.md](party-session.md). Treat that list as authoritative; this S1 description does not duplicate it.
 
 ### S2 — Log drink
 
@@ -70,15 +72,35 @@ Charts are read-only. Editing always happens via the day drill-down or the today
 
 ### S4 — Settings
 
-- Daily goal (numeric input, default 2000 ml).
-- Day boundary (default 05:00).
-- Reminders: on/off, active hours, frequency, default drink. See [notifications.md](notifications.md).
-- Manage drinks — list of drink presets with reorder, edit, hide, delete, and create-new actions. See [features.md](features.md) F14.
-- Units (metric / imperial display).
-- Currency (EUR / USD / GBP).
-- Profile (gender, weight, optional height, optional birthday).
-- Party Mode: cap, additional notifications, "Show BAC on lock screen" toggle (default on), reference legal limits.
-- About / version.
+The settings screen is grouped into the following sections, in this order. This list is the canonical settings spec — F6 in [features.md](features.md) mirrors it.
+
+1. **Hydration**
+   - Daily goal (numeric input, ml). Suggested during onboarding from `30 ml × weight_kg` rounded to nearest 100 ml.
+   - Day boundary (local time, default 05:00).
+2. **Reminders** (see [notifications.md](notifications.md))
+   - Master on/off.
+   - Active hours (default 08:00–22:00).
+   - Interval (default 90 min).
+   - Inactivity reminder toggle (default ON).
+   - Weekly summary toggle (default ON).
+   - Default drink — reference to a non-alcoholic `DrinkPreset` (default: "Glass of water").
+3. **Drinks**
+   - Manage drinks — list of drink presets with reorder, edit, hide, delete, and create-new actions. See [features.md](features.md) F14.
+4. **Profile**
+   - Gender (male / female / unspecified).
+   - Weight (kg).
+   - Height (cm, optional).
+   - Birthday (optional but required to use Party Mode).
+5. **Party Mode**
+   - Personal cap (g/L, optional).
+   - "Approaching cap" notification toggle (default OFF).
+   - "Sober estimate" notification toggle (default OFF).
+   - "Show BAC on lock screen" toggle (default ON).
+   - Reference legal limits (informational only — NL 0.5 g/L experienced / 0.2 g/L novice; many EU 0.5 g/L).
+6. **Display & format**
+   - Units (metric / imperial display).
+   - Currency (EUR / USD / GBP).
+7. **About / version**.
 
 ### S5 — Onboarding (first launch only)
 
@@ -87,14 +109,14 @@ Onboarding creates a profile that the rest of the app builds on. Steps are prese
 1. **Welcome** — one-line value proposition.
 2. **Username** — a short freeform name. Used locally as a friendly label and reserved as the basis for friend discovery in phase 2. `[OPEN]` — allowed length / allowed characters.
 3. **Personal info**:
-   - **Gender** — three options: *Male*, *Female*, *Prefer not to say*. The copy explains this is asked for hydration and BAC pharmacokinetic calculations.
+   - **Gender** — three options: *Male*, *Female*, *Prefer not to say*. Defaults to *Prefer not to say* (= `unspecified`) if the user does not change it. The copy explains this is asked for hydration and BAC pharmacokinetic calculations.
    - **Weight** — kilograms. **Required**, defaults to `70 kg`. The user can adjust before continuing.
    - **Height** — centimetres. **Optional**. Improves BAC accuracy in Party Mode (Watson model). Skippable.
    - **Birthday** — date. **Optional in onboarding**, but **required to use Party Mode** (for both the 18+ gate and the Watson age input). Skippable here; the user is asked again the first time they try to start a session.
-4. **Daily hydration goal** — pre-filled with a personalised suggestion based on weight (`~24 ml/kg`, rounded to nearest 100 ml). The user can accept the suggestion or override it. Default fallback if weight isn't yet known: 2000 ml.
+4. **Daily hydration goal** — pre-filled with the personalised suggestion `30 ml × weight_kg`, rounded to the nearest 100 ml. The user can accept the suggestion or override it. The suggestion is always computed from weight (which is required), so there is no "no weight" fallback case in normal flow.
 5. **Notification permission** — request with an honest explanation (reminders to drink). The user can decline and still use the app.
 
-Onboarding is one continuous flow with no skip-everything escape, but each step has a sensible default so a user who taps "next" through the whole thing ends up with a working profile (70 kg, 2000 ml goal, no gender specified). The user can revise any of these in settings.
+Onboarding is one continuous flow with no skip-everything escape, but each step has a sensible default so a user who taps "next" through the whole thing ends up with a working profile: gender `unspecified`, weight 70 kg, no height, no birthday, daily goal **2100 ml** (= 30 × 70 kg, rounded). The user can revise any of these in settings.
 
 ## Key flows
 
