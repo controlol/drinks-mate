@@ -37,10 +37,10 @@ The product ships in two phases. The phase boundary is a hard line: phase 1 must
 
 ### Phase 1 — Local-only MVP
 
-Everything described in [features.md](features.md) under "Phase 1". The app works fully offline, with no account, no server, no social features.
+Everything described in [features.md → Phase 1 — Local-only MVP](./features.md#phase-1--local-only-mvp). The app works fully offline, with no account, no server, no social features.
 
 - No login screen, no "create account" prompt.
-- No analytics or telemetry unless explicitly approved (see [open-questions.md](open-questions.md)).
+- No analytics or telemetry unless explicitly approved (see [open-questions.md](./open-questions.md)).
 - No backend infrastructure.
 
 ### Phase 2 — Accounts, sync, and social
@@ -52,11 +52,11 @@ Adds opt-in cloud functionality on top of phase 1. A user who never creates an a
 - **Friends.** Users can add other users as friends.
 - **Progress sharing.** Friends can see each other's progress against their daily goals. Granularity, opt-in defaults, and what specifically is shared are deferred to the phase 2 design pass.
 
-See [features.md](features.md) Phase 2 for the functional requirements and [open-questions.md](open-questions.md) for the decisions phase 2 still needs.
+See [features.md → Phase 2 — Accounts, cloud sync, and social](./features.md#phase-2--accounts-cloud-sync-and-social) for the functional requirements and [open-questions.md](./open-questions.md) for the decisions phase 2 still needs.
 
 ## Sync model (phase 2 design constraints)
 
-Sync is a phase 2 feature, but the phase 1 data model must not paint us into a corner. The local data model in [data-model.md](data-model.md) is designed so that phase 2 sync can be added without a destructive migration.
+Sync is a phase 2 feature, but the phase 1 data model must not paint us into a corner. The local data model in [data-model.md](./data-model.md) is designed so that phase 2 sync can be added without a destructive migration.
 
 Constraints that apply already in phase 1:
 

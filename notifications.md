@@ -20,9 +20,9 @@ The user can configure, in settings:
 - **Interval** — how often to remind. Default: **every 90 minutes**. The user can pick from a small set of values, e.g. 60 / 90 / 120 minutes.
 - **Inactivity reminder** — independent on/off toggle. Default **ON**.
 - **Weekly summary** — independent on/off toggle. Default **ON**.
-- **Default drink** — a reference to one of the user's `DrinkPreset` records (must be non-alcoholic). Used by both the notification quick-log action and as the "glass" unit in the reminder volume calculation. Defaults to the seeded "Glass of water" preset (water, 200 ml). See `UserPreferences.defaultDrinkPresetId` in [data-model.md](data-model.md) for the field details and fallback behaviour when the referenced preset is missing.
+- **Default drink** — a reference to one of the user's `DrinkPreset` records (must be non-alcoholic). Used by both the notification quick-log action and as the "glass" unit in the reminder volume calculation. Defaults to the seeded "Glass of water" preset (water, 200 ml). See `UserPreferences.defaultDrinkPresetId` in [data-model.md → UserPreferences](./data-model.md#userpreferences) for the field details and fallback behaviour when the referenced preset is missing.
 
-The day boundary (when "today" rolls over) is also configurable, defaulting to **05:00**. It applies to goal tracking and reminder scheduling alike — see features F2.
+The day boundary (when "today" rolls over) is also configurable, defaulting to **05:00**. It applies to goal tracking and reminder scheduling alike — see [features.md → F2 Daily hydration goal](./features.md#f2--daily-hydration-goal).
 
 ## Behaviour
 
@@ -56,7 +56,7 @@ if days_inactive >= 7:
 - The moment the user logs any drink (in-app, retroactively, or via the notification quick-log action), `last_engagement` resets and notifications resume on their normal schedule.
 - The check runs at notification fire-time on the device, not in advance — so a user who silently passes the 7-day mark stops receiving the next scheduled notification, without the app needing to actively cancel anything.
 
-`UserPreferences.installedAt` is the timestamp of when the local database was first created on this device — set once at install and never changed. See [data-model.md](data-model.md).
+`UserPreferences.installedAt` is the timestamp of when the local database was first created on this device — set once at install and never changed. See [data-model.md → UserPreferences](./data-model.md#userpreferences).
 
 ### Scheduling
 
@@ -155,7 +155,7 @@ Notifications expose a single in-line action button: **"Log {default_drink}"** (
 - Tapping the body of the notification (not the action) opens the app on the today view, ready to log a different drink.
 - Logging via the action resets the reminder interval the same way an in-app log does.
 
-The default drink is a reference to one of the user's `DrinkPreset` records (must be non-alcoholic), configured in settings — see [data-model.md](data-model.md) `UserPreferences.defaultDrinkPresetId`.
+The default drink is a reference to one of the user's `DrinkPreset` records (must be non-alcoholic), configured in settings — see [data-model.md → UserPreferences](./data-model.md#userpreferences) for `defaultDrinkPresetId`.
 
 ### Permissions
 
@@ -203,7 +203,7 @@ The fire time (Sunday 20:00 local) is a fixed phase 1 default and not user-confi
 
 ### 4. Party Mode notifications (default OFF)
 
-Two opt-in notifications introduced by Party Mode (approaching cap, sober estimate). See [party-session.md](party-session.md). These are independent of the hydration types above and do not fire outside active sessions.
+Two opt-in notifications introduced by Party Mode (approaching cap, sober estimate). See [party-session.md → Notifications during a session](./party-session.md#notifications-during-a-session). These are independent of the hydration types above and do not fire outside active sessions.
 
 ## Lock-screen visibility
 
@@ -215,7 +215,7 @@ BAC-related content from Party Mode is gated by a user setting — **"Show BAC o
 
 The setting label and copy in the UI is neutral and does not justify the option ("Show your estimated BAC on the lock screen"); we surface the choice without recommending either side.
 
-The toggle is configured under **Settings → Party Mode** — see [user-experience.md](user-experience.md) S4.
+The toggle is configured under **Settings → Party Mode** — see [user-experience.md → S4 Settings](./user-experience.md#s4--settings).
 
 ## Anti-spam principles
 

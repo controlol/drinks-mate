@@ -23,7 +23,7 @@ Adults who want a low-friction way to monitor their hydration. The app is **not*
 
 ## Product shape
 
-- **Native apps** for iOS and Android — see [technical-architecture.md](technical-architecture.md).
+- **Native apps** for iOS and Android — see [technical-architecture.md → Platforms](./technical-architecture.md#platforms).
 - **Offline-first** — the core tracking loop (logging, today view, history, reminders) works fully without network.
 - **Phased rollout.** Phase 1 is a complete local-only product. Phase 2 adds opt-in accounts, cloud sync, and social features (friends, progress sharing). Users who never create an account continue to get the full phase 1 experience unchanged.
 

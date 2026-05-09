@@ -6,14 +6,14 @@ These documents are intended to guide developers during implementation. They des
 
 ## Documents
 
-- [product-overview.md](product-overview.md) — Vision, target users, and success criteria.
-- [technical-architecture.md](technical-architecture.md) — Platform strategy, offline-first model, and phase 1 / phase 2 boundary.
-- [features.md](features.md) — Functional scope by phase: what the app must do.
-- [user-experience.md](user-experience.md) — Screens, flows, and key interactions.
-- [notifications.md](notifications.md) — Reminder strategy and behaviour.
-- [party-session.md](party-session.md) — Opt-in Party Session: alcohol tracking with BAC estimation (phase 1).
-- [data-model.md](data-model.md) — What the app stores and how entities relate.
-- [open-questions.md](open-questions.md) — Decisions still to be made.
+- [product-overview.md](./product-overview.md) — Vision, target users, and success criteria.
+- [technical-architecture.md](./technical-architecture.md) — Platform strategy, offline-first model, and phase 1 / phase 2 boundary.
+- [features.md](./features.md) — Functional scope by phase: what the app must do.
+- [user-experience.md](./user-experience.md) — Screens, flows, and key interactions.
+- [notifications.md](./notifications.md) — Reminder strategy and behaviour.
+- [party-session.md](./party-session.md) — Opt-in Party Session: alcohol tracking with BAC estimation (phase 1).
+- [data-model.md](./data-model.md) — What the app stores and how entities relate.
+- [open-questions.md](./open-questions.md) — Decisions still to be made.
 
 ## At a glance
 
@@ -21,7 +21,7 @@ These documents are intended to guide developers during implementation. They des
 - **Offline-first**, with a local database as the on-device source of truth. Core tracking works with no network and no account.
 - **Two-phase rollout.** Phase 1 is the local-only MVP. Phase 2 adds opt-in accounts, cloud sync across devices, and friends with progress sharing.
 
-See [technical-architecture.md](technical-architecture.md) for the rationale behind these decisions.
+See [technical-architecture.md](./technical-architecture.md) for the rationale behind these decisions.
 
 ## Document conventions
 

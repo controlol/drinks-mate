@@ -21,7 +21,7 @@ The default screen on app launch. Shows:
 - A row of quick-log presets above or beside the primary action — tapping a preset logs that drink immediately at the current time, with a brief confirmation that can be undone.
 - A **Party Session** control:
   - **No active session:** a small, understated entry point — a low-emphasis tile or link-style row placed below the primary hydration content. Party Mode is a secondary feature; the entry point should never compete with hydration progress, the log-drink action, or the today drinks list.
-  - **Active session:** the entry point is replaced by a more prominent BAC section. Its full content list (current BAC, BAC line chart, cap progress, drinks count, total grams, time elapsed, meal indicator, session-prices control, session totals, End session action) is the canonical "Today view during a session" list in [party-session.md](party-session.md). Treat that list as authoritative; this S1 description does not duplicate it.
+  - **Active session:** the entry point is replaced by a more prominent BAC section. Its full content list (current BAC, BAC line chart, cap progress, drinks count, total grams, time elapsed, meal indicator, session-prices control, session totals, End session action) is the canonical [party-session.md → Today view during a session](./party-session.md#today-view-during-a-session) list. Treat that list as authoritative; this S1 description does not duplicate it.
 
 ### S2 — Log drink
 
@@ -31,7 +31,7 @@ Reached from the primary action on the home screen. Presented as a **drawer that
 
 - A **search field** at the top filters the preset list by name as the user types.
 - A **scrollable list** of all visible drink presets (default + user-created, excluding hidden), each row showing its icon (in its configured colour) and its name. The list is grouped or ordered to surface the user's most-used presets near the top.
-- A **"Create new preset"** action at the end of the list opens the create-preset flow (see F14).
+- A **"Create new preset"** action at the end of the list opens the create-preset flow (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)).
 
 Tapping a preset advances the drawer to phase 2.
 
@@ -50,7 +50,7 @@ Opening the Advanced editor reveals fields for `name`, `ABV`, and `price`. After
 
 1. **Back** — discards the advanced edits and returns to phase 2 with the preset's original values.
 2. **Confirm** — logs the drink with the entered values **for this entry only**. The underlying preset is unchanged. This is the most common path when the user just needs a one-off variation (e.g. "this particular beer is 7% instead of 5%").
-3. **Save and confirm** — writes the advanced values back to the preset (overwriting it), **then** logs the drink. Use case: the user has been incorrectly over-stating their default beer's ABV and wants to fix the preset permanently. Per the [log immutability principle](data-model.md#snapshot-semantics--log-immutability), saving back to the preset does **not** modify any historical drink entries.
+3. **Save and confirm** — writes the advanced values back to the preset (overwriting it), **then** logs the drink. Use case: the user has been incorrectly over-stating their default beer's ABV and wants to fix the preset permanently. Per the [log immutability principle](./data-model.md#snapshot-semantics--log-immutability), saving back to the preset does **not** modify any historical drink entries.
 4. **Save as copy and confirm** — creates a **new preset** with the advanced values (the user is asked to confirm the new name), then logs the drink against the new preset. Use case: the user found a new drink they'll want to log again.
 
 Options 3 and 4 are typically offered together as a split button or a small menu attached to the primary save action; "Confirm" remains the primary action on the row when nothing has been edited.
@@ -65,19 +65,19 @@ Options 3 and 4 are typically offered together as a split button or a small menu
 Reached from a tab or menu. The screen has:
 
 - A **range selector** at the top: Weekly / Monthly, with paging controls to step backwards and forwards through past periods.
-- A stack of **bar charts** for the selected range. Hydration charts are always present; alcohol charts appear only when at least one Party Session overlaps the selected range. See [features.md](features.md) F4 for the full chart spec.
+- A stack of **bar charts** for the selected range. Hydration charts are always present; alcohol charts appear only when at least one Party Session overlaps the selected range. See [features.md → F4 History](./features.md#f4--history) for the full chart spec.
 - A **day list** below the charts. Tapping a day on any chart, or selecting a row in the list, drills into the day detail (drink list with edit/delete, plus any Party Session summary on that day).
 
 Charts are read-only. Editing always happens via the day drill-down or the today view.
 
 ### S4 — Settings
 
-The settings screen is grouped into the following sections, in this order. This list is the canonical settings spec — F6 in [features.md](features.md) mirrors it.
+The settings screen is grouped into the following sections, in this order. This list is the canonical settings spec — [features.md → F6 Settings](./features.md#f6--settings) mirrors it.
 
 1. **Hydration**
    - Daily goal (numeric input, ml). Suggested during onboarding from `30 ml × weight_kg` rounded to nearest 100 ml.
    - Day boundary (local time, default 05:00).
-2. **Reminders** (see [notifications.md](notifications.md))
+2. **Reminders** (see [notifications.md](./notifications.md))
    - Master on/off.
    - Active hours (default 08:00–22:00).
    - Interval (default 90 min).
@@ -85,7 +85,7 @@ The settings screen is grouped into the following sections, in this order. This 
    - Weekly summary toggle (default ON).
    - Default drink — reference to a non-alcoholic `DrinkPreset` (default: "Glass of water").
 3. **Drinks**
-   - Manage drinks — list of drink presets with reorder, edit, hide, delete, and create-new actions. See [features.md](features.md) F14.
+   - Manage drinks — list of drink presets with reorder, edit, hide, delete, and create-new actions. See [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation).
 4. **Profile**
    - Gender (male / female / unspecified).
    - Weight (kg).

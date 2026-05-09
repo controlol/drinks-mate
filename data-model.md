@@ -1,6 +1,6 @@
 # Data Model
 
-This is a logical model — it describes the entities the app needs and their relationships, not a specific database schema. The engineering team chooses the storage technology (see [technical-architecture.md](technical-architecture.md)).
+This is a logical model — it describes the entities the app needs and their relationships, not a specific database schema. The engineering team chooses the storage technology (see [technical-architecture.md](./technical-architecture.md)).
 
 The model is designed for phase 1 (local-only) but with phase 2 (cloud sync) constraints already baked in, so adding sync does not require a destructive migration.
 
@@ -33,7 +33,7 @@ Soft-deleted records are filtered out everywhere in the UI. They exist so that p
 
 ### DrinkPreset
 
-A named, pre-configured drink that the user can pick when logging. See [features.md](features.md) F14 for the feature spec.
+A named, pre-configured drink that the user can pick when logging. See [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation) for the feature spec.
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ A named, pre-configured drink that the user can pick when logging. See [features
 
 #### Seeded defaults
 
-On first launch the database is seeded with the default preset list (see [features.md](features.md) F14) using `isUserCreated = false`. The user can edit, hide, or delete them — there is no special protection. A "Reset to defaults" action in settings re-seeds any missing default presets.
+On first launch the database is seeded with the default preset list (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)) using `isUserCreated = false`. The user can edit, hide, or delete them — there is no special protection. A "Reset to defaults" action in settings re-seeds any missing default presets.
 
 #### Snapshot semantics — log immutability
 
@@ -64,7 +64,7 @@ The drink log is **immutable with respect to external changes**. This is a load-
 - When a `DrinkEntry` is created from a preset, the resolved values (`name`, `beverageType`, `volumeMl`, `abvPercent`, `priceMinor`, `currency`, `iconKey`, `iconColor`) are **copied into the entry**.
 - **Editing or deleting a preset never modifies historical entries.** If you rename "Light beer" to "IPA" today, last week's log still says "Light beer".
 - `DrinkEntry` does not carry a foreign key back to `DrinkPreset`. The relationship is intentionally one-way at log time.
-- The only path to change a `DrinkEntry` is a **direct, deliberate user edit** of that entry (see F3 in [features.md](features.md)). Side-effect modifications from other entities are not allowed.
+- The only path to change a `DrinkEntry` is a **direct, deliberate user edit** of that entry (see [features.md → F3 Today view](./features.md#f3--today-view)). Side-effect modifications from other entities are not allowed.
 
 This keeps history accurate, makes preset deletion safe, avoids a sync ordering dependency in phase 2, and means historical analytics in phase 3 reflect what was actually logged at the time.
 
@@ -83,7 +83,7 @@ Non-alcoholic:
 - `non_alcoholic_beer` — visually a beer, classified as non-alcoholic. Contributes to hydration; never to the BAC estimate. Treated as fully alcohol-free for the purposes of this app — the small (<0.5%) residual alcohol some products contain is ignored, both for simplicity and because the pharmacokinetic effect at that dose is below the noise floor of the BAC model.
 - `other`
 
-Alcoholic (only logged during an active Party Session — see [party-session.md](party-session.md)):
+Alcoholic (only logged during an active Party Session — see [party-session.md](./party-session.md)):
 
 - `beer` — default ABV 5.0%
 - `wine` — default ABV 12.0%
@@ -101,7 +101,7 @@ A single per-device record holding the user's settings.
 
 | Field                    | Type                  | Notes                                                       |
 | ------------------------ | --------------------- | ----------------------------------------------------------- |
-| `installedAt`            | timestamp             | Set once when the local database is first created on this device. Never changes thereafter. Used as a tie-breaker for the inactive-user silence rule (see [notifications.md](notifications.md)) — `max(latestDrinkLog.consumedAt, installedAt)` is the user's "last engagement" time. |
+| `installedAt`            | timestamp             | Set once when the local database is first created on this device. Never changes thereafter. Used as a tie-breaker for the inactive-user silence rule (see [notifications.md → Inactive-user silence](./notifications.md#inactive-user-silence)) — `max(latestDrinkLog.consumedAt, installedAt)` is the user's "last engagement" time. |
 | `username`               | string                | Set during onboarding. Min 3, max 30 characters. See "Username character rules" below. Used locally as a friendly label; reserved as the basis for friend discovery in phase 2. |
 | `dailyGoalMl`            | integer               | Set during onboarding (suggested via `30 ml × weight_kg`, rounded to nearest 100 ml). Stored in metric; UI may display imperial. |
 | `unitsDisplay`           | enum                  | `metric` (default) / `imperial`. Affects display only — all stored values are metric. |
@@ -112,9 +112,9 @@ A single per-device record holding the user's settings.
 | `reminderIntervalMin`    | integer               | Default 90.                                                 |
 | `dayBoundary`            | local time            | When a "day" starts for goal tracking and reminder scheduling. Default `05:00`. Configurable. |
 | `defaultDrinkPresetId`   | string / UUID \| null | References one of the user's `DrinkPreset` records. Used by the notification quick-log action and as the "glass" unit in reminder recommendations. Must reference a non-alcoholic preset. Defaults to the seeded "Glass of water" preset's id. If the referenced preset is deleted, this falls back to null and the app uses the seeded "Glass of water" preset; if that too is missing, falls back to a hardcoded 200 ml water for the volume calculation and disables the notification quick-log action until the user picks a new default. |
-| `inactivityReminderEnabled` | boolean            | Default `true`. Independent toggle for the once-per-day inactivity reminder. See [notifications.md](notifications.md). |
-| `weeklySummaryEnabled`   | boolean               | Default `true`. Independent toggle for the end-of-week summary notification. See [notifications.md](notifications.md). |
-| `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md](notifications.md). |
+| `inactivityReminderEnabled` | boolean            | Default `true`. Independent toggle for the once-per-day inactivity reminder. See [notifications.md → Notification types](./notifications.md#notification-types). |
+| `weeklySummaryEnabled`   | boolean               | Default `true`. Independent toggle for the end-of-week summary notification. See [notifications.md → Notification types](./notifications.md#notification-types). |
+| `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md → Lock-screen visibility](./notifications.md#lock-screen-visibility). |
 | `bacCapGramsPerL`        | decimal \| null       | Optional personal cap, stored canonically in g/L. Null means no cap is set. The UI shows g/L as primary and mmol/L as secondary. Persistent across sessions. |
 | `updatedAt`              | timestamp             | Used by phase 2 sync.                                       |
 
@@ -122,7 +122,7 @@ A single per-device record holding the user's settings.
 
 #### UserProfile
 
-Collected during onboarding ([user-experience.md](user-experience.md) S5). Used by both the hydration-goal suggestion and the Party Session BAC estimate.
+Collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)). Used by both the hydration-goal suggestion and the Party Session BAC estimate.
 
 | Field        | Type           | Notes                                                                                                  |
 | ------------ | -------------- | ------------------------------------------------------------------------------------------------------ |
@@ -135,7 +135,7 @@ The profile is conceptually part of preferences but kept as a separate logical r
 
 ### PartySession
 
-A discrete drinking occasion. There is at most one active session (`endedAt IS NULL`) at any time. See [party-session.md](party-session.md).
+A discrete drinking occasion. There is at most one active session (`endedAt IS NULL`) at any time. See [party-session.md](./party-session.md).
 
 | Field         | Type                  | Notes                                                                                |
 | ------------- | --------------------- | ------------------------------------------------------------------------------------ |
@@ -157,7 +157,7 @@ A session auto-ends 12 hours after the most recently logged alcoholic drink with
 
 ### PartySessionPrice
 
-A per-session, per-preset price override. Lets the user set festival/party prices that differ from the regular menu price without ever modifying the underlying `DrinkPreset`. See [party-session.md](party-session.md) for the user-facing flow.
+A per-session, per-preset price override. Lets the user set festival/party prices that differ from the regular menu price without ever modifying the underlying `DrinkPreset`. See [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session) for the user-facing flow.
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
@@ -185,7 +185,7 @@ When a `DrinkEntry` is logged during an active session and `useSessionPrices` is
 
 ### Meal
 
-A meal logged within a `PartySession`. Influences the BAC modifier for drinks consumed inside the meal's active window. See [party-session.md](party-session.md) for the algorithm.
+A meal logged within a `PartySession`. Influences the BAC modifier for drinks consumed inside the meal's active window. See [party-session.md → Meals](./party-session.md#meals) for the algorithm.
 
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
@@ -204,19 +204,19 @@ A session may have zero, one, or several meals. Meals do not exist outside a ses
 A `DrinkEntry` carries an explicit nullable foreign key `partySessionId` to `PartySession`. This is more reliable than inferring membership from `consumedAt` alone, because:
 
 - Orphan drinks (logged when the user declined the start-session prompt) have `consumedAt` values in the past but explicitly belong to **no** session — they must not be auto-attached just because their timestamp later falls inside a session window.
-- Absorbed orphan drinks (see [party-session.md](party-session.md)) explicitly belong to a session whose `startedAt` is **after** the drink's `consumedAt` — pure timestamp-window logic would miss this.
+- Absorbed orphan drinks (see [party-session.md → Absorbing orphan drinks](./party-session.md#absorbing-orphan-drinks-when-a-later-session-starts)) explicitly belong to a session whose `startedAt` is **after** the drink's `consumedAt` — pure timestamp-window logic would miss this.
 
 Membership rules:
 
 - A non-alcoholic drink's `partySessionId` is always null.
 - An alcoholic drink logged during an active session: `partySessionId` set to that session at log time.
 - An alcoholic drink logged when no session is active: `partySessionId = null` (orphan).
-- When a new session starts and an orphan still has residual BAC (per the absorption rule in [party-session.md](party-session.md)): the orphan's `partySessionId` is updated to the new session.
+- When a new session starts and an orphan still has residual BAC (per the absorption rule in [party-session.md → Absorbing orphan drinks](./party-session.md#absorbing-orphan-drinks-when-a-later-session-starts)): the orphan's `partySessionId` is updated to the new session.
 - Once set, `partySessionId` is not cleared by the auto-end of the session — the historical association is preserved.
 
 When a user retroactively logs an alcoholic drink (i.e. with a past `consumedAt` typed in by the user) whose `consumedAt` falls inside an **already-ended** session window, the drink **attaches to that session** automatically — its `partySessionId` is set to the matching session at log time. Attaching the drink does **not** re-open the session's auto-end clock: `endedAt` and `endReason` stay as they were. Once a session has ended, it does not grow in time.
 
-This rule applies only when the new drink's `consumedAt` falls strictly inside `[startedAt, endedAt)`. Drinks whose `consumedAt` falls before any session, after every session, or in a gap between sessions remain unattached (orphans), subject to the absorption rules described in [party-session.md](party-session.md).
+This rule applies only when the new drink's `consumedAt` falls strictly inside `[startedAt, endedAt)`. Drinks whose `consumedAt` falls before any session, after every session, or in a gap between sessions remain unattached (orphans), subject to the absorption rules described in [party-session.md → Absorbing orphan drinks](./party-session.md#absorbing-orphan-drinks-when-a-later-session-starts).
 
 ## Phase-2-only entities (defined here for forward-compatibility, not built in phase 1)
 

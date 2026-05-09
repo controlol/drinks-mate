@@ -38,8 +38,8 @@ These rules are non-negotiable in the UI:
 
 ### During a session
 
-- The today view ([user-experience.md](user-experience.md) S1) shows a BAC section: current estimated BAC, projected decay, optional cap progress, drinks-this-session count and total grams of alcohol.
-- The log-drink flow ([user-experience.md](user-experience.md) S2) shows the alcoholic beverage types alongside the non-alcoholic ones.
+- The today view ([user-experience.md → S1 Today](./user-experience.md#s1--today-home)) shows a BAC section: current estimated BAC, projected decay, optional cap progress, drinks-this-session count and total grams of alcohol.
+- The log-drink flow ([user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink)) shows the alcoholic beverage types alongside the non-alcoholic ones.
 - Session-only notifications (approaching cap, sober estimate) are eligible to fire — see "Notifications during a session" below.
 
 ### Ending a session
@@ -100,7 +100,7 @@ The rule is applied **per orphan drink**:
 
 ## Required user inputs
 
-The BAC estimate uses the user's profile, which is partly collected during onboarding ([user-experience.md](user-experience.md) S5) and partly completed the first time the user tries to start a Party Session.
+The BAC estimate uses the user's profile, which is partly collected during onboarding ([user-experience.md → S5 Onboarding](./user-experience.md#s5--onboarding-first-launch-only)) and partly completed the first time the user tries to start a Party Session.
 
 | Field        | Required for Party Mode? | Source                                               | Used for                              |
 | ------------ | ------------------------ | ---------------------------------------------------- | ------------------------------------- |
@@ -216,7 +216,7 @@ The session itself carries a token configuration:
 - **Token name** — what to call them in the UI ("Token", "Munt", "Drink ticket"). Optional; defaults to "Token".
 - **Token value** — what one token is worth, in money. Optional. When set, the app can show a money-equivalent total alongside the token total. When unset, token spending is simply not summed in money.
 
-Both live on `PartySession` (see [data-model.md](data-model.md)) and can be configured at session start or any time during the session.
+Both live on `PartySession` (see [data-model.md → PartySession](./data-model.md#partysession)) and can be configured at session start or any time during the session.
 
 ### Starting a session — pricing prompt
 
@@ -253,7 +253,7 @@ When a drink is logged during a session, the price snapshot on the resulting `Dr
 - If money was applied: `priceMinor` + `currency` are set; the token fields are null.
 - If tokens were applied: `priceTokens` + `tokenValueMinor` + `tokenValueCurrency` are set (the token value snapshot lets historical aggregations show a money-equivalent even if the session's token configuration changes later); `priceMinor` and `currency` are null.
 
-This follows the [log immutability principle](data-model.md#snapshot-semantics--log-immutability) — once logged, the price never changes.
+This follows the [log immutability principle](./data-model.md#snapshot-semantics--log-immutability) — once logged, the price never changes.
 
 ### Aggregations across mixed payment
 
@@ -267,7 +267,7 @@ No conversion is attempted across currencies. The user sees the breakdown they a
 
 ## Logging an alcoholic drink (during a session)
 
-The log-drink screen ([user-experience.md](user-experience.md) S2) gains:
+The log-drink screen ([user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink)) gains:
 
 - **Alcoholic beverage types**: `beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`. Each has a default ABV (alcohol by volume, %), which the user can override per entry.
   - `beer` — default 5.0% ABV.
@@ -401,7 +401,7 @@ Settings show these limits as reference values inside the Party Mode section, wi
 
 ## Notifications during a session
 
-When a session is active, the standard hydration reminders ([notifications.md](notifications.md)) continue to behave as normal. Two additional notifications, both off by default, become eligible to fire:
+When a session is active, the standard hydration reminders ([notifications.md](./notifications.md)) continue to behave as normal. Two additional notifications, both off by default, become eligible to fire:
 
 - **Approaching cap.** When the user logs a drink that pushes the estimated BAC past **80%** of the cap, the app sends a notification.
 - **Sober estimate.** When the estimated BAC returns to 0 g/L, the app sends a single notification ("Estimated BAC is back to 0 — remember this is an estimate."). The user can disable this independently.
@@ -410,7 +410,7 @@ When the session ends (manually or automatically), neither of these notification
 
 ## Today view during a session
 
-When a session is active, the today view ([user-experience.md](user-experience.md) S1) gains a section showing:
+When a session is active, the today view ([user-experience.md → S1 Today](./user-experience.md#s1--today-home)) gains a section showing:
 
 - Current estimated BAC in **g/L** (large, clearly labelled "estimate"), with the **mmol/L** equivalent shown smaller alongside.
 - A **BAC line chart** plotting the estimated BAC over time (see "BAC line chart" below).
