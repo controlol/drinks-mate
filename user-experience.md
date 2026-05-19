@@ -139,6 +139,20 @@ Onboarding is one continuous flow with no skip-everything escape, but each step 
 
 The 60-second goal from the success criteria applies here.
 
+```mermaid
+flowchart TD
+    A[App opened first time] --> B[S5 — Welcome]
+    B --> C[Username]
+    C --> D[Personal info: gender, weight, height?, birthday?]
+    D --> E[Daily goal — pre-filled 30 ml × weight_kg]
+    E --> F[Notification permission prompt]
+    F --> G[S1 Today — empty drink list]
+    G --> H{Log first drink?}
+    H -->|Quick-log preset| I[Drink logged · progress updates]
+    H -->|Tap Log drink| J[S2 Log drink drawer]
+    J --> I
+```
+
 ### Flow 2 — Quick log (most common)
 
 1. User opens the app.
@@ -147,11 +161,44 @@ The 60-second goal from the success criteria applies here.
 
 Two taps total (open the app, tap the preset).
 
+```mermaid
+flowchart TD
+    A[App opened] --> B[S1 Today view]
+    B --> C[Tap quick-log preset]
+    C --> D[DrinkEntry written · consumedAt = now]
+    D --> E[Progress indicator updates]
+    E --> F[Toast with Undo]
+    F -->|Undo tapped within window| G[Entry soft-deleted]
+    F -->|Toast dismissed| H[Done]
+```
+
 ### Flow 3 — Detailed log
 
 1. User opens the app and taps "Log drink".
-2. User selects beverage type, volume, and optionally adjusts the time.
+2. User picks a preset, optionally tweaks volume / time, optionally opens the Advanced editor for name / ABV / price.
 3. User confirms; the drink is added to today's list and progress updates.
+
+```mermaid
+flowchart TD
+    A[Tap Log drink on S1] --> B[S2 drawer opens · Phase 1 Pick a drink]
+    B --> C{Search or scroll}
+    C --> D[Tap preset]
+    C --> E[Tap Create new preset]
+    E --> F[Create-preset flow F14] --> D
+    D --> G[S2 Phase 2 Edit and confirm]
+    G --> H[Adjust volume / time inline]
+    H --> I{Open Advanced?}
+    I -->|No| J[Tap Confirm]
+    I -->|Yes| K[Advanced editor: name, ABV, price]
+    K --> L{Choose exit path}
+    L -->|Back| G
+    L -->|Confirm| J
+    L -->|Save and confirm| M[Preset overwritten]
+    L -->|Save as copy and confirm| N[New preset created]
+    M --> J
+    N --> J
+    J --> O[DrinkEntry written · drawer closes · toast + undo]
+```
 
 ### Flow 4 — Correcting a mistake
 
@@ -159,11 +206,34 @@ Two taps total (open the app, tap the preset).
 2. User edits volume, type, or time, or deletes the entry.
 3. Progress updates accordingly.
 
+```mermaid
+flowchart TD
+    A[S1 Today · drinks list] --> B[Tap entry row]
+    B --> C{Edit or delete?}
+    C -->|Edit| D[Adjust fields · save]
+    C -->|Delete| E[Confirm · soft-delete]
+    D --> F[Progress + charts recompute]
+    E --> F
+```
+
 ### Flow 5 — Responding to a reminder
 
 1. User receives a reminder notification.
-2. Tapping the notification opens the app on the today view, ready to log.
-3. `[OPEN]` — should the notification itself include a quick-log action so the user can log without opening the app? Recommended for a later iteration.
+2. User can: (a) tap the body — app opens on S1 ready to log; or (b) tap the inline "Log {default_drink}" action — drink logged in place without opening the app.
+3. Either path resets the reminder timer; the next reminder fires `interval` later.
+
+```mermaid
+flowchart TD
+    A[Reminder fires · interval elapsed · below goal · active hours · not silenced] --> B[Notification shown]
+    B --> C{User action}
+    C -->|Tap body| D[App opens on S1]
+    D --> E[Manual log via quick-log or S2]
+    C -->|Tap quick-log action| F[Default DrinkPreset logged at now · no app launch]
+    C -->|Dismiss / ignore| G[No retry · wait for next scheduled trigger]
+    E --> H[Reminder timer reset]
+    F --> H
+    H --> I[Next reminder scheduled = lastLog + interval]
+```
 
 ## Accessibility
 

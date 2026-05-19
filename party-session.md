@@ -30,6 +30,27 @@ These rules are non-negotiable in the UI:
 
 ## Session lifecycle
 
+### Lifecycle diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> NoSession
+    NoSession --> StartingPrompt: Tap Start party session
+    NoSession --> StartingPrompt: Log alcoholic drink (prompt)
+    StartingPrompt --> ProfilePrompt: Birthday missing
+    ProfilePrompt --> Under18Notice: age < 18
+    Under18Notice --> ProfilePrompt: Re-enter date
+    ProfilePrompt --> MealPrompt: Birthday OK
+    StartingPrompt --> MealPrompt: Birthday already set
+    MealPrompt --> PricingPrompt: Skip or pick size
+    PricingPrompt --> Active: Skip / Copy from last / Configure
+    Active --> Active: Log drink / meal / edit price
+    Active --> Ended: Tap End session (manual)
+    Active --> Ended: 12h since last alcoholic drink (auto_timeout)
+    Ended --> [*]
+    Ended --> NoSession: User starts another session
+```
+
 ### Starting a session
 
 - The user taps **"Start party session"** on the today view (and/or from settings).
@@ -72,6 +93,20 @@ If the check determines the active session should have ended, it ends it retroac
 
 ### Logging alcohol when no session is active
 
+```mermaid
+flowchart TD
+    A[User logs alcoholic drink · no active session] --> B[Prompt: Start party session?]
+    B -->|Start party session| C{Profile complete?}
+    C -->|Birthday missing| D[Prompt for birthday + optional height]
+    D -->|age >= 18| E[Session starts at consumedAt]
+    D -->|age < 18| F[Friendly under-18 notice → re-enter]
+    F --> D
+    C -->|Birthday present| E
+    E --> G[Drink recorded · partySessionId set]
+    E --> H[Absorb earlier orphans whose BAC > 0]
+    B -->|Don't start a session| I[Drink recorded as orphan · partySessionId = null]
+```
+
 The app **does not** silently start a session. When the user logs an alcoholic drink while no session is active, the app explicitly **asks** them whether to start a party session for it:
 
 - A confirmation prompt appears with two clear choices: **"Start party session"** or **"Don't start a session"**.
@@ -81,6 +116,19 @@ The app **does not** silently start a session. When the user logs an alcoholic d
 The choice is presented every time alcohol is logged outside an active session — we never assume the answer for the user. The decision to drink, and the decision to track that drink in a session with a BAC estimate, are deliberately kept separate.
 
 ### Absorbing orphan drinks when a later session starts
+
+```mermaid
+flowchart TD
+    A[New session starts at startedAt] --> B[Find all orphan alcoholic drinks · partySessionId = null]
+    B --> C{For each orphan}
+    C --> D[Compute BAC_initial from profile]
+    D --> E[t_zero = consumedAt + BAC_initial / β]
+    E --> F{t_zero > startedAt?}
+    F -->|Yes| G[Absorb · set orphan.partySessionId = new session]
+    F -->|No| H[Stay orphan · BAC fully decayed]
+    G --> I[Show user: included N earlier drinks]
+    H --> I
+```
 
 When the user later starts a session (manually, or by accepting the prompt on a subsequent alcohol log), any pre-existing orphan drinks whose alcohol is **still pharmacokinetically active** are absorbed into the new session.
 
