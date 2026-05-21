@@ -9,27 +9,50 @@ This document describes the screens and primary flows of Drinks Mate. Visual des
 3. **Glanceable progress.** A user should understand their hydration status within a second of opening the app.
 4. **Forgiving.** Every log can be edited or deleted. Mistakes are normal and easy to fix.
 
+## Top-level navigation
+
+The app uses a **bottom tab bar** with three tabs, present on every top-level screen:
+
+1. **Today** (default on launch) — hydration tracking.
+2. **Party** — Party Session feature; opt-in, secondary.
+3. **History** — past intake and sessions.
+
+A **header at the top of every page** carries the page title on the left and a single **settings gear icon** in the top-right corner. Tapping the gear opens Settings (S4). There are no other persistent actions in the header.
+
+Tab bar visibility:
+
+- Visible on Today, Party, and History.
+- **Hidden** when the S2 Log drink drawer is open — the drawer covers it.
+- Hidden when a full-screen route is pushed from a tab (e.g. Today Drinks Log, day drill-down, Settings).
+
 ## Screens
 
 ### S1 — Today (home)
 
 Functional spec: [features.md → F3 Today view](./features.md#f3--today-view).
 
-The default screen on app launch. Shows:
+The default screen on app launch. Header: page title "Today" on the left, settings gear top-right. Hydration is the entire focus of this screen — Party Mode lives on its own tab and never appears here.
 
-- A prominent visual indicator of progress toward today's goal (e.g. a filling shape or ring) with the numeric value and goal alongside.
-- A list of today's logged drinks, newest first, each row showing beverage icon/type, volume, and time. Tapping a row opens edit/delete.
-- A primary "Log drink" action (large, bottom of screen).
-- A row of quick-log presets above or beside the primary action — tapping a preset logs that drink immediately at the current time, with a brief confirmation that can be undone.
-- A **Party Session** control:
-  - **No active session:** a small, understated entry point — a low-emphasis tile or link-style row placed below the primary hydration content. Party Mode is a secondary feature; the entry point should never compete with hydration progress, the log-drink action, or the today drinks list.
-  - **Active session:** the entry point is replaced by a more prominent BAC section. Its full content list (current BAC, BAC line chart, cap progress, drinks count, total grams, time elapsed, meal indicator, session-prices control, session totals, End session action) is the canonical [party-session.md → Today view during a session](./party-session.md#today-view-during-a-session) list. Treat that list as authoritative; this S1 description does not duplicate it.
+Content, top to bottom:
+
+- A **progress card** at the top of the page. Full page width (within the standard horizontal padding). Inside the card, in order:
+  - A header row with the **big numeric** intake value (display weight, tabular figures, very large — e.g. `1.4 L`) on the left, the daily goal as a smaller secondary value alongside (e.g. `/ 2.1 L`), and a **status pill** in the top-right of the card carrying a short label: `On pace`, `Behind`, or `Ahead`.
+  - A **horizontal progress bar** that fills the entire card width below the header row (within the card's padding). The bar fills left-to-right as the user logs drinks toward today's goal. The fill colour is the brand colour when on or ahead of pace, and the semantic behind-pace colour when behind. A non-colour secondary indicator is required for accessibility (icon or label change on the status pill).
+  - A **vertical tick line** on the bar marks the **pace position** — where the user "should be" right now on a linear pace through their active hours. Calculation is the same expected-intake formula used by reminders (see [notifications.md → Recommended volume per reminder](./notifications.md#recommended-volume-per-reminder)). The tick is rendered with a non-colour treatment that is visible against both fill states.
+  - The entire card is **tappable**: tapping anywhere on the card opens [S6 Today Drinks Log](#s6--today-drinks-log) as a full-screen push.
+- Two **stat cards side-by-side** below the progress card:
+  - **7-day daily average** — the user's mean daily intake across the last 7 completed days (excluding today). Format: numeric + unit, e.g. `1.8 L`.
+  - **Days on goal (last 7)** — count of days in the last 7 completed days where intake met or exceeded the daily goal. Format: `n/7`, e.g. `5/7`.
+- A row of **quick-log preset shortcuts** — small tiles, each showing a preset's icon and name. Tapping a tile logs that preset immediately at the current time with a `Logged` toast and undo affordance (see Toast below). The row surfaces the user's most-used presets, seeded with defaults until usage data accumulates. See [features.md → F14](./features.md#f14--drink-presets-and-customisation).
+- A **full-width "Log drink" button** persistent at the bottom of the screen (within the standard horizontal padding, sitting above the tab bar). Tapping it opens the [S2 Log drink](#s2--log-drink) drawer. This is the path for any drink not in the quick-log row, including new presets.
+
+The `Logged` toast appears at the bottom of the screen (above the tab bar) for 4 seconds with an inline Undo affordance after any quick-log tap or successful S2 confirm.
 
 ### S2 — Log drink
 
 Functional spec: [features.md → F1 Log a drink](./features.md#f1--log-a-drink). Drink presets: [features.md → F14](./features.md#f14--drink-presets-and-customisation).
 
-Reached from the primary action on the home screen. Presented as a **drawer that opens from the bottom of the screen and may expand to take up the entire screen**. The drawer has two phases: pick a drink, then edit and confirm.
+Reached from the full-width **"Log drink"** button at the bottom of the [S1 Today](#s1--today-home) screen. Presented as a **drawer that opens from the bottom of the screen and may expand to take up the entire screen**. The bottom tab bar is hidden while the drawer is open. The drawer has two phases: pick a drink, then edit and confirm.
 
 #### Phase 1 — Pick a drink
 
@@ -62,23 +85,25 @@ Options 3 and 4 are typically offered together as a split button or a small menu
 #### State transitions
 
 - Tapping outside the drawer or swiping it down dismisses it without logging anything.
-- After a successful confirm (any of the three confirm paths), the drawer closes and the today view shows the new entry with a brief "Logged" toast and undo affordance.
+- After a successful confirm (any of the three confirm paths), the drawer closes, the Today screen's progress card updates to reflect the new entry, and a brief "Logged" toast with an undo affordance appears at the bottom of the screen.
 
 ### S3 — History
 
 Functional spec: [features.md → F4 History](./features.md#f4--history).
 
-Reached from a tab or menu. The screen has:
+Reached from the **History** tab in the bottom navigation. The screen has:
 
 - A **range selector** at the top: Weekly / Monthly, with paging controls to step backwards and forwards through past periods.
 - A stack of **bar charts** for the selected range. Hydration charts are always present; alcohol charts appear only when at least one Party Session overlaps the selected range. See [features.md → F4 History](./features.md#f4--history) for the full chart spec.
 - A **day list** below the charts. Tapping a day on any chart, or selecting a row in the list, drills into the day detail (drink list with edit/delete, plus any Party Session summary on that day).
 
-Charts are read-only. Editing always happens via the day drill-down or the today view.
+Charts are read-only. Editing always happens via the day drill-down or the [today drinks log](#s6--today-drinks-log).
 
 ### S4 — Settings
 
 Functional spec: [features.md → F6 Settings](./features.md#f6--settings). Underlying storage: [data-model.md → UserPreferences](./data-model.md#userpreferences) and [→ UserProfile](./data-model.md#userprofile).
+
+Reached by tapping the **settings gear icon** in the top-right of the header on any top-level screen (Today, Party, History). Presented as a full-screen push; the bottom tab bar is hidden while Settings is open. A back affordance returns to the originating tab.
 
 The settings screen is grouped into the following sections, in this order. This list is the canonical settings spec — [features.md → F6 Settings](./features.md#f6--settings) mirrors it.
 
@@ -128,14 +153,55 @@ Onboarding creates a profile that the rest of the app builds on. Steps are prese
 
 Onboarding is one continuous flow with no skip-everything escape, but each step has a sensible default so a user who taps "next" through the whole thing ends up with a working profile: gender `unspecified`, weight 70 kg, no height, no birthday, daily goal **2100 ml** (= 30 × 70 kg, rounded). The user can revise any of these in settings.
 
+### S6 — Today Drinks Log
+
+Reached by tapping the progress card on [S1 Today](#s1--today-home). Presented as a full-screen push; the bottom tab bar is hidden, a back affordance returns to Today.
+
+Content:
+
+- The same progress card as on Today (read-only at the top, for orientation), or a slimmer summary header carrying today's total intake and goal. Either way, the user keeps their bearings on where they are versus goal while reviewing entries.
+- A **list of today's logged drinks**, newest first. Each row shows the drink's icon (tinted in its configured colour), name, volume, and time of consumption.
+- Tapping a row opens an **edit / delete** affordance for that entry. Editable fields are volume, name, ABV (alcoholic drinks only), price, and time. Delete is a soft-delete with confirmation.
+- An empty state appears when the user has logged nothing yet today: an illustration plus a friendly one-line prompt and a button to log a drink (opens the S2 drawer).
+
+Entries edited or deleted here cause the progress card on S1 to recompute on return.
+
+### S7 — Party
+
+Functional spec: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Full feature design: [party-session.md](./party-session.md).
+
+Reached from the **Party** tab in the bottom navigation. Header: page title "Party" on the left, settings gear top-right. The content depends on whether a session is currently active.
+
+#### No active session — first-run state
+
+The first time the user opens the Party tab, the screen presents a brief explainer plus the start action:
+
+- A short, honest explainer of what Party Mode is: opt-in session-based alcohol tracking with a BAC estimate. Includes the "this is an estimate, not a measurement" disclaimer required by [party-session.md](./party-session.md#important-this-is-an-estimate-not-a-measurement).
+- A **full-width "Start party session" button**, full page width (within standard padding).
+- Reference to the personal cap setting (deep-link to Settings → Party Mode), but no in-screen configuration.
+
+#### No active session — subsequent visits
+
+After the user has seen the explainer at least once (i.e. has ever opened the Party tab before, regardless of whether they started a session), the explainer is no longer shown by default. Instead:
+
+- A **full-width "Start party session" button** at the top of the content area.
+- A **past sessions list** below the button. Each row shows session date / range, peak BAC, number of alcoholic drinks, and how the session ended (manual / auto). Tapping a row drills into a session summary view.
+- An "i" / info affordance on the header re-opens the explainer if the user wants to revisit it.
+
+#### Active session
+
+When a session is active, the Party tab displays the active-session view. Its full content list — current BAC in g/L with mmol/L alongside, BAC line chart, cap progress, drinks-this-session count, total grams of alcohol, time elapsed, meal indicator, session-prices control, session totals, and the End session action — is the canonical [party-session.md → Party tab during a session](./party-session.md#party-tab-during-a-session) list. Treat that list as authoritative; this S7 description does not duplicate it.
+
+Starting a session may open profile prompts (birthday, optional height) and the meal / pricing prompts before reaching the active view — see [party-session.md → Starting a session](./party-session.md#starting-a-session).
+
 ## Key flows
 
 ### Flow 1 — First-time use
 
 1. User opens the app for the first time.
 2. Onboarding (S5) runs — under 30 seconds end to end.
-3. User lands on the today view (S1) with their goal set and an empty drink list.
-4. User logs their first drink via a quick-log preset or the log-drink screen.
+3. User lands on the today view (S1) with their goal set and progress at 0.
+4. User logs their first drink via a quick-log preset or the full-width Log drink button.
 
 The 60-second goal from the success criteria applies here.
 
@@ -146,10 +212,10 @@ flowchart TD
     C --> D[Personal info: gender, weight, height?, birthday?]
     D --> E[Daily goal — pre-filled 30 ml × weight_kg]
     E --> F[Notification permission prompt]
-    F --> G[S1 Today — empty drink list]
+    F --> G[S1 Today — progress at 0]
     G --> H{Log first drink?}
     H -->|Quick-log preset| I[Drink logged · progress updates]
-    H -->|Tap Log drink| J[S2 Log drink drawer]
+    H -->|Tap Log drink button| J[S2 Log drink drawer]
     J --> I
 ```
 
@@ -202,18 +268,21 @@ flowchart TD
 
 ### Flow 4 — Correcting a mistake
 
-1. User taps an entry in today's drink list.
-2. User edits volume, type, or time, or deletes the entry.
-3. Progress updates accordingly.
+1. User taps the progress card on [S1 Today](#s1--today-home).
+2. [S6 Today Drinks Log](#s6--today-drinks-log) opens (full-screen push).
+3. User taps an entry in the list.
+4. User edits volume, name, ABV (if alcoholic), price, or time, or deletes the entry.
+5. User returns to Today; the progress card recomputes.
 
 ```mermaid
 flowchart TD
-    A[S1 Today · drinks list] --> B[Tap entry row]
-    B --> C{Edit or delete?}
-    C -->|Edit| D[Adjust fields · save]
-    C -->|Delete| E[Confirm · soft-delete]
-    D --> F[Progress + charts recompute]
-    E --> F
+    A[S1 Today · tap progress card] --> B[S6 Today Drinks Log]
+    B --> C[Tap entry row]
+    C --> D{Edit or delete?}
+    D -->|Edit| E[Adjust fields · save]
+    D -->|Delete| F[Confirm · soft-delete]
+    E --> G[Return to S1 · progress + charts recompute]
+    F --> G
 ```
 
 ### Flow 5 — Responding to a reminder

@@ -2,7 +2,7 @@
 
 A Party Session is an opt-in, session-based feature in phase 1. While a session is active, the user can log alcoholic drinks and see an **estimate** of their current blood alcohol concentration (BAC). The user can also set a personal cap and see when they are approaching it.
 
-**Related docs.** Functional summary: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Storage: [data-model.md → PartySession](./data-model.md#partysession), [→ PartySessionPrice](./data-model.md#partysessionprice), [→ Meal](./data-model.md#meal). Profile inputs: [data-model.md → UserProfile](./data-model.md#userprofile). UI surface: [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home) (active-session section), [→ S2 Log drink](./user-experience.md#s2--log-drink) (alcoholic types appear).
+**Related docs.** Functional summary: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Storage: [data-model.md → PartySession](./data-model.md#partysession), [→ PartySessionPrice](./data-model.md#partysessionprice), [→ Meal](./data-model.md#meal). Profile inputs: [data-model.md → UserProfile](./data-model.md#userprofile). UI surface: [user-experience.md → S7 Party](./user-experience.md#s7--party) (top-level tab; carries the active-session view and the start CTA), [→ S2 Log drink](./user-experience.md#s2--log-drink) (alcoholic types appear).
 
 ## Why session-based
 
@@ -53,7 +53,7 @@ stateDiagram-v2
 
 ### Starting a session
 
-- The user taps **"Start party session"** on the today view (and/or from settings).
+- The user taps **"Start party session"** on the [Party tab](./user-experience.md#s7--party).
 - **If birthday is missing from the profile:** the app prompts for it. The same prompt offers a skippable height field. The user can cancel without starting a session. If the entered birthday makes the user under 18, the app **notifies the user** with an honest, non-accusatory message ("Party Mode requires you to be 18 or older. If you entered your birthday incorrectly, you can try again.") and lets them re-enter the date. There is no retry limit — the birthday cannot be validated either way, and adding friction does not change that.
 - **If birthday is present and the user is 18+:** the session starts without further profile prompts.
 - The start flow includes a single, skippable **meal prompt** (see "Meals" below). It is the only food question the app ever asks during a session.
@@ -61,7 +61,7 @@ stateDiagram-v2
 
 ### During a session
 
-- The today view ([user-experience.md → S1 Today](./user-experience.md#s1--today-home)) shows a BAC section: current estimated BAC, projected decay, optional cap progress, drinks-this-session count and total grams of alcohol.
+- The [Party tab](./user-experience.md#s7--party) displays the active-session view: current estimated BAC, projected decay, optional cap progress, drinks-this-session count and total grams of alcohol.
 - The log-drink flow ([user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink)) shows the alcoholic beverage types alongside the non-alcoholic ones.
 - Session-only notifications (approaching cap, sober estimate) are eligible to fire — see "Notifications during a session" below.
 
@@ -69,14 +69,14 @@ stateDiagram-v2
 
 A session ends in one of two ways:
 
-1. **Manually.** The user taps **"End session"** on the today view. `endReason = manual`.
+1. **Manually.** The user taps **"End session"** on the [Party tab](./user-experience.md#s7--party). `endReason = manual`.
 2. **Automatically.** The session auto-ends **12 hours after the most recently logged alcoholic drink** (or 12 hours after `startedAt` if no alcoholic drinks were logged). `endReason = auto_timeout`. `endedAt` is set to that 12-hour mark, not to the time the app happened to notice.
 
 12 hours is long enough that an evening followed by sleeping in counts as one session, and short enough that a session doesn't bleed into the next day for someone who logged a single beer at lunch.
 
 When a session ends:
 
-- The BAC section disappears from the today view.
+- The Party tab reverts to its no-active-session state (full-width "Start party session" button + past sessions list).
 - The alcoholic beverage types disappear from the log-drink flow (the user can still log non-alcoholic drinks as normal).
 - The session and its drinks remain visible in history.
 
@@ -85,7 +85,7 @@ When a session ends:
 We do not run a background timer. The auto-end check runs whenever:
 
 - The app is foregrounded.
-- The today view is opened.
+- The Today, Party, or History tab is opened.
 - A drink is logged.
 - Settings are opened.
 
@@ -111,7 +111,7 @@ The app **does not** silently start a session. When the user logs an alcoholic d
 
 - A confirmation prompt appears with two clear choices: **"Start party session"** or **"Don't start a session"**.
 - If the user chooses to start a session: the session begins at the drink's `consumedAt` time, the drink is recorded, and BAC tracking takes over. If profile inputs are missing (first-ever alcohol log), the prompt to enter them comes next, and the session only starts after the user provides them.
-- If the user chooses not to start a session: the drink is recorded as an **orphan drink** and is visible in the today view and history, but no session is created and no BAC estimate is shown.
+- If the user chooses not to start a session: the drink is recorded as an **orphan drink** and is visible in [today's drinks log](./user-experience.md#s6--today-drinks-log) and history, but no session is created and no BAC estimate is shown.
 
 The choice is presented every time alcohol is logged outside an active session — we never assume the answer for the user. The decision to drink, and the decision to track that drink in a session with a BAC estimate, are deliberately kept separate.
 
@@ -179,7 +179,7 @@ Food in the stomach slows alcohol absorption, lowering peak BAC and shifting it 
 
 A single, skippable prompt at session start: **"Did you eat recently? Small / Medium / Large / Skip"**. Skipping means "we don't know — assume worst case, no food modifier".
 
-The user can also **add a meal at any time during the session** from the today view's session section. There is **never** a per-drink food prompt.
+The user can also **add a meal at any time during the session** from the [Party tab](./user-experience.md#s7--party). There is **never** a per-drink food prompt.
 
 ### Meal sizes
 
@@ -283,7 +283,7 @@ The whole pricing step is itself skippable in one tap ("Skip — use regular pri
 
 ### Editing prices during a session
 
-The today view's session section exposes a "Manage prices" action that opens the per-session price table:
+The Party tab (active-session view) exposes a "Manage prices" action that opens the per-session price table:
 
 - One row per `DrinkPreset` (excluding hidden ones), showing: drink name + icon, regular price (read-only, for reference), party price (editable, this session only).
 - Tapping a party-price cell opens an editor: pick **money** (amount + currency, defaults to the user's preferred currency) or **tokens** (count). Pick "no override" to fall back to the regular price for this drink.
@@ -293,7 +293,7 @@ The today view's session section exposes a "Manage prices" action that opens the
 
 ### Toggle: use session prices
 
-A toggle on the today view's session section lets the user switch session pricing on or off live:
+A toggle on the Party tab's active-session view lets the user switch session pricing on or off live:
 
 - **On** (default if any overrides exist at session start): drinks logged in this session use the session override if one exists, falling back to the preset's regular price.
 - **Off**: drinks log at their regular price even though overrides exist. Useful when the user temporarily steps out of the festival context (e.g. drove home, opens the fridge).
@@ -321,7 +321,7 @@ No conversion is attempted across currencies. The user sees the breakdown they a
 
 ## Logging an alcoholic drink (during a session)
 
-The log-drink screen ([user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink)) gains:
+The log-drink drawer ([user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink)) gains:
 
 - **Alcoholic beverage types**: `beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`. Each has a default ABV (alcohol by volume, %), which the user can override per entry.
   - `beer` — default 5.0% ABV.
@@ -440,7 +440,7 @@ A 75 kg, 180 cm, 30-year-old male starts a session and drinks two 250 ml beers a
 
 - The user can set a personal cap, configured in settings, expressed in **g/L** (with the mmol/L equivalent shown). Default: **off** (no cap).
 - The cap is a single persistent setting and applies whenever a session is active. It is not per-session.
-- During an active session the today view shows current estimated BAC versus the cap, with a clear visual indicator when the user is approaching or above the cap.
+- During an active session the [Party tab](./user-experience.md#s7--party) shows current estimated BAC versus the cap, with a clear visual indicator when the user is approaching or above the cap.
 - The "approaching cap" notification fires when a logged drink pushes the estimated BAC past **80%** of the cap.
 - The cap is a personal goal, not a legal threshold. The UI must not present it as a "safe to drive" line under any circumstances.
 
@@ -462,9 +462,9 @@ When a session is active, the standard hydration reminders ([notifications.md](.
 
 When the session ends (manually or automatically), neither of these notifications fires until a new session is active.
 
-## Today view during a session
+## Party tab during a session
 
-When a session is active, the today view ([user-experience.md → S1 Today](./user-experience.md#s1--today-home)) gains a section showing:
+When a session is active, the [Party tab](./user-experience.md#s7--party) displays an active-session view containing:
 
 - Current estimated BAC in **g/L** (large, clearly labelled "estimate"), with the **mmol/L** equivalent shown smaller alongside.
 - A **BAC line chart** plotting the estimated BAC over time (see "BAC line chart" below).
@@ -501,7 +501,9 @@ A line chart inside the active-session section visualising the estimated BAC ove
 **Re-rendering**
 - The chart re-renders whenever a drink is added, edited, or deleted in the session, when the meal modifier changes, or when "now" advances enough that the rounded end-time would change.
 
-When no session is active, this section is replaced by a small, understated **Start party session** entry point on the today view. Party Mode is a secondary feature, not a leading one — the entry point is present so users can find it without going to settings, but it never competes visually with the hydration progress, the log-drink action, or the today drinks list. Concretely: a low-emphasis tile, link-style row, or similar treatment, placed below the primary hydration content on the today view. Hydration is the headline; Party Mode is available when needed.
+When no session is active, the Party tab shows a no-active-session state instead — a full-width **Start party session** button plus, on subsequent visits, a list of past sessions. The first time the user opens the tab they also see a brief explainer of what Party Mode is, including the "this is an estimate" disclaimer. See [user-experience.md → S7 Party](./user-experience.md#s7--party) for the canonical content list.
+
+Party Mode is a secondary feature: it occupies its own tab so users can find it when they want it, while never appearing on the Today screen. Hydration is the headline of the app; Party Mode is available when needed.
 
 ## Hydration does not lower BAC
 

@@ -29,16 +29,18 @@ Logging must be reachable in at most two taps from the home screen for the most 
 
 ### F3 — Today view
 
-The home screen shows:
+The home screen is reached via the **Today** tab in the bottom navigation. It shows:
 
-- Current intake total versus the daily goal (with a visual progress indicator).
-- A list of drinks logged today, ordered by time, each showing beverage type, volume, and time.
-- A primary action to log a new drink.
-- Quick-log shortcuts: a small horizontal row of drink presets (see [F14](#f14--drink-presets-and-customisation)). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
+- A **progress card** at the top: current intake total versus the daily goal, with a horizontal progress bar carrying a pace marker that indicates where intake "should be" by now on a linear pace through the user's active hours. A status pill on the card reads `On pace`, `Behind`, or `Ahead`. Tapping the card opens the today drinks log (see below).
+- Two **stat cards** side-by-side under the progress card:
+  - **7-day daily average** — mean daily intake across the last 7 completed days.
+  - **Days on goal (last 7)** — count of days in the last 7 completed days where intake met or exceeded the daily goal, formatted as `n/7`.
+- A row of **quick-log shortcuts** — drink presets (see [F14](#f14--drink-presets-and-customisation)). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
+- A **full-width "Log drink" button** persistent at the bottom of the screen, opening the full log-drink drawer (F1). This is the path for any drink not in the quick-log row, including new presets.
 
-The user can edit or delete an entry from the today view (e.g. logged the wrong size).
+Today's drink list is **not** rendered inline on the Today screen. The user reaches it by tapping the progress card, which navigates to a dedicated Today Drinks Log screen where each entry can be edited or deleted. Edits and deletes recompute the progress card on return.
 
-**See also:** screen layout in [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home); the today list is a query over [DrinkEntry](./data-model.md#drinkentry) records whose `consumedAt` falls within the current day window.
+**See also:** screen layout in [user-experience.md → S1 Today (home)](./user-experience.md#s1--today-home); the drinks-log drill-down lives at [→ S6 Today Drinks Log](./user-experience.md#s6--today-drinks-log); the today list is a query over [DrinkEntry](./data-model.md#drinkentry) records whose `consumedAt` falls within the current day window.
 
 ### F4 — History
 
@@ -167,11 +169,11 @@ The user can create their own presets from settings (see F6). A custom preset ha
 
 #### Icons
 
-The app ships a set of simple monochrome SVG icons that can be tinted at render time:
+The app ships a set of **filled SVG icons with subtle inner detail** that can be tinted at render time:
 
-`glass`, `bottle`, `can`, `mug`, `small_cup`, `wine_glass`, `beer_glass`, `plastic_cup`, `cocktail`, `shot_glass`, plus a small set of generics. The `plastic_cup` icon is used by the small festival beer preset. `[OPEN]` — finalise the icon set with the designer (artwork, not the list).
+`glass`, `bottle`, `can`, `mug`, `small_cup`, `wine_glass`, `beer_glass`, `plastic_cup`, `cocktail`, `shot_glass`, plus a small set of generics. The `plastic_cup` icon is used by the small festival beer preset. `[OPEN]` — finalise the icon artwork with the designer (artwork, not the list).
 
-Icons are monochrome so they accept the `iconColor` tint cleanly. Default colours per beverage type pre-fill the picker (e.g. water → blue, coffee → brown, tea → green) but the user can pick anything.
+Icons use a two-shade structure (silhouette + inner-detail) both rendered from the single `iconColor` field — the second shade is derived at render time as an HSL lightness offset (e.g. ±15%) so a single colour value drives both fills. Default colours per beverage type pre-fill the picker (e.g. water → blue, coffee → brown, tea → green) but the user can pick anything.
 
 #### Where presets appear
 
@@ -190,13 +192,13 @@ Resolved values (name, volume, ABV, price, icon, colour) are **snapshotted** ont
 
 A session-based feature in phase 1 that lets the user track alcoholic drinks during a discrete drinking occasion and see an estimated blood alcohol concentration (BAC). BAC is shown in **g/L** as the primary unit, with **mmol/L** alongside as a secondary unit.
 
-- The user explicitly **starts** a party session from the today view. There is at most one active session at a time. See [party-session.md → Starting a session](./party-session.md#starting-a-session).
+- The user explicitly **starts** a party session from the **Party** tab in the bottom navigation. There is at most one active session at a time. See [party-session.md → Starting a session](./party-session.md#starting-a-session).
 - A session **ends** in one of two ways:
   - Manually, by tapping "End session".
   - Automatically, **12 hours after the most recently logged alcoholic drink** (or after `startedAt` if none were logged). The auto-end is computed lazily — no background timer is required. See [party-session.md → Ending a session](./party-session.md#ending-a-session) and [data-model.md → Auto-end semantics](./data-model.md#auto-end-semantics).
 - **Party Mode requires a birthday.** Onboarding collects gender + weight (and optionally height + birthday). If birthday is missing when the user first tries to start a session, the app prompts for it (with height as a skippable bonus). If the resulting age is under 18, the app shows a friendly message and lets the user re-enter the date — birthdays cannot be validated, and the gate is informational rather than enforcement. See [party-session.md → Required user inputs](./party-session.md#required-user-inputs).
 - BAC algorithm is **data-driven**: Watson TBW model when both height and birthday are present, Widmark fallback otherwise. See [party-session.md → BAC estimation algorithm](./party-session.md#bac-estimation-algorithm).
-- During an active session: the log-drink flow gains alcoholic beverage types (`beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`) with default ABV values the user can override per entry; the today view gains a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress. See [party-session.md → Today view during a session](./party-session.md#today-view-during-a-session).
+- During an active session: the log-drink flow gains alcoholic beverage types (`beer`, `wine`, `spirit`, `cocktail`, `other_alcohol`) with default ABV values the user can override per entry; the **Party tab** displays a clearly-labelled "estimate" section showing current BAC, projected decay, and optional cap progress. See [party-session.md → Party tab during a session](./party-session.md#party-tab-during-a-session).
 - A single, skippable **meal prompt** at session start (Small / Medium / Large / Skip), with the option to add or edit a meal during the session. Meals reduce the absorbed BAC of drinks consumed within their active window. There is **no** per-drink food prompt. See [party-session.md → Meals](./party-session.md#meals) and [data-model.md → Meal](./data-model.md#meal).
 - **Session-scoped pricing.** Each session can carry per-drink price overrides that replace the user's regular menu prices for the duration of the session — money or token-based. The user's underlying drink presets are never modified by Party Mode actions. At session start, the user can copy prices from the most recently ended session in one tap. During the session, a "Manage prices" view lets them edit overrides; a toggle switches session pricing on/off live without losing the values. Session totals show money (grouped by currency) and tokens separately. See [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session) and [data-model.md → PartySessionPrice](./data-model.md#partysessionprice).
 - Logging an alcoholic drink while no session is active **prompts** the user to start a session — never starts one implicitly. The user can decline; the drink is logged either way. See [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active).

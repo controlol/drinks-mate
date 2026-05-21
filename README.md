@@ -10,6 +10,7 @@ These documents are intended to guide developers during implementation. They des
 - [technical-architecture.md](./technical-architecture.md) — Platform strategy, offline-first model, and phase 1 / phase 2 boundary.
 - [features.md](./features.md) — Functional scope by phase: what the app must do.
 - [user-experience.md](./user-experience.md) — Screens, flows, and key interactions.
+- [designer-brief.md](./designer-brief.md) — Narrative brief for the visual designer: goals, screens, flows, and the design language (colour, type, illustration, motion).
 - [notifications.md](./notifications.md) — Reminder strategy and behaviour.
 - [party-session.md](./party-session.md) — Opt-in Party Session: alcohol tracking with BAC estimation (phase 1).
 - [data-model.md](./data-model.md) — What the app stores and how entities relate.
