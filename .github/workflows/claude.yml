@@ -32,6 +32,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      # @claude may implement code and run the definition-of-done checks, so give
+      # it the Flutter/Dart SDK on the runner.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
@@ -39,9 +46,9 @@ jobs:
           # with `claude setup-token` and store it as the CLAUDE_CODE_OAUTH_TOKEN
           # secret. (Swap to `anthropic_api_key` for pay-as-you-go API billing.)
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Give the agent the project's quality tools so it can self-verify.
-          # (Flutter is installed in the runner via setup steps in larger setups;
-          # for now the agent runs the dart `core` checks it can.)
+          # Auto mode: ephemeral CI runner, so let the agent run its tools
+          # (git, gh, flutter, dart) without per-command allowlisting.
+          claude_args: "--permission-mode bypassPermissions"
           prompt: |
             Follow CLAUDE.md and the Parity Rulebook in
             engineering/decisions/design-system.md.

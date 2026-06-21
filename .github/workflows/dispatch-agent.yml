@@ -151,11 +151,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The agent runs the definition-of-done checks (flutter/dart), so it needs
+      # the SDK on the runner.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
           # Same subscription auth as claude.yml (see docs/agentic-workflow.md).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Auto mode: this is an ephemeral CI runner, so let the agent run its
+          # tools (git, gh, flutter, dart) without per-command allowlisting.
+          claude_args: "--permission-mode bypassPermissions"
           prompt: |
             You are implementing GitHub issue #${{ needs.select.outputs.issue }}
             in repository ${{ github.repository }}.
