@@ -37,5 +37,10 @@ jobs:
             3. Phase-1 constraint breaches: `core` must stay pure Dart; no Phase-2
                entities; no banned dependencies.
             4. Test gaps — new computation must have tests traced to design docs.
+
+            For priorities 2 and 3, delegate the deep check to the `spec-auditor`
+            subagent (.claude/agents/spec-auditor.md) and fold its findings into
+            your review.
+
             Post inline comments on the specific lines. Skip pure formatting nits
             (CI owns those). End with a one-line verdict.

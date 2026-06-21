@@ -45,6 +45,14 @@ jobs:
           # for now the agent runs the dart `core` checks it can.)
           prompt: |
             Follow CLAUDE.md and the Parity Rulebook in
-            engineering/decisions/design-system.md. Before opening a PR, run the
-            definition-of-done checks and make them pass. Seed any new core
-            behaviour with tests traced to the design docs.
+            engineering/decisions/design-system.md.
+
+            Delegate to the project subagents (.claude/agents/):
+            - Use the `test-author` subagent to write/maintain any `core` tests,
+              with expected values traced to the design docs.
+            - Use the `spec-auditor` subagent to check the change against the
+              Parity Rulebook and Phase-1 constraints before opening the PR.
+
+            Before opening a PR, run the definition-of-done checks and make them
+            pass. Do not open a PR with failing checks or unresolved spec-auditor
+            findings.

@@ -56,16 +56,12 @@ Run `/install-github-app` from Claude Code, or install the app from the GitHub
 Marketplace and grant it this repo. This lets `anthropics/claude-code-action`
 post comments and open PRs.
 
-### 3. Enable the shared Claude Code config
-Copy the example config into place (kept out of version control as the live
-file so it's never modified without intent):
-
-```bash
-cp .claude/settings.example.json .claude/settings.json
-```
-
-This pre-approves safe commands (fewer permission prompts) and turns on the
-auto-format hook (`.claude/hooks/format-dart.sh`).
+### 3. Claude Code config (already committed — no action needed)
+`.claude/settings.json` is committed and shared: it pre-approves safe commands
+(fewer permission prompts) and turns on the `PostToolUse` auto-format hook
+(`.claude/hooks/format-dart.sh`). Both local sessions and cloud
+`claude-code-action` runs pick it up automatically. Put any personal,
+machine-specific overrides in `.claude/settings.local.json` (gitignored).
 
 ### 4. Create the `agent-ready` label
 ```bash
