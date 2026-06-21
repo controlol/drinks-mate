@@ -21,17 +21,35 @@ GitHub Issue (agent-ready label or @claude mention)
 Branch protection  ──►  human approval  ──►  merge
 ```
 
-The keystone is the **test suite** (`packages/core/test/`, `test/`): every other
+The keystone is the **test suite** (`flutter/packages/core/test/`, `flutter/test/`): every other
 layer trusts it. No agent change merges without the CI gate passing.
 
 ## One-time setup
 
-### 1. Add the API key secret
-The Claude workflows need `ANTHROPIC_API_KEY` (or a Bedrock/Vertex equivalent):
+### 1. Add the auth secret(s)
+
+**`claude.yml` and `claude-review.yml`** authenticate with a **Claude Pro/Max
+subscription**. Generate a long-lived OAuth token locally (Pro/Max only) and
+store it as a repo secret:
 
 ```bash
-gh secret set ANTHROPIC_API_KEY        # paste the key when prompted
+claude setup-token                          # opens an OAuth flow, prints a token
+gh secret set CLAUDE_CODE_OAUTH_TOKEN       # paste the token when prompted
 ```
+
+**`security-review.yml`** uses a separate action (`anthropics/claude-code-security-review`)
+whose subscription-token support is unconfirmed; it expects a pay-as-you-go API key:
+
+```bash
+gh secret set ANTHROPIC_API_KEY             # paste the key when prompted
+```
+
+> Trade-offs: subscription runs count against your Pro/Max usage limits (shared
+> with interactive Claude Code), so heavy per-PR automation competes with your
+> own usage — switch the two action workflows back to
+> `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}` if you'd rather bill
+> per-token. If you don't want the API key at all, drop `security-review.yml`.
+> Bedrock/Vertex are also supported by `claude-code-action` (see its docs).
 
 ### 2. Install the Claude GitHub App
 Run `/install-github-app` from Claude Code, or install the app from the GitHub
@@ -77,8 +95,8 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
   `agent-ready`), or comment `@claude <instruction>` on any issue/PR.
 - **Definition of done** (what agents and CI both enforce) — from repo root:
   ```bash
-  cd packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test
-  cd ../..          && dart format --output=none --set-exit-if-changed . && flutter analyze && flutter test
+  (cd flutter/packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test)
+  (cd flutter              && dart format --output=none --set-exit-if-changed . && flutter analyze && flutter test)
   ```
 - **Local review:** ask Claude to "use the reviewer subagent on my diff" or run
   `/code-review` before pushing.
@@ -94,7 +112,7 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
 - **Poll-driven auto-dispatch** (a daemon that claims issues without a human
   mention/label) — only graduate to this once the test gate is trustworthy.
 - **`core` NFC normalisation** — username validation needs NFC before the
-  structural check; tracked as a TODO in `packages/core/lib/src/username.dart`.
+  structural check; tracked as a TODO in `flutter/packages/core/lib/src/username.dart`.
 
 ## Why this shape
 

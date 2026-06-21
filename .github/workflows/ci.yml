@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/core
+        working-directory: flutter/packages/core
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
@@ -40,6 +40,9 @@ jobs:
   app:
     name: flutter app
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -58,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: flutter-coverage
-          path: coverage/lcov.info
+          path: flutter/coverage/lcov.info
           if-no-files-found: ignore
 
   # Integration tests (integration_test + Patrol) run on a nightly cron and on

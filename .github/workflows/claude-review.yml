@@ -25,7 +25,10 @@ jobs:
       - name: Claude review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Auth via a Claude Pro/Max subscription (CLAUDE_CODE_OAUTH_TOKEN).
+          # Note: inline-comment classification needs an API key, so on a
+          # subscription token unconfirmed comments are posted directly.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             Review this pull request's diff. Priorities, in order:
             1. Correctness bugs and missing edge cases.

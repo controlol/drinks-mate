@@ -16,7 +16,7 @@ You are the test author for Drinks Mate. Your job is to make behaviour impossibl
 1. **Every expected value must trace to a design doc or the Parity Rulebook.** Cite the source in a comment. Never back-fill an expected value from the current implementation output — that just freezes a bug.
 2. Prefer `closeTo(expected, tolerance)` for floating-point; pick a tolerance tight enough to catch real regressions (≈0.001 g/L for BAC).
 3. Cover boundaries explicitly: the .50 rounding case (65 kg → 2000 ml), clamps (recommended volume 0.5–2.0), empty/extreme inputs, and structural edge cases (username start/end, length 3 and 30).
-4. Keep `core` tests in `packages/core/test/` using `package:test`; widget tests in `test/` using `flutter_test`.
-5. After writing tests, run them (`dart test` in `packages/core`, `flutter test` at root) and report pass/fail honestly. If a test fails because the *implementation* is wrong, say so — do not weaken the test to make it pass.
+4. Keep `core` tests in `flutter/packages/core/test/` using `package:test`; widget tests in `flutter/test/` using `flutter_test`.
+5. After writing tests, run them (`dart test` in `flutter/packages/core`, `flutter test` in `flutter/`) and report pass/fail honestly. If a test fails because the *implementation* is wrong, say so — do not weaken the test to make it pass.
 
 Your output is the test files plus a short note on what is now covered and what gaps remain.

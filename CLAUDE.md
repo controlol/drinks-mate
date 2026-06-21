@@ -3,6 +3,13 @@
 Drinks Mate is a **single Flutter codebase** (iOS + Android), Phase 1 = local-only MVP.
 The specs are the source of truth; this file tells you how to work in the repo.
 
+## Repository layout
+
+- `flutter/` — all the application code: the Flutter app (`flutter/lib`, `flutter/test`) and the pure-Dart `flutter/packages/core` package. All `flutter`/`dart` commands run from here (or from `flutter/packages/core`).
+- `design/` — product/UX/data specs.
+- `engineering/` — technical decisions and constraints.
+- `docs/agentic-workflow.md` — how the agent/CI pipeline fits together.
+
 ## Read before you build
 
 - `design/` — *what* the app does and *why* (product, UX, data model, notifications, party session).
@@ -12,7 +19,7 @@ The specs are the source of truth; this file tells you how to work in the repo.
 
 ## Non-negotiables
 
-1. **The `core` package stays pure Dart.** No Flutter, Drift, or any other imports in `packages/core/`. Every C4 algorithm (BAC, hydration goal, pace/recommended-volume, username, day-boundary, icon HSL) lives there as pure functions.
+1. **The `core` package stays pure Dart.** No Flutter, Drift, or any other imports in `flutter/packages/core/`. Every C4 algorithm (BAC, hydration goal, pace/recommended-volume, username, day-boundary, icon HSL) lives there as pure functions.
 2. **No ad-hoc math or rounding.** Numeric/rounding/unit/boundary behaviour must match the Parity Rulebook exactly. If a rule is ambiguous, stop and ask — do not guess.
 3. **Compute in metric/canonical units** (ml, kg, cm, g/L). Imperial and formatting happen only at the display boundary.
 4. **No Phase-2 scaffolding.** Accounts, sync, social, insights are out of scope. Do not add `Account`/`Friendship`/`ShareSetting` to any Phase-1 migration.
@@ -23,11 +30,11 @@ The specs are the source of truth; this file tells you how to work in the repo.
 From the repo root:
 
 ```bash
-# core package (pure Dart)
-cd packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test
+# core package (pure Dart) — from repo root
+(cd flutter/packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test)
 
-# flutter app
-cd ../.. && dart format --output=none --set-exit-if-changed . && flutter analyze && flutter test
+# flutter app — from repo root
+(cd flutter && dart format --output=none --set-exit-if-changed . && flutter analyze && flutter test)
 ```
 
 All three must pass (format clean, analyze clean, tests green). CI (`.github/workflows/ci.yml`) enforces the same gate; a red gate blocks merge.

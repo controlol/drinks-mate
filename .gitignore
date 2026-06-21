@@ -4,7 +4,10 @@
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
-pubspec.lock        # app is an application; lock is regenerated. (Pin in CI via SDK version.)
+# pubspec.lock is ignored for now (regenerated from pinned SDK + constraints).
+# When the app stabilises, consider committing flutter/pubspec.lock for
+# reproducible builds (Dart convention: commit it for apps, ignore for packages).
+pubspec.lock
 coverage/
 *.g.dart.lock
 
