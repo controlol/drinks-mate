@@ -121,8 +121,11 @@ gh label create agent-ok      --color 0e8a16 --description "Greenlit: run the AI
 `dispatch-agent.yml` adds/removes `agent-working` itself — you only ever apply
 `agent-ready` (the issue template does this for you). `agent-ok` is the manual
 greenlight for the PR-triggered workflows (see [Trust & triggers](#trust--triggers)).
-Scheduled workflows run from the **default branch only**, so the dispatcher
-starts working once this change is merged to `main`.
+The dispatcher is **event-driven** — labelling an issue `agent-ready` (or a PR
+merging, which frees a slot) kicks it off within seconds, with a low-frequency
+cron (`7,37 * * * *`) as a backstop since GitHub throttles short schedules. Like
+all workflows it only runs from the **default branch**, so this takes effect
+once merged to `main`.
 
 ### 5. Turn on branch protection for `main`
 Require the CI checks and at least one approving review before merge:

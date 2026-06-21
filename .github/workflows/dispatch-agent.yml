@@ -2,10 +2,14 @@ name: Agent dispatcher
 
 # Ordered, dependency-aware queue for agent work.
 #
-# Why this exists: adding the `agent-ready` label no longer dispatches Claude
-# immediately. Instead this workflow polls on a schedule, finds the next
-# *unblocked* `agent-ready` issue, claims it, and runs Claude on it — at most
-# MAX_IN_FLIGHT agent PRs in flight at a time.
+# Why this exists: it runs the next *unblocked* `agent-ready` issue, claims it,
+# and runs Claude on it — at most MAX_IN_FLIGHT agent PRs in flight at a time.
+# It is triggered event-driven (so pickup is near-instant), not just on a poll:
+#   - `issues: labeled`        — a human adds `agent-ready` (queues work)
+#   - `pull_request: closed`   — a merged PR frees a queue slot
+#   - `schedule` (low-freq)    — a backstop, since GitHub throttles short crons
+#   - `workflow_dispatch`      — manual / specific-issue dispatch
+# (See `select.if` for the per-trigger guards.)
 #
 # "Unblocked" is decided from two sources (an issue is blocked if EITHER says so):
 #   1. GitHub's native issue dependencies — the "Blocked by" relationships,
@@ -21,8 +25,15 @@ name: Agent dispatcher
 # Interactive `@claude` mentions stay in claude.yml and are unaffected.
 
 on:
+  # Event-driven dispatch: pick up work the moment it appears or a slot frees,
+  # instead of relying on GitHub's throttled sub-hourly cron.
+  issues:
+    types: [labeled]            # a human adding `agent-ready` queues work
+  pull_request:
+    types: [closed]             # a merged PR frees a queue slot (guarded in select.if)
   schedule:
-    - cron: "*/15 * * * *"   # every 15 min (tune as needed; min granularity ~5 min)
+    - cron: "7,37 * * * *"      # low-frequency backstop on off-peak minutes;
+                                # GitHub heavily throttles top-of-hour schedules
   workflow_dispatch:
     inputs:
       issue:
@@ -49,6 +60,14 @@ env:
 jobs:
   select:
     name: Pick next ready issue
+    # Only act on relevant triggers: the cron/manual backstop, a human adding the
+    # agent-ready label, or one of our own (same-repo) PRs merging (frees a slot).
+    # Labels added by the dispatcher's own token don't re-trigger workflows.
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && github.event.label.name == 'agent-ready') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     outputs:
       issue: ${{ steps.pick.outputs.issue }}
@@ -150,6 +169,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: main          # always branch from the default branch, not a PR merge ref
 
       # The agent runs the definition-of-done checks (flutter/dart), so it needs
       # the SDK on the runner.
