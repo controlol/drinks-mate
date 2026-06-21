@@ -5,11 +5,20 @@ name: Security Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   security:
-    if: github.event.pull_request.draft == false
+    # Trust gate (see claude-review.yml): only auto-run on PRs from the owner or
+    # the pipeline's own claude/* branches; any other PR must be greenlit by a
+    # maintainer adding the `agent-ok` label.
+    if: >
+      github.event.pull_request.draft == false && (
+        github.event.pull_request.author_association == 'OWNER' ||
+        (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'claude/')) ||
+        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read

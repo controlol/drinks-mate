@@ -51,6 +51,28 @@ So the order is: **set dependencies → label `agent-ready` → the dispatcher
 serializes the rest.** Bump `MAX_IN_FLIGHT` in `dispatch-agent.yml` once you
 want independent issues to run in parallel.
 
+## Trust & triggers
+
+This is a **public** repo, so the agent workflows (which run with secrets and a
+write-capable token) are gated against prompt-injection from untrusted input.
+The rules:
+
+| Workflow | Fires for | Gate |
+|----------|-----------|------|
+| `claude.yml` (`@claude` comments) | comment author is `OWNER` / `MEMBER` / `COLLABORATOR` | `author_association` check |
+| `claude-review.yml`, `security-review.yml` (PRs) | PR by the **owner**, or from a pipeline **`claude/*`** branch in this repo, or a PR a maintainer has labelled **`agent-ok`** | `author_association` + head-branch + label |
+| `dispatch-agent.yml` (queue) | issues labelled `agent-ready` | applying labels already requires triage/write access |
+
+Net effect: a stranger's comment or fork PR **cannot** start an agent run. To run
+the AI review/security on someone else's PR, a maintainer adds the `agent-ok`
+label (re-runs on each push while the label is present). Interactive `@claude`
+only responds to trusted authors.
+
+> **Defense in depth (recommended):** also enable GitHub's native
+> *Settings → Actions → General → "Require approval for all outside
+> collaborators"* so even non-AI workflows (e.g. CI, which executes PR code)
+> don't run on untrusted PRs without a maintainer's click.
+
 ## One-time setup
 
 ### 1. Add the auth secret(s)
@@ -90,15 +112,17 @@ post comments and open PRs.
 `claude-code-action` runs pick it up automatically. Put any personal,
 machine-specific overrides in `.claude/settings.local.json` (gitignored).
 
-### 4. Create the queue labels
+### 4. Create the queue + trust labels
 ```bash
 gh label create agent-ready   --color 5319e7 --description "Queued for the agent dispatcher to implement"
 gh label create agent-working --color fbca04 --description "Claimed by the dispatcher; a PR is in flight"
+gh label create agent-ok      --color 0e8a16 --description "Greenlit: run the AI review/security workflows on this PR"
 ```
 `dispatch-agent.yml` adds/removes `agent-working` itself — you only ever apply
-`agent-ready` (the issue template does this for you). Scheduled workflows run
-from the **default branch only**, so the dispatcher starts working once this
-change is merged to `main`.
+`agent-ready` (the issue template does this for you). `agent-ok` is the manual
+greenlight for the PR-triggered workflows (see [Trust & triggers](#trust--triggers)).
+Scheduled workflows run from the **default branch only**, so the dispatcher
+starts working once this change is merged to `main`.
 
 ### 5. Turn on branch protection for `main`
 Require the CI checks and at least one approving review before merge:

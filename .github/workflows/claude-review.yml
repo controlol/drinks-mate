@@ -6,12 +6,21 @@ name: Claude PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   review:
     # Skip drafts to save tokens; they get reviewed when marked ready.
-    if: github.event.pull_request.draft == false
+    # Trust gate: only auto-run on PRs from the owner or the pipeline's own
+    # claude/* branches. Any other PR (forks, other contributors) must be
+    # explicitly greenlit by a maintainer adding the `agent-ok` label.
+    if: >
+      github.event.pull_request.draft == false && (
+        github.event.pull_request.author_association == 'OWNER' ||
+        (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'claude/')) ||
+        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
