@@ -1,8 +1,6 @@
 # Phase 1 — Technical Constraints (shared anchor)
 
-A distilled, **platform-neutral** list of what the Phase 1 build must satisfy, pulled from the `design/` folder. This is the contract the [Flutter stack decision](./decisions/flutter-stack.md) is written against, and the checklist the validation pass scores against. Where a line traces to a source doc, it is linked; the source doc wins on any disagreement.
-
-> **Architecture note (updated).** Drinks Mate is now a **single Flutter codebase** targeting iOS and Android, superseding the original two-native-app direction. Several constraints below were framed around *cross-platform parity between two independent native implementations*; with one codebase, that parity largely holds **by construction**. The affected lines (C0, C4, C5) are annotated. The earlier per-platform research ([`ios-stack.md`](./decisions/ios-stack.md), [`android-stack.md`](./decisions/android-stack.md)) is retained as platform research that informs the Flutter design.
+A distilled, **platform-neutral** list of what the Phase 1 build must satisfy, pulled from the `design/` folder. This is the contract the [Flutter stack decision](./decisions/flutter-stack.md) is written against. Where a line traces to a source doc, it is linked; the source doc wins on any disagreement.
 
 ## C0 — Load-bearing decisions already fixed by design
 
@@ -50,7 +48,7 @@ All notifications are **scheduled locally on-device**; Phase 1 has no push backe
 
 ## C4 — Shared computation (single implementation, exact to spec)
 
-These are pure algorithms specified to the formula in `design/`. They live in one pure-Dart `core` package ([flutter-stack.md → D7](./decisions/flutter-stack.md#d7--shared-computation-dependency-free-pure-dart-core-package)), so outputs are identical across platforms **by construction**. The job is now correctness-to-spec rather than cross-platform reconciliation — this was previously *the highest parity-risk surface* (two native implementations that could drift, plus Swift-vs-Kotlin float determinism); the single-codebase switch removes that entire risk class.
+These are pure algorithms specified to the formula in `design/`. They live in one pure-Dart `core` package ([flutter-stack.md → D7](./decisions/flutter-stack.md#d7--shared-computation-dependency-free-pure-dart-core-package)), so outputs are identical across platforms **by construction**. What matters is correctness to spec; a single implementation means the platforms cannot diverge.
 
 - **Hydration goal suggestion:** `30 ml × weight_kg`, rounded to nearest 100 ml. — [features.md → F2](../design/features.md#f2--daily-hydration-goal)
 - **Pace / expected-intake** linear model and **recommended volume** (0.5-glass increments, clamp 0.5–2.0). — [notifications.md → Recommended volume](../design/notifications.md#recommended-volume-per-reminder)
@@ -58,11 +56,11 @@ These are pure algorithms specified to the formula in `design/`. They live in on
 - **Username validation:** Unicode `L*`/digits/`_-.` whitelist, structural start/end rules, NFC normalisation, 3–30 chars. — [data-model.md → Username character rules](../design/data-model.md#username-character-rules)
 - **Day-boundary bucketing** and 7-day rolling aggregates (daily average, days-on-goal).
 
-> Spec note: each formula is implemented once with the exact rounding/clamping rules from the [Parity Rulebook](./decisions/design-system.md#appendix--parity-rulebook). The worked examples in the design docs (e.g. the 0.362 g/L BAC sanity check, the 2100 ml goal) become **regression unit tests** that pin the spec — no longer a cross-platform drift gate, since there is only one implementation.
+> Spec note: each formula is implemented once with the exact rounding/clamping rules from the [Parity Rulebook](./decisions/design-system.md#appendix--parity-rulebook). The worked examples in the design docs (e.g. the 0.362 g/L BAC sanity check, the 2100 ml goal) are **regression unit tests** that pin the spec.
 
-## C5 — Design system (visual + behavioural parity — now by construction)
+## C5 — Design system (visual + behavioural parity by construction)
 
-Flutter renders its own UI from one widget tree, so the visual layer is identical across platforms by construction; the requirements below are still the spec the single implementation must meet.
+Flutter renders its own UI from one widget tree, so the visual layer is identical across platforms by construction; the requirements below are the spec the single implementation meets.
 
 - **Typography:** DM Sans (single open-source family); display-weight tabular figures for headline numerics. Flutter bundles the font and honours OS text scaling. — [designer-brief.md → Typography](../design/designer-brief.md#typography)
 - **Colour:** three named accents (azure, honey, emerald/mint) + semantic palette; **light + dark mode both ship at v1**; emerald quarantined to Party Mode. Every colour-encoded state needs a non-colour signal. — [designer-brief.md → Colour](../design/designer-brief.md#colour)
