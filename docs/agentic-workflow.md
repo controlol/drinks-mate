@@ -97,6 +97,45 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
 - **Local review:** ask Claude to "use the reviewer subagent on my diff" or run
   `/code-review` before pushing.
 
+## MCP servers
+
+Project-scoped MCP servers are declared in `.mcp.json` (committed, so every
+contributor and cloud run gets the same set). Currently enabled:
+
+- **`dart`** — the official Dart & Flutter MCP server (`dart mcp-server`). Gives
+  agents structured tools to run tests, analyze and fix errors, format, manage
+  `pubspec.yaml` deps, search pub.dev, and introspect a running app. This is what
+  lets an agent drive the definition-of-done loop through tools rather than raw
+  shell. Requires the Flutter SDK's `dart` on PATH (see step 0 below).
+- **`context7`** — current, version-accurate docs for Flutter/Dart and the
+  stack (Drift, Riverpod, fl_chart, …) via `npx @upstash/context7-mcp`. Counters
+  stale-training-data answers. (Optional: set a Context7 API key for higher rate
+  limits.)
+
+> **Step 0 — `dart` on PATH.** The Dart MCP server is launched as bare `dart`,
+> so the Flutter SDK's `bin` must be on PATH. If you installed via the VS Code
+> extension it may not be — add it once:
+> ```powershell
+> [Environment]::SetEnvironmentVariable("Path",
+>   [Environment]::GetEnvironmentVariable("Path","User") + ";C:\Users\luc.appelman\develop\flutter\flutter\bin", "User")
+> ```
+> If Claude Code doesn't see the project root, add `"--force-roots-fallback"` to
+> the `dart` server's `args`.
+
+**Deliberately not enabled yet — mobile-automation MCPs.** These drive a
+simulator/emulator/device for integration & E2E tests, so they only earn their
+keep once there's real UI and `integration_test`/Patrol flows (and they need
+that toolchain installed, or they just fail to start). When that lands, add one:
+
+```jsonc
+// merge into .mcp.json → mcpServers
+"mobile": { "command": "npx", "args": ["-y", "@mobilenext/mobile-mcp@latest"] }
+// or an Appium-based server: appium/appium-mcp, @mobilepixel/mcp
+```
+
+`mcp_flutter` (runtime introspection + simulator/device screenshots) is the
+other one to consider for visual, agent-driven UI work at that stage.
+
 ## What's intentionally NOT here yet (next steps)
 
 - **Integration tests** (`integration_test` + Patrol) and a nightly cron job —
