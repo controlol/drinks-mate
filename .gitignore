@@ -1,0 +1,22 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock        # app is an application; lock is regenerated. (Pin in CI via SDK version.)
+coverage/
+*.g.dart.lock
+
+# Generated code is committed conventionally for Drift, but build artefacts are not.
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local Claude settings (per-user, not shared)
+.claude/settings.local.json
+.claude/worktrees/

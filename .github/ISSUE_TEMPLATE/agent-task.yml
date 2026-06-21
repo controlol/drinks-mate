@@ -1,0 +1,55 @@
+name: Agent task
+description: A well-scoped task an AI agent can pick up and turn into a PR.
+title: "[task]: "
+labels: ["agent-ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Adding the **`agent-ready`** label dispatches Claude to implement this
+        (see `.github/workflows/claude.yml`). The clearer the scope and the
+        acceptance criteria, the better the result. Link the relevant design/
+        and engineering/ docs.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should exist when this is done? One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Spec references
+      description: Which design/ and engineering/ docs (and Parity Rulebook rows) govern this?
+      placeholder: |
+        - design/party-session.md §...
+        - engineering/decisions/design-system.md → Parity Rulebook: ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist the PR must satisfy. Tests are mandatory for new computation.
+      value: |
+        - [ ] Behaviour matches the cited Parity Rulebook rules exactly
+        - [ ] Unit tests added, expected values traced to design docs
+        - [ ] `dart format` clean, `analyze` clean, all tests green (CI passes)
+        - [ ] No Phase-2 scaffolding; `core` stays pure Dart
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - core (computation)
+        - persistence (Drift)
+        - notifications
+        - UI / design-system
+        - charts
+        - tooling / CI
+        - other
+    validations:
+      required: true

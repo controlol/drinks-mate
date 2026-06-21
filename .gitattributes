@@ -1,0 +1,13 @@
+# Normalise line endings. dart format emits LF and shell scripts need LF,
+# so keep source/scripts LF everywhere regardless of host OS.
+* text=auto eol=lf
+
+*.dart   text eol=lf
+*.sh     text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+
+# Generated Drift code, when committed.
+*.g.dart linguist-generated=true

@@ -1,0 +1,47 @@
+name: Claude
+
+# Interactive agent. Two ways to dispatch work from GitHub Issues:
+#   1. Mention @claude in an issue/PR comment.
+#   2. Add the `agent-ready` label to an issue.
+# Claude reads the issue, branches, implements against CLAUDE.md + the Parity
+# Rulebook, runs the checks, and opens a PR. CI (ci.yml) then gates it, and
+# claude-review.yml reviews the diff.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, labeled]
+
+# Only react to human @claude mentions, or the agent-ready label.
+jobs:
+  claude:
+    if: >
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'agent-ready')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Give the agent the project's quality tools so it can self-verify.
+          # (Flutter is installed in the runner via setup steps in larger setups;
+          # for now the agent runs the dart `core` checks it can.)
+          prompt: |
+            Follow CLAUDE.md and the Parity Rulebook in
+            engineering/decisions/design-system.md. Before opening a PR, run the
+            definition-of-done checks and make them pass. Seed any new core
+            behaviour with tests traced to the design docs.

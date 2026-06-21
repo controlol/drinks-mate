@@ -1,0 +1,35 @@
+name: drinks_mate
+description: Drinks Mate — single Flutter codebase for iOS + Android (Phase 1, local-only MVP).
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The pure-Dart computation core (BAC, hydration, pace, username). See D7.
+  core:
+    path: packages/core
+
+  # Decided stack — see engineering/decisions/flutter-stack.md.
+  flutter_riverpod: ^2.5.1      # D2 — state / DI
+  drift: ^2.18.0               # D3 — typed SQLite persistence
+  sqlite3_flutter_libs: ^0.5.0
+  flutter_local_notifications: ^17.0.0  # D4 — local notifications
+  timezone: ^0.9.3            # D4 — correct local zonedSchedule
+  fl_chart: ^0.68.0           # D5 — History bars + BAC line chart
+  flutter_svg: ^2.0.10        # D6 — two-shade tinted drink icons
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  drift_dev: ^2.18.0
+  build_runner: ^2.4.11
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

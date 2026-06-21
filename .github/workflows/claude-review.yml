@@ -1,0 +1,38 @@
+name: Claude PR Review
+
+# Automated agentic review on every PR. Reads the full diff against CLAUDE.md
+# and the Parity Rulebook and posts inline line comments. This is the AI layer
+# on top of the deterministic CI gate (ci.yml) and below human approval.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    # Skip drafts to save tokens; they get reviewed when marked ready.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request's diff. Priorities, in order:
+            1. Correctness bugs and missing edge cases.
+            2. Parity Rulebook violations (engineering/decisions/design-system.md
+               → Appendix): rounding, units, boundaries, BAC chain, validation.
+            3. Phase-1 constraint breaches: `core` must stay pure Dart; no Phase-2
+               entities; no banned dependencies.
+            4. Test gaps — new computation must have tests traced to design docs.
+            Post inline comments on the specific lines. Skip pure formatting nits
+            (CI owns those). End with a one-line verdict.
