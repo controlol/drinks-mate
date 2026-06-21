@@ -4,20 +4,17 @@ This document captures the high-level technical direction for Drinks Mate. It do
 
 ## Platforms
 
-Drinks Mate is built as **two dedicated native applications**:
+Drinks Mate is built as a **single Flutter application** (Dart) targeting both **iOS** and **Android** from one codebase. Flutter renders its own UI, so the bespoke design system, the computation core, and every screen are written once and run on both platforms. See [engineering/decisions/flutter-stack.md](../engineering/decisions/flutter-stack.md) for the concrete stack (persistence, notifications, charts, state) and [engineering/phase-1-constraints.md → C0](../engineering/phase-1-constraints.md#c0--load-bearing-decisions-already-fixed-by-design).
 
-- **iOS** — native (Swift / SwiftUI recommended, but final stack is engineering's call).
-- **Android** — native (Kotlin / Jetpack Compose recommended, but final stack is engineering's call).
+> **History.** This was originally specified as two dedicated native apps (Swift/SwiftUI + Kotlin/Compose). That direction was superseded by the Flutter decision; the per-platform research is retained in `engineering/decisions/ios-stack.md` and `android-stack.md` as input that still informs the Flutter notification and OS-integration design.
 
-There is no shared cross-platform codebase. The two apps share **specifications** (this folder) and **data model semantics**, not source code.
+### Why Flutter rather than two native apps
 
-### Why native rather than cross-platform
+- **Parity by construction.** The product's defining engineering risk was keeping a bespoke design system *and* a numerically-exact computation core (hydration pace, BAC) identical across two independently-written native codebases. One Flutter codebase makes behavioural and visual parity a property of the build rather than a standing governance cost — eliminating the largest risk the engineering validation flagged (cross-platform computation drift, including Swift-vs-Kotlin floating-point determinism).
+- **Lower long-term maintenance.** Every feature, across all phases, is built once instead of twice.
+- **The OS-integration trade is narrow.** The native choice was made largely for notification/background-scheduling integration. Those OS limits are framework-independent (iOS cannot recompute a local notification at delivery in Swift *or* Dart), and Flutter reaches the same notification, channel, permission, and lock-screen APIs. The one genuine gap is at the post-Phase-3 *Later* horizon: Flutter does not target watchOS and has limited Wear OS support, so any future watch/wearable app (L2) would be a native satellite — out of scope for Phases 1–3.
 
-- Best-in-class platform integration for notifications, background scheduling, and system-settings deep links — all of which the reminder feature relies on.
-- Predictable behaviour against future OS-level changes (background execution, notification permissions, health platform APIs).
-- Lower long-term maintenance risk for an app whose value depends on reliable, OS-respectful background reminders.
-
-The trade-off is that every feature must be implemented twice. Both apps must reach behavioural parity per phase before that phase ships.
+The trade-off accepted: where the app defers to the OS (notification *delivery* timing/reliability, system text-scale factors), behaviour follows each platform; everything else is identical by construction.
 
 ## Offline-first
 
@@ -25,7 +22,7 @@ The app is **offline-first**. The core tracking loop — logging drinks, viewing
 
 Concretely:
 
-- All user data is stored in a **local database** on the device. The choice of database is engineering's (e.g. SQLite via GRDB or Room; or a higher-level option). The chosen database must support transactional writes, simple queries by date range, and schema migrations.
+- All user data is stored in a **local database** on the device. The chosen store (Drift, a typed SQLite layer — see [flutter-stack.md → D3](../engineering/decisions/flutter-stack.md#d3--local-persistence-drift-typed-sqlite)) must support transactional writes, simple queries by date range, and schema migrations.
 - The app must not block the UI on any network call.
 - A network outage must not affect any phase 1 functionality.
 
@@ -75,7 +72,6 @@ Things explicitly **not** required in phase 1:
 
 ## What this document does not decide
 
-- Specific iOS / Android frameworks (SwiftUI vs UIKit, Compose vs XML).
-- Specific local database (SQLite, Realm, SwiftData, Room, etc.).
+- Detailed package versions and the in-app architecture — see [engineering/decisions/flutter-stack.md](../engineering/decisions/flutter-stack.md).
 - Phase 2 backend stack, hosting, or auth provider — designed in phase 2.
 - CI / CD, distribution, signing — engineering team decisions.

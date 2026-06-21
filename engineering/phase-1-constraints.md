@@ -1,12 +1,14 @@
 # Phase 1 — Technical Constraints (shared anchor)
 
-A distilled, **platform-neutral** list of what the Phase 1 build must satisfy, pulled from the `design/` folder. This is the contract both the iOS and Android stack research is written against, and the checklist the validation pass scores against. Where a line traces to a source doc, it is linked; the source doc wins on any disagreement.
+A distilled, **platform-neutral** list of what the Phase 1 build must satisfy, pulled from the `design/` folder. This is the contract the [Flutter stack decision](./decisions/flutter-stack.md) is written against, and the checklist the validation pass scores against. Where a line traces to a source doc, it is linked; the source doc wins on any disagreement.
+
+> **Architecture note (updated).** Drinks Mate is now a **single Flutter codebase** targeting iOS and Android, superseding the original two-native-app direction. Several constraints below were framed around *cross-platform parity between two independent native implementations*; with one codebase, that parity largely holds **by construction**. The affected lines (C0, C4, C5) are annotated. The earlier per-platform research ([`ios-stack.md`](./decisions/ios-stack.md), [`android-stack.md`](./decisions/android-stack.md)) is retained as platform research that informs the Flutter design.
 
 ## C0 — Load-bearing decisions already fixed by design
 
 These are **not** open for research to revisit; they frame it.
 
-- **Two independent native apps**, no shared application codebase. iOS native, Android native. — [technical-architecture.md → Platforms](../design/technical-architecture.md#platforms)
+- **Single Flutter codebase** targeting iOS and Android (Dart). Behavioural and visual parity hold by construction; the only intentional divergences are where the app defers to the OS (notification delivery, system text-scale factors, optional platform-adaptive nav). — [technical-architecture.md → Platforms](../design/technical-architecture.md#platforms), [flutter-stack.md](./decisions/flutter-stack.md)
 - **Offline-first.** The core loop (log, today view, history, reminders) works fully with no network, on a device that has never been online. No UI may block on a network call. — [technical-architecture.md → Offline-first](../design/technical-architecture.md#offline-first)
 - **Local database is the on-device source of truth.** It must support transactional writes, queries by date range, and schema migrations. — [technical-architecture.md → Offline-first](../design/technical-architecture.md#offline-first)
 - **Phase 1 contains no server, no API, no auth, no sync scaffolding, no analytics/telemetry/crash reporting.** None of it may be present in the build. — [features.md → F7](../design/features.md#f7--local-first-storage), [technical-architecture.md → Phase 1](../design/technical-architecture.md#phase-1--local-only-mvp)
@@ -46,9 +48,9 @@ All notifications are **scheduled locally on-device**; Phase 1 has no push backe
 - All chart computation is **local**; charts are read-only.
 - Accessibility: below-goal bars need a **non-colour** distinction; charts must work with screen readers.
 
-## C4 — Shared computation (must produce identical results on both platforms)
+## C4 — Shared computation (single implementation, exact to spec)
 
-These are pure algorithms specified to the formula in `design/`. Both platforms must implement them so outputs are bit-for-bit comparable for the same inputs — this is the highest parity risk surface.
+These are pure algorithms specified to the formula in `design/`. They live in one pure-Dart `core` package ([flutter-stack.md → D7](./decisions/flutter-stack.md#d7--shared-computation-dependency-free-pure-dart-core-package)), so outputs are identical across platforms **by construction**. The job is now correctness-to-spec rather than cross-platform reconciliation — this was previously *the highest parity-risk surface* (two native implementations that could drift, plus Swift-vs-Kotlin float determinism); the single-codebase switch removes that entire risk class.
 
 - **Hydration goal suggestion:** `30 ml × weight_kg`, rounded to nearest 100 ml. — [features.md → F2](../design/features.md#f2--daily-hydration-goal)
 - **Pace / expected-intake** linear model and **recommended volume** (0.5-glass increments, clamp 0.5–2.0). — [notifications.md → Recommended volume](../design/notifications.md#recommended-volume-per-reminder)
@@ -56,18 +58,20 @@ These are pure algorithms specified to the formula in `design/`. Both platforms 
 - **Username validation:** Unicode `L*`/digits/`_-.` whitelist, structural start/end rules, NFC normalisation, 3–30 chars. — [data-model.md → Username character rules](../design/data-model.md#username-character-rules)
 - **Day-boundary bucketing** and 7-day rolling aggregates (daily average, days-on-goal).
 
-> Parity note: these must be specified once and verified against **shared test vectors** so iOS and Android cannot drift. Worked examples already exist in the design docs (e.g. the 0.362 g/L BAC sanity check) and should become canonical fixtures.
+> Spec note: each formula is implemented once with the exact rounding/clamping rules from the [Parity Rulebook](./decisions/design-system.md#appendix--parity-rulebook). The worked examples in the design docs (e.g. the 0.362 g/L BAC sanity check, the 2100 ml goal) become **regression unit tests** that pin the spec — no longer a cross-platform drift gate, since there is only one implementation.
 
-## C5 — Design system (visual + behavioural parity)
+## C5 — Design system (visual + behavioural parity — now by construction)
 
-- **Typography:** DM Sans on **both** platforms (single open-source family, chosen specifically to avoid platform divergence); display-weight tabular figures for headline numerics. — [designer-brief.md → Typography](../design/designer-brief.md#typography)
+Flutter renders its own UI from one widget tree, so the visual layer is identical across platforms by construction; the requirements below are still the spec the single implementation must meet.
+
+- **Typography:** DM Sans (single open-source family); display-weight tabular figures for headline numerics. Flutter bundles the font and honours OS text scaling. — [designer-brief.md → Typography](../design/designer-brief.md#typography)
 - **Colour:** three named accents (azure, honey, emerald/mint) + semantic palette; **light + dark mode both ship at v1**; emerald quarantined to Party Mode. Every colour-encoded state needs a non-colour signal. — [designer-brief.md → Colour](../design/designer-brief.md#colour)
 - **Drink icons:** bundled filled SVGs with a two-shade structure, **both shades derived at render time from a single `iconColor`** via an HSL lightness offset (±15%) — i.e. runtime SVG tinting, not pre-baked assets. — [designer-brief.md → Iconography](../design/designer-brief.md#iconography), [features.md → F14 Icons](../design/features.md#f14--drink-presets-and-customisation)
 - **UI icon set** (~25 custom icons) and **illustrations** (flat + subtle gradient, object-led, no mascots) drawn as one visual family.
 - **Motion:** calm, ease-in-out, no bounce/overshoot, reduce-motion fallback for every animation. — [designer-brief.md → Motion & feedback](../design/designer-brief.md#motion--feedback)
 - **Haptics:** light on log, medium on goal-met celebration; nothing else.
-- **Accessibility (non-negotiable, both platforms):** accessible labels on all interactive elements, dynamic type at every system size, colour never the sole state signal, VoiceOver (iOS) + TalkBack (Android) end-to-end. — [designer-brief.md → Accessibility integration](../design/designer-brief.md#accessibility-integration)
-- **Navigation:** 3-tab bottom bar (Today / Party / History) using each platform's native nav idiom but unified brand styling; tab bar hidden for the S2 drawer and full-screen pushes.
+- **Accessibility (non-negotiable):** accessible labels on all interactive elements, dynamic type at every system size, colour never the sole state signal, end-to-end VoiceOver (iOS) + TalkBack (Android). Flutter drives both via one `Semantics` tree — validate per platform (one a11y pass, not two). — [designer-brief.md → Accessibility integration](../design/designer-brief.md#accessibility-integration)
+- **Navigation:** 3-tab bottom bar (Today / Party / History) with unified brand styling; either one Material bottom nav on both platforms or an optional platform-adaptive idiom (design call, [flutter-stack.md → D4/risks](./decisions/flutter-stack.md)); tab bar hidden for the S2 drawer and full-screen pushes.
 
 ## C6 — Cross-cutting non-functionals
 
@@ -76,6 +80,6 @@ These are pure algorithms specified to the formula in `design/`. Both platforms 
 - **No telemetry** means crash/perf must be validated pre-release by other means (internal testing), since none ships in the product.
 - **Localisation** is explicitly *later* (L4) — Phase 1 may be single-language, but money/units/time formatting still follow device locale conventions. — [features.md → Later](../design/features.md#later-post-phase-3)
 
-## What research must deliver per platform
+## What the stack decision must deliver per concern
 
-For each of persistence, notifications, charts, icon-rendering, and app architecture/state-management: a **named recommended dependency or platform API**, the **alternatives considered and why rejected**, the **parity implication**, and any **Phase-2 forward-constraint**. Default to first-party / platform-native and minimal third-party dependencies unless a third-party library is clearly justified.
+For each of persistence, notifications, charts, icon-rendering, and app architecture/state-management: a **named recommended package or platform API**, the **alternatives considered and why rejected**, the **parity implication** (mostly "none — one codebase", except where the app defers to the OS), and any **Phase-2 forward-constraint**. Default to first-party Flutter and minimal, mainstream, well-maintained packages unless a third-party library is clearly justified. See [flutter-stack.md](./decisions/flutter-stack.md).

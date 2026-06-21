@@ -16,7 +16,7 @@ It is not a full specification. The detailed functional specs live in the other 
 
 Drinks Mate is a mobile app for iOS and Android that helps people build a healthier daily drinking habit. The core proposition is simple: it should be effortless to record what you drink throughout the day, see at a glance whether you are on pace toward your daily hydration goal, and get gentle reminders that keep your intake steady rather than crammed into the evening.
 
-The app is not a calorie tracker, a wearable companion, or a medical device. It tracks beverages — water, coffee, tea, juice, milk, and, when the user opts in, alcoholic drinks during a discrete "party session". It runs natively per platform, offline-first, and works fully without an account in its first phase.
+The app is not a calorie tracker, a wearable companion, or a medical device. It tracks beverages — water, coffee, tea, juice, milk, and, when the user opts in, alcoholic drinks during a discrete "party session". It is one Flutter app for both iOS and Android, offline-first, and works fully without an account in its first phase.
 
 ## Who it is for
 
@@ -242,7 +242,7 @@ These primitives recur across the app and have specific requirements:
 - **Status pill:** short label only (`On pace` / `Behind` / `Ahead`). No quantified copy in the pill itself. Magnitude is implied by the bar fill versus the tick marker.
 - **Pace marker:** thin vertical tick line on the progress bar. Must remain visible against both the on-pace fill colour and the behind-pace fill colour, so the tick uses a non-fill-colour treatment.
 - **Top-screen header:** page title left, settings gear right. Present on Today, Party, History.
-- **Bottom tab bar:** three tabs — Today, Party, History. Platform-native nav patterns (iOS tab bar idiom on iOS, Material bottom nav on Android) but using the unified brand styling. Hidden when S2 drawer is open and when full-screen routes are pushed.
+- **Bottom tab bar:** three tabs — Today, Party, History. A single brand-styled bottom nav rendered by Flutter; it may adopt each platform's idiom (Cupertino tab bar on iOS, Material bottom nav on Android) or use one Material nav on both — a brand/UX call, identical in behaviour either way. Hidden when S2 drawer is open and when full-screen routes are pushed.
 
 ### Motion & feedback
 
@@ -253,7 +253,7 @@ These primitives recur across the app and have specific requirements:
 
 ### Notifications
 
-System-default appearance on both platforms, with the branded app icon shown in the system tray. No image attachments, no large icon overrides — just clean platform-native notifications carrying the spec'd copy and the "Log {default drink}" quick-log action button. The brand is conveyed by the app icon alone, not by per-notification rich content.
+System-default appearance on both platforms, with the branded app icon shown in the system tray. Drinks Mate's notifications are real OS notifications (posted via the platform notification APIs), so they render with each system's native styling. No image attachments, no large icon overrides — just clean system notifications carrying the spec'd copy and the "Log {default drink}" quick-log action button. The brand is conveyed by the app icon alone, not by per-notification rich content.
 
 ### Accessibility integration
 

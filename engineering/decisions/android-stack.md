@@ -1,5 +1,7 @@
 # Android Native Stack — Phase 1 Decisions
 
+> ⚠️ **SUPERSEDED by [flutter-stack.md](./flutter-stack.md).** Drinks Mate is now a single Flutter codebase, not two native apps. This doc is **retained as platform research**: its findings on Android background-execution reality — exact-alarm permission posture (`SCHEDULE_EXACT_ALARM` denied-by-default, `USE_EXACT_ALARM` Play-restricted), Doze/App-Standby, and OEM battery-killer unreliability — are **OS-level facts that still apply under Flutter** and inform the notification-reliability risk (flutter-stack.md → D4). Read the persistence/charts/icon/architecture decisions as historical context, not the chosen stack.
+
 > Scope: the Android half of the Drinks Mate Phase 1 (local-only MVP) build. Written against [phase-1-constraints.md](../phase-1-constraints.md); the constraint anchors (C0–C6) referenced throughout live there. Companion to `ios-stack.md` (not yet written) under the [parity contract](../README.md#the-parity-contract).
 >
 > **Date of research:** 2026-06-21. Versions and maintenance status verified as of that date (sources cited per decision).

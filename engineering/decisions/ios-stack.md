@@ -1,5 +1,7 @@
 # iOS Native Stack — Phase 1 Decision Record
 
+> ⚠️ **SUPERSEDED by [flutter-stack.md](./flutter-stack.md).** Drinks Mate is now a single Flutter codebase, not two native apps. This doc is **retained as platform research**: its findings on iOS notification limits — the service extension being push-only (no at-delivery recompute for local notifications), the 64-pending ceiling, and the rolling-window re-arm pattern — are **framework-independent and still inform the Flutter notification design** (see flutter-stack.md → D4). Read the persistence/charts/icon/architecture decisions as historical context, not the chosen stack.
+
 > **Audience note.** This is written for a lead who knows frontend/backend patterns but is *not* an iOS specialist. iOS-specific concepts are explained inline. Where a choice has an Android counterpart, the parity implication is called out explicitly — the two apps share *specifications and data semantics, not source* (see [README → parity contract](../README.md)).
 
 ## Summary

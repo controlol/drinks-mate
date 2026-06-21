@@ -1,5 +1,11 @@
 # Phase 1 Engineering Validation Report
 
+> ⚠️ **Validated the superseded two-native-app plan.** Drinks Mate has since moved to a **single Flutter codebase** ([flutter-stack.md](./decisions/flutter-stack.md)). How the switch lands on this report's findings:
+> - **P0-b (iOS vs Android fire-time predicate divergence)** — *resolved by construction.* The Flutter design uses a uniform rolling-window re-arm on both platforms, so the two no longer diverge here.
+> - **C4 cross-platform computation drift + Swift/Kotlin float determinism (the "highest parity-risk surface"), and P1-a (HSL icon-tint drift), P1-b (one shared below-goal treatment)** — *dissolved.* One Dart implementation means these can't drift; the golden-fixture CI gate becomes ordinary regression tests.
+> - **P0-a (iOS at-delivery staleness), notification delivery reliability / OEM battery-killers (P1-c), no-telemetry reliability validation (P2-a)** — *still apply.* These are OS-level facts independent of framework; carried into flutter-stack.md → D4 and its risks.
+> The constraint-coverage and foundedness analysis below remains a useful audit of the requirements; read references to "iOS doc / Android doc" as the retained platform research.
+
 > Independent, adversarial validation of the three Phase 1 technical-decision docs (`ios-stack.md`, `android-stack.md`, `design-system.md`) against `phase-1-constraints.md` (C0–C6) and the source `design/` folder.
 > Reviewer stance: skeptical, not deferential. Load-bearing factual claims spot-checked against vendor docs / web (June 2026).
 > Date: 2026-06-21.

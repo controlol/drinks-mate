@@ -2,7 +2,7 @@
 
 This folder contains the design documentation for **Drinks Mate**, a mobile application for iOS and Android that helps people track their daily drink intake and stay properly hydrated.
 
-These documents are intended to guide developers during implementation. They describe *what* the app should do and *why*, and fix the load-bearing technical decisions (native per platform, offline-first, phased rollout). Day-to-day implementation choices live with the engineering team.
+These documents are intended to guide developers during implementation. They describe *what* the app should do and *why*, and fix the load-bearing technical decisions (single Flutter codebase for both platforms, offline-first, phased rollout). Day-to-day implementation choices live with the engineering team.
 
 ## Documents
 
@@ -18,7 +18,7 @@ These documents are intended to guide developers during implementation. They des
 
 ## At a glance
 
-- **Two native apps**, one for iOS and one for Android. No shared cross-platform codebase.
+- **One Flutter app** for both iOS and Android, from a single codebase.
 - **Offline-first**, with a local database as the on-device source of truth. Core tracking works with no network and no account.
 - **Two-phase rollout.** Phase 1 is the local-only MVP. Phase 2 adds opt-in accounts, cloud sync across devices, and friends with progress sharing.
 
