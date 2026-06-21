@@ -6,10 +6,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        Adding the **`agent-ready`** label dispatches Claude to implement this
-        (see `.github/workflows/claude.yml`). The clearer the scope and the
-        acceptance criteria, the better the result. Link the relevant design/
-        and engineering/ docs.
+        The **`agent-ready`** label *queues* this for the agent. The dispatcher
+        (`.github/workflows/dispatch-agent.yml`) picks up the next **unblocked**
+        ready issue on a schedule — so if this must wait for other work, set
+        **Depends on** below and it won't start until those issues are merged.
+        The clearer the scope and acceptance criteria, the better the result.
+        Link the relevant design/ and engineering/ docs.
   - type: textarea
     id: goal
     attributes:
@@ -39,6 +41,19 @@ body:
         - [ ] No Phase-2 scaffolding; `core` stays pure Dart
     validations:
       required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Depends on
+      description: >
+        Issues that must be merged before this one can start. The dispatcher
+        will not pick this up until they are all closed, which is how work is
+        ordered. Either set GitHub's native relationship (issue sidebar →
+        Relationships → "Mark as blocked by"), or list them here — the dispatcher
+        reads both.
+      placeholder: "Blocked by #12, #13"
+    validations:
+      required: false
   - type: dropdown
     id: area
     attributes:

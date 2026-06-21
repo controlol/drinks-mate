@@ -1,0 +1,194 @@
+name: Agent dispatcher
+
+# Ordered, dependency-aware queue for agent work.
+#
+# Why this exists: adding the `agent-ready` label no longer dispatches Claude
+# immediately. Instead this workflow polls on a schedule, finds the next
+# *unblocked* `agent-ready` issue, claims it, and runs Claude on it — at most
+# MAX_IN_FLIGHT agent PRs in flight at a time.
+#
+# "Unblocked" is decided from two sources (an issue is blocked if EITHER says so):
+#   1. GitHub's native issue dependencies — the "Blocked by" relationships,
+#      read via the REST API (`/issues/{n}/dependencies/blocked_by`).
+#   2. A text fallback: `Blocked by #N` / `Depends on #N` in the issue body.
+# An issue is ready only when every issue it depends on is CLOSED (i.e. merged).
+# That is the ordering guarantee: nothing starts before its prerequisites land.
+#
+# The claim is an `agent-working` label. Because the dispatcher runs Claude
+# inline (rather than re-triggering claude.yml via a label), it sidesteps the
+# rule that GITHUB_TOKEN-driven label events don't start new workflow runs.
+#
+# Interactive `@claude` mentions stay in claude.yml and are unaffected.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min (tune as needed; min granularity ~5 min)
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to dispatch right now (skips the queue and the block check). Leave blank to auto-pick the next ready issue."
+        required: false
+        type: string
+
+# Serialize dispatcher runs so two ticks can never claim the same issue.
+concurrency:
+  group: agent-dispatch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+env:
+  READY_LABEL: agent-ready       # "queued for the agent"
+  WORKING_LABEL: agent-working   # "claimed / a PR is in flight" (excluded from the queue)
+  MAX_IN_FLIGHT: "1"             # how many agent PRs may be open at once
+
+jobs:
+  select:
+    name: Pick next ready issue
+    runs-on: ubuntu-latest
+    outputs:
+      issue: ${{ steps.pick.outputs.issue }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MANUAL_ISSUE: ${{ github.event.inputs.issue }}
+        run: |
+          set -euo pipefail
+
+          # --- Manual override: dispatch a specific issue, bypassing the queue ---
+          if [ -n "${MANUAL_ISSUE:-}" ]; then
+            echo "Manual dispatch requested for #$MANUAL_ISSUE (block check skipped)."
+            gh issue edit "$MANUAL_ISSUE" --repo "$REPO" --add-label "$WORKING_LABEL" || true
+            echo "issue=$MANUAL_ISSUE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # --- Concurrency cap: how many agent PRs are already in flight? ---
+          in_flight=$(gh issue list --repo "$REPO" --state open --label "$WORKING_LABEL" \
+            --limit 200 --json number --jq 'length')
+          echo "In flight: $in_flight (cap $MAX_IN_FLIGHT)"
+          if [ "$in_flight" -ge "$MAX_IN_FLIGHT" ]; then
+            echo "At capacity; nothing to dispatch this tick."
+            echo "issue=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # --- Candidate queue: open, agent-ready, not already claimed, lowest # first ---
+          candidates=$(gh issue list --repo "$REPO" --state open --label "$READY_LABEL" \
+            --limit 200 --json number,labels,body \
+            --jq '[ .[] | select( any(.labels[]; .name == env.WORKING_LABEL) | not ) ] | sort_by(.number)')
+          echo "Candidate ready issues: $(echo "$candidates" | jq 'length')"
+
+          picked=""
+          for i in $(echo "$candidates" | jq -r '.[].number'); do
+            echo "::group::Evaluating #$i"
+            blocked=0
+
+            # 1) Native "Blocked by" dependencies. The endpoint 404s if the feature
+            #    is unavailable on the repo; treat any error as "no native blockers".
+            if open_blockers=$(gh api "repos/$REPO/issues/$i/dependencies/blocked_by" \
+                  --jq '[ .[] | select(.state != "closed") ] | length' 2>/dev/null); then
+              if [ "${open_blockers:-0}" -gt 0 ]; then
+                echo "#$i: $open_blockers open native blocker(s)"
+                blocked=1
+              fi
+            fi
+
+            # 2) Text fallback: "Blocked by #N" / "Depends on #N" in the body.
+            if [ "$blocked" -eq 0 ]; then
+              body=$(echo "$candidates" | jq -r ".[] | select(.number==$i) | .body // \"\"")
+              refs=$(printf '%s' "$body" \
+                | grep -ioE '(blocked by|depends on)[ :]*#?[0-9][0-9, #&and]*' \
+                | grep -oE '[0-9]+' | sort -u || true)
+              for dep in $refs; do
+                st=$(gh issue view "$dep" --repo "$REPO" --json state --jq '.state' 2>/dev/null || echo "")
+                if [ "$st" = "OPEN" ]; then
+                  echo "#$i: blocked by open #$dep (text reference)"
+                  blocked=1
+                  break
+                fi
+              done
+            fi
+
+            if [ "$blocked" -eq 0 ]; then
+              echo "#$i is READY"
+              picked="$i"
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ -z "$picked" ]; then
+            echo "No unblocked issue to dispatch."
+            echo "issue=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Claim it so the next tick (and the cap) account for it.
+          gh issue edit "$picked" --repo "$REPO" --add-label "$WORKING_LABEL"
+          echo "Dispatching #$picked"
+          echo "issue=$picked" >> "$GITHUB_OUTPUT"
+
+  implement:
+    name: Implement issue
+    needs: select
+    if: needs.select.outputs.issue != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Same subscription auth as claude.yml (see docs/agentic-workflow.md).
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are implementing GitHub issue #${{ needs.select.outputs.issue }}
+            in repository ${{ github.repository }}.
+
+            Start by reading the issue and its acceptance criteria:
+              gh issue view ${{ needs.select.outputs.issue }}
+
+            Follow CLAUDE.md and the Parity Rulebook in
+            engineering/decisions/design-system.md.
+
+            Delegate to the project subagents (.claude/agents/):
+            - Use the `test-author` subagent to write/maintain any `core` tests,
+              with expected values traced to the design docs.
+            - Use the `spec-auditor` subagent to check the change against the
+              Parity Rulebook and Phase-1 constraints before opening the PR.
+
+            Create a branch, implement the change, and run the definition-of-done
+            checks until they pass. Then open a pull request whose description
+            includes "Closes #${{ needs.select.outputs.issue }}" — merging the PR
+            then closes the issue and frees its queue slot for the next one.
+
+            Do not open a PR with failing checks or unresolved spec-auditor findings.
+
+      # If the run failed before a PR was opened, release the claim so the issue
+      # re-queues on the next tick instead of stalling the whole queue.
+      - name: Release claim on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ needs.select.outputs.issue }}
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE" --repo "$REPO" --remove-label "$WORKING_LABEL" || true
+          gh issue comment "$ISSUE" --repo "$REPO" --body \
+            "Agent dispatch failed (run ${{ github.run_id }}). Removed \`$WORKING_LABEL\` so it will be retried on the next tick. If a partial PR was opened, close it first." || true

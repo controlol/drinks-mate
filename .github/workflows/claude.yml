@@ -1,27 +1,26 @@
 name: Claude
 
-# Interactive agent. Two ways to dispatch work from GitHub Issues:
-#   1. Mention @claude in an issue/PR comment.
-#   2. Add the `agent-ready` label to an issue.
-# Claude reads the issue, branches, implements against CLAUDE.md + the Parity
-# Rulebook, runs the checks, and opens a PR. CI (ci.yml) then gates it, and
-# claude-review.yml reviews the diff.
+# Interactive agent for @claude mentions: comment `@claude <instruction>` on any
+# issue or PR and Claude responds — implementing against CLAUDE.md + the Parity
+# Rulebook and opening a PR. CI (ci.yml) then gates it, and claude-review.yml
+# reviews the diff.
+#
+# Ordered queue dispatch (the `agent-ready` label) lives in dispatch-agent.yml,
+# which respects issue dependencies and a concurrency cap. Labelling an issue
+# `agent-ready` no longer fires this workflow.
 
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  issues:
-    types: [opened, labeled]
 
-# Only react to human @claude mentions, or the agent-ready label.
+# Only react to human @claude mentions.
 jobs:
   claude:
     if: >
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'agent-ready')
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

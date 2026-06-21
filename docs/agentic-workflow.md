@@ -6,23 +6,50 @@ This is the runbook for the scaffolding added in the "agentic setup" change.
 ## The loop, end to end
 
 ```
-GitHub Issue (agent-ready label or @claude mention)
-        │
-        ▼
-.github/workflows/claude.yml  ──►  Claude reads CLAUDE.md + Parity Rulebook,
-                                   branches, implements, opens a PR
-        │
-        ▼
+GitHub Issue                              @claude comment
+(agent-ready label, "Depends on …")       on any issue/PR
+        │                                         │
+        ▼                                         ▼
+.github/workflows/dispatch-agent.yml      .github/workflows/claude.yml
+  cron: pick next UNBLOCKED ready issue,    interactive: respond to the
+  claim it (agent-working), cap in-flight   mention right away
+        │                                         │
+        └────────────────┬────────────────────────┘
+                         ▼
+            Claude reads CLAUDE.md + Parity Rulebook,
+            branches, implements, opens a PR
+                         │
+                         ▼
 .github/workflows/ci.yml          deterministic gate: format + analyze + test  (must pass)
 .github/workflows/claude-review.yml  agentic review: inline comments on the diff
 .github/workflows/security-review.yml  AI security scan
-        │
-        ▼
-Branch protection  ──►  human approval  ──►  merge
+                         │
+                         ▼
+Branch protection  ──►  human approval  ──►  merge  ──►  issue closes, queue slot frees
 ```
 
 The keystone is the **test suite** (`flutter/packages/core/test/`, `flutter/test/`): every other
 layer trusts it. No agent change merges without the CI gate passing.
+
+### How work is ordered
+
+There is no implicit ordering — you declare it with **dependencies**, and the
+dispatcher enforces it:
+
+- Each `agent-ready` issue states what it is **blocked by** — either GitHub's
+  native "blocked by" relationship, or a `Blocked by #N` / `Depends on #N` line
+  in the body. The dispatcher reads both.
+- On each cron tick `dispatch-agent.yml` picks the **lowest-numbered ready issue
+  whose blockers are all closed**, labels it `agent-working` (the claim), and
+  runs Claude on it. At most `MAX_IN_FLIGHT` (default **1**) agent PRs are in
+  flight at once, so each agent branches from a `main` that already contains all
+  prior merged work — no cross-PR conflicts, deterministic order.
+- A claim is released when the PR merges (its `Closes #N` closes the issue) or,
+  if the run failed before opening a PR, automatically on the next tick.
+
+So the order is: **set dependencies → label `agent-ready` → the dispatcher
+serializes the rest.** Bump `MAX_IN_FLIGHT` in `dispatch-agent.yml` once you
+want independent issues to run in parallel.
 
 ## One-time setup
 
@@ -63,10 +90,15 @@ post comments and open PRs.
 `claude-code-action` runs pick it up automatically. Put any personal,
 machine-specific overrides in `.claude/settings.local.json` (gitignored).
 
-### 4. Create the `agent-ready` label
+### 4. Create the queue labels
 ```bash
-gh label create agent-ready --color 5319e7 --description "Dispatch an AI agent to implement this issue"
+gh label create agent-ready   --color 5319e7 --description "Queued for the agent dispatcher to implement"
+gh label create agent-working --color fbca04 --description "Claimed by the dispatcher; a PR is in flight"
 ```
+`dispatch-agent.yml` adds/removes `agent-working` itself — you only ever apply
+`agent-ready` (the issue template does this for you). Scheduled workflows run
+from the **default branch only**, so the dispatcher starts working once this
+change is merged to `main`.
 
 ### 5. Turn on branch protection for `main`
 Require the CI checks and at least one approving review before merge:
@@ -88,7 +120,17 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
 ## Day-to-day
 
 - **Create work:** open an issue with the *Agent task* template (auto-labels
-  `agent-ready`), or comment `@claude <instruction>` on any issue/PR.
+  `agent-ready`), set its **Depends on** if it must wait for other issues, or
+  comment `@claude <instruction>` on any issue/PR for an immediate, interactive
+  run.
+- **Order a batch:** label everything `agent-ready`, then express the chain with
+  dependencies (native "blocked by" or `Blocked by #N` in the body). The
+  dispatcher releases them one at a time as their blockers merge — no need to
+  withhold labels manually.
+- **Dispatch now / unstick:** run the *Agent dispatcher* workflow manually
+  (Actions → Agent dispatcher → Run workflow) — optionally pass an issue number
+  to force it past the queue. If a claim is stuck (PR closed without merging, or
+  a stalled run), remove the `agent-working` label to re-queue it.
 - **Definition of done** (what agents and CI both enforce) — from repo root:
   ```bash
   (cd flutter/packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test)
@@ -144,8 +186,9 @@ other one to consider for visual, agent-driven UI work at that stage.
   pin DPR and bundle DM Sans to avoid flakiness.
 - **Coverage thresholds** — enforce ≥80% on `core`/services once the suite is
   fleshed out (e.g. via a coverage check step or a service like Codecov).
-- **Poll-driven auto-dispatch** (a daemon that claims issues without a human
-  mention/label) — only graduate to this once the test gate is trustworthy.
+- **Parallel dispatch** — `MAX_IN_FLIGHT` is 1 today (strict serial order, zero
+  cross-PR conflicts). Raise it in `dispatch-agent.yml` to let independent,
+  non-overlapping issues run concurrently once the test gate is trustworthy.
 - **`core` NFC normalisation** — username validation needs NFC before the
   structural check; tracked as a TODO in `flutter/packages/core/lib/src/username.dart`.
 
