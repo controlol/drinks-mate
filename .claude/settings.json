@@ -12,7 +12,8 @@
       "Bash(flutter pub get:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "WebSearch"
     ]
   },
   "hooks": {
