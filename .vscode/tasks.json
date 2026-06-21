@@ -1,0 +1,50 @@
+{
+  // Tasks run in the integrated terminal, where the Dart/Flutter extension adds
+  // the SDK to PATH (dart.addSdkToTerminalPath, default on) — so `flutter`/`dart`
+  // resolve even though the SDK isn't on the system PATH. If a task can't find
+  // them, add C:\Users\luc.appelman\develop\flutter\flutter\bin to your PATH.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Flutter: run app",
+      "detail": "flutter run (pick a device when prompted)",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["run"],
+      "options": { "cwd": "${workspaceFolder}/flutter" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Test: core (Dart)",
+      "detail": "dart test in flutter/packages/core",
+      "type": "shell",
+      "command": "dart",
+      "args": ["test"],
+      "options": { "cwd": "${workspaceFolder}/flutter/packages/core" },
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "Test: app (Flutter widget)",
+      "detail": "flutter test in flutter/",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["test"],
+      "options": { "cwd": "${workspaceFolder}/flutter" },
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "Test: all",
+      "detail": "core (Dart) then app (Flutter) tests",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Test: core (Dart)", "Test: app (Flutter widget)"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

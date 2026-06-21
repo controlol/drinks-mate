@@ -15,7 +15,11 @@ coverage/
 
 # IDE / OS
 .idea/
-.vscode/
+# Share useful VS Code config; keep personal settings local.
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 *.iml
 .DS_Store
 Thumbs.db

@@ -1,0 +1,23 @@
+{
+  // Start/debug the app with F5. This is the idiomatic Flutter "run the app"
+  // path (full debugging, hot reload) — the "Flutter: run app" task is the
+  // terminal equivalent. Requires the Dart/Flutter VS Code extension.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Drinks Mate (debug)",
+      "type": "dart",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/flutter",
+      "program": "${workspaceFolder}/flutter/lib/main.dart"
+    },
+    {
+      "name": "Drinks Mate (profile)",
+      "type": "dart",
+      "request": "launch",
+      "flutterMode": "profile",
+      "cwd": "${workspaceFolder}/flutter",
+      "program": "${workspaceFolder}/flutter/lib/main.dart"
+    }
+  ]
+}
