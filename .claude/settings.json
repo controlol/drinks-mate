@@ -1,6 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "_comment": "Shared team config: pre-approved safe commands (fewer permission prompts) and a PostToolUse hook that auto-formats edited Dart files. Personal, machine-specific overrides go in .claude/settings.local.json (gitignored). See docs/agentic-workflow.md.",
+  "_model_comment": "Project default: opusplan runs Opus in plan mode and Sonnet during execution; advisorModel lets Sonnet consult Opus on hard mid-task decisions (advisor must be >= main model; Anthropic API only, degrades gracefully on other tiers/providers). Override per-session with /model and /advisor.",
+  "model": "opusplan",
+  "advisorModel": "opus",
   "permissions": {
     "allow": [
       "Bash(dart format:*)",
