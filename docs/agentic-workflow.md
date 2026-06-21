@@ -59,7 +59,7 @@ The rules:
 
 | Workflow | Fires for | Gate |
 |----------|-----------|------|
-| `claude.yml` (`@claude` comments) | comment author is `OWNER` / `MEMBER` / `COLLABORATOR` | `author_association` check |
+| `claude.yml` (`@claude` comments) | comment author is `OWNER` / `MEMBER` (not `COLLABORATOR` — that doesn't guarantee write access) | `author_association` check |
 | `claude-review.yml`, `security-review.yml` (PRs) | PR by the **owner**, or from a pipeline **`claude/*`** branch in this repo, or a PR a maintainer has labelled **`agent-ok`** | `author_association` + head-branch + label |
 | `dispatch-agent.yml` (queue) | issues labelled `agent-ready` | applying labels already requires triage/write access |
 

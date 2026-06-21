@@ -18,15 +18,17 @@ on:
 # Only react to human @claude mentions.
 jobs:
   claude:
-    # Trust gate: only the owner / org members / repo collaborators can trigger
-    # the agent. On a public repo this is essential — without it any stranger's
-    # comment could prompt-inject the agent, which runs with secrets + a write token.
+    # Trust gate: only the owner / org members can trigger the agent. COLLABORATOR
+    # is deliberately excluded — that association doesn't guarantee write access
+    # (a read/triage-only collaborator would still match). On a public repo this
+    # is essential: otherwise a stranger's comment could prompt-inject the agent,
+    # which runs with secrets + a write token.
     if: >
       (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
       ) &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      contains(fromJSON('["OWNER","MEMBER"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
