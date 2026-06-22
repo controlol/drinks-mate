@@ -36,3 +36,17 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # DM Sans variable font — SIL OFL-1.1 (embedding/redistribution permitted).
+  # Source: github.com/google/fonts/tree/main/ofl/dmsans (verified June 2026).
+  # Variable font covers weight axis 100–700 + optical-size opsz axis (D2).
+  # The italic file covers all italic variants at the same weight range.
+  fonts:
+    - family: DM Sans
+      fonts:
+        - asset: assets/fonts/DMSans-Variable.ttf
+        - asset: assets/fonts/DMSans-Variable-Italic.ttf
+          style: italic
+
+  assets:
+    - assets/icons/

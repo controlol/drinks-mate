@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 
-// Design-system token placeholders (see engineering/decisions/design-system.md).
-// Exact hex values are pending the designer's first pass (noted as open design
-// questions in designer-brief.md). These seeds produce a Material 3 scheme
-// from the named accents; final values land when the designer delivers tokens.
+import 'color_tokens.dart';
 
-/// Primary brand colour — azure / sky (hydration identity, progress bar fill).
-const Color kColorAzure = Color(0xFF4A90D9);
+export 'color_tokens.dart';
 
-/// Action accent — honey / amber (CTAs, goal-met celebration).
-const Color kColorHoney = Color(0xFFF5A623);
+// Design-system token constants — see engineering/decisions/design-system.md.
+// DM Sans (SIL OFL-1.1 variable font) is bundled in assets/fonts/ and declared
+// under the 'fonts:' section of pubspec.yaml (D2).
+const String _kFontFamily = 'DM Sans';
 
-// Note: emerald / mint is the Party-Mode-only accent (C5 quarantine rule) and
-// is intentionally absent here. It lives in a Party-specific token namespace.
+// Tabular figures force fixed-width digits on the headline numeric slots
+// (intake value, BAC value) so they don't jitter on update (D2, C5).
+const List<FontFeature> _kTabularFigures = [FontFeature.tabularFigures()];
 
 /// Builds the Material 3 [ThemeData] (light + dark) from design-system tokens.
 abstract final class AppTheme {
@@ -27,15 +26,32 @@ abstract final class AppTheme {
       secondary: kColorHoney,
       brightness: brightness,
     );
-    // DM Sans is specified in D2 (engineering/decisions/flutter-stack.md).
-    // Font asset files are not bundled yet; this name reference silently falls
-    // back to the system font until the OFL-1.1 variable-font asset is added.
-    // Do NOT use google_fonts here — runtime fetching violates C0 offline-first.
-    const fontFamily = 'DM Sans';
-    return ThemeData(
+
+    // Build the base ThemeData first so Flutter generates the M3 TextTheme
+    // (sizes, weights, tracking) from the color scheme and fontFamily.
+    final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      fontFamily: fontFamily,
+      fontFamily: _kFontFamily,
     );
+
+    // Apply tabular figures to the display/headline slots used for the live
+    // intake value and BAC display — digit widths must not shift on update (D2).
+    final textTheme = base.textTheme.copyWith(
+      displayLarge: base.textTheme.displayLarge?.copyWith(
+        fontFeatures: _kTabularFigures,
+      ),
+      displayMedium: base.textTheme.displayMedium?.copyWith(
+        fontFeatures: _kTabularFigures,
+      ),
+      displaySmall: base.textTheme.displaySmall?.copyWith(
+        fontFeatures: _kTabularFigures,
+      ),
+      headlineLarge: base.textTheme.headlineLarge?.copyWith(
+        fontFeatures: _kTabularFigures,
+      ),
+    );
+
+    return base.copyWith(textTheme: textTheme);
   }
 }
