@@ -11,10 +11,13 @@
 library;
 
 ///
-/// TODO(core): NFC normalisation must be applied before validation. Dart's core
-/// library has no built-in NFC, and `core` is intentionally dependency-free, so
-/// the caller (or a future small helper) must normalise first. Tracked as a
-/// follow-up; the structural rules below are framework-independent and final.
+/// TODO(core): NFC normalisation must be applied before validation — callers
+/// passing NFD-encoded input (e.g. é as U+0065 + U+0301) receive a spurious
+/// error today because U+0301 (combining acute, category Mn) is not in
+/// [\p{L}0-9_.-]. Dart's core library has no built-in NFC and `core` is
+/// intentionally dependency-free; the caller must normalise first.
+/// Track this before `validateUsername` is user-facing — file a GitHub issue
+/// and add `// TODO(core): NFC — tracked in #<n>` once the number is known.
 
 class UsernameValidation {
   const UsernameValidation.valid()

@@ -7,10 +7,12 @@ import '../screens/today_screen.dart';
 
 /// Top-level navigation scaffold with 4 Phase-1 tabs.
 ///
-/// Issue #1 scaffolds Settings as a bottom-nav tab per the issue spec.
-/// The design docs (user-experience.md, C5) specify a 3-tab bar with Settings
-/// behind a header gear icon; that model will be adopted when S4 Settings
-/// lands and this shell is refined.
+/// Tab order follows C5 (Today → Party → History) with Settings appended as a
+/// 4th tab per issue #1. The design docs specify Settings behind a header gear
+/// icon (3-tab model); that will be reconciled when S4 Settings lands.
+///
+/// [IndexedStack] keeps all screens alive so scroll position and loaded data
+/// survive tab switches.
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
@@ -28,14 +30,14 @@ class _AppShellState extends State<AppShell> {
       label: 'Today',
     ),
     NavigationDestination(
-      icon: Icon(Icons.bar_chart_outlined),
-      selectedIcon: Icon(Icons.bar_chart),
-      label: 'History',
-    ),
-    NavigationDestination(
       icon: Icon(Icons.local_bar_outlined),
       selectedIcon: Icon(Icons.local_bar),
       label: 'Party',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.bar_chart_outlined),
+      selectedIcon: Icon(Icons.bar_chart),
+      label: 'History',
     ),
     NavigationDestination(
       icon: Icon(Icons.settings_outlined),
@@ -46,15 +48,15 @@ class _AppShellState extends State<AppShell> {
 
   static const List<Widget> _screens = [
     TodayScreen(),
-    HistoryScreen(),
     PartyScreen(),
+    HistoryScreen(),
     SettingsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) =>
