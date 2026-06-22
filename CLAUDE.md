@@ -39,6 +39,15 @@ From the repo root:
 
 All three must pass (format clean, analyze clean, tests green). CI (`.github/workflows/ci.yml`) enforces the same gate; a red gate blocks merge.
 
+## Code navigation
+
+Prefer the Dart MCP tools over manual file reading or shell commands when exploring or analysing code:
+
+- **`mcp__dart__lsp` (`resolveWorkspaceSymbol`)** — locate any symbol by name instantly; use `hover` to confirm its type or value at a specific position.
+- **`mcp__dart__analyze_files`** — run static analysis on specific files instead of shelling out to `flutter analyze` / `dart analyze`.
+- **`mcp__dart__rip_grep_packages`** — search across package dependencies (`core` ↔ `flutter`) without scanning the whole tree.
+- **`mcp__dart__read_package_uris`** — read files via `package:` / `package-root:` URIs (useful for dependency source and examples).
+
 ## Conventions
 
 - **Architecture:** Riverpod + repository over Drift; Drift types never reach widgets. Math stays in `core`, behind the repository.
