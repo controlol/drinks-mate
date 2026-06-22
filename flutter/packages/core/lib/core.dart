@@ -9,6 +9,7 @@
 library core;
 
 export 'src/bac.dart';
+export 'src/day_boundary.dart';
 export 'src/hydration.dart';
 export 'src/pace.dart';
 export 'src/username.dart';
