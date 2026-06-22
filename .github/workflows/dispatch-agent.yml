@@ -22,7 +22,7 @@ name: Agent dispatcher
 # inline (rather than re-triggering claude.yml via a label), it sidesteps the
 # rule that GITHUB_TOKEN-driven label events don't start new workflow runs.
 #
-# Interactive `@claude` mentions stay in claude.yml and are unaffected.
+# Interactive `@claude` mentions stay in claude-comment.yml and are unaffected.
 
 on:
   # Event-driven dispatch: pick up work the moment it appears or a slot frees,

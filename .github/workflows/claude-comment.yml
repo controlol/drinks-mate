@@ -1,13 +1,16 @@
-name: Claude
+name: Claude (comment)
 
-# Interactive agent for @claude mentions: comment `@claude <instruction>` on any
-# issue or PR and Claude responds — implementing against CLAUDE.md + the Parity
-# Rulebook and opening a PR. CI (ci.yml) then gates it, and claude-review.yml
-# reviews the diff.
+# Interactive agent for @claude mentions in issues and PRs.
+# Comment `@claude <instruction>` and Claude responds — checking out the repo,
+# implementing the change, running the definition-of-done checks, and opening a PR.
 #
-# Ordered queue dispatch (the `agent-ready` label) lives in dispatch-agent.yml,
-# which respects issue dependencies and a concurrency cap. Labelling an issue
-# `agent-ready` no longer fires this workflow.
+# No `prompt` is set here intentionally: setting `prompt` on claude-code-action
+# switches it to "automation mode", which ignores the triggering comment body and
+# uses the hardcoded prompt as the task instead. For interactive comment handling,
+# the comment body must reach Claude directly. Standing instructions (CLAUDE.md,
+# Parity Rulebook, subagent delegation) are read from the checkout automatically.
+#
+# Queue-based dispatch for `agent-ready` issues lives in dispatch-agent.yml.
 
 on:
   issue_comment:
@@ -15,7 +18,6 @@ on:
   pull_request_review_comment:
     types: [created]
 
-# Only react to human @claude mentions.
 jobs:
   claude:
     # Trust gate: only the owner / org members can trigger the agent. COLLABORATOR
@@ -57,16 +59,3 @@ jobs:
           # Auto mode: ephemeral CI runner, so let the agent run its tools
           # (git, gh, flutter, dart) without per-command allowlisting.
           claude_args: "--permission-mode bypassPermissions"
-          prompt: |
-            Follow CLAUDE.md and the Parity Rulebook in
-            engineering/decisions/design-system.md.
-
-            Delegate to the project subagents (.claude/agents/):
-            - Use the `test-author` subagent to write/maintain any `core` tests,
-              with expected values traced to the design docs.
-            - Use the `spec-auditor` subagent to check the change against the
-              Parity Rulebook and Phase-1 constraints before opening the PR.
-
-            Before opening a PR, run the definition-of-done checks and make them
-            pass. Do not open a PR with failing checks or unresolved spec-auditor
-            findings.
