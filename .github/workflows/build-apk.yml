@@ -26,6 +26,8 @@ jobs:
         working-directory: flutter
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-java@v5
         with:
