@@ -162,7 +162,7 @@ requirement for agent PRs:
 ```bash
 gh api -X PUT repos/:owner/:repo/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
-  -f 'required_status_checks[strict]=true' \
+  -F 'required_status_checks[strict]=true' \
   -f 'required_status_checks[contexts][]=core package (pure Dart)' \
   -f 'required_status_checks[contexts][]=flutter app' \
   -f 'required_status_checks[contexts][]=review' \
