@@ -224,11 +224,12 @@ Concrete, copy-pasteable rules the implementation **must** follow exactly. Numbe
 | **Reminder fire predicate** | All true: reminders enabled + permission; not inactive; within active hours; intake **< goal** today; ≥ interval since last log. Recompute recommended volume **at delivery time**. | notifications §Behaviour; C2 |
 | **Inactivity reminder** | Fires at **noon (12:00 local)**, snapped to active-hours start if noon is outside; once/day; only if zero drinks logged today; subject to silence rule. | notifications §Notification types |
 | **Weekly summary** | **Sunday 20:00 local**, snapped into active hours; once/week; **ISO week** (Mon–Sun); subject to silence rule. | notifications §Notification types |
-| **Username length** | 3–30 characters (after NFC normalisation). Same whitelist applies to `DrinkPreset.name` (3–30) and `tokenName` (1–30). | data-model §Username rules |
+| **Username length** | 3–30 characters (after NFC normalisation). `tokenName` shares the same whitelist (1–30). | data-model §Username rules |
 | **Username allowed chars** | Unicode letters `L*` + ASCII digits `0–9` + connectors `_ - .`. | data-model §Username rules |
 | **Username disallowed** | Control `Cc`, format `Cf` (incl. zero-width / bidi), surrogates `Cs`, private-use `Co`, unassigned `Cn`, all whitespace, emoji/symbols `So`/`Sk`, unattached combining marks `Mn`/`Mc`. | data-model §Username rules |
 | **Username structure** | Must **start** with a letter or digit; must **end** with a letter or digit (not `_ - .`). | data-model §Username rules |
 | **Username normalisation** | **NFC-normalise before storing**; validate against the normalised form. | data-model §Username rules |
+| **DrinkPreset name** | 3–30 characters. Allowed: Unicode letters `L*`, ASCII digits `0–9`, connectors `_ - .`, and **ASCII space** ` `. Must start and end with a letter or digit. Rejects control chars, zero-width, emoji, and other symbols. Spaces between words are permitted (e.g. "Glass of water"). Implemented as `validatePresetName()` in `core`. | data-model §DrinkPreset |
 | **Glass-count copy formatting** | 0.5 → `half a glass`; 1 → `a glass`; 1.5 → `1.5 glasses`; 2 → `2 glasses`. Noun follows the default drink's **beverage type** ("of water"/"of tea"), never the preset display name. | notifications §Glass formatting |
 | **BAC display** | Always labelled an **estimate**; g/L primary, mmol/L secondary; persistent disclaimer while a session is active; cap never framed as a safety/legal line. | party-session §Important; §Display units |
 
