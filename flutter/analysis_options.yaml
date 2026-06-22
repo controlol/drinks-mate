@@ -7,6 +7,7 @@ analyzer:
   exclude:
     - "**/*.g.dart"      # Drift / generated code
     - "**/*.freezed.dart"
+    - "packages/core/test/**"  # Tested separately by `dart test` in the core job; package:test is unavailable here
 
 linter:
   rules:
