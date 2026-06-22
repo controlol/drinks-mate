@@ -11,13 +11,17 @@ GitHub Issue                              @claude comment
         │                                         │
         ▼                                         ▼
 .github/workflows/dispatch-agent.yml      .github/workflows/claude.yml
-  cron: pick next UNBLOCKED ready issue,    interactive: respond to the
+  pick next UNBLOCKED ready issue,          interactive: respond to the
   claim it (agent-working), cap in-flight   mention right away
         │                                         │
         └────────────────┬────────────────────────┘
                          ▼
             Claude reads CLAUDE.md + Parity Rulebook,
-            branches, implements, opens a PR
+            branches (claude/issue-N), implements, opens a PR
+                         │
+                         ▼ dispatcher swaps issue label:
+                           agent-working → agent-pr-open
+                           adds agent-ok to the PR
                          │
                          ▼
 .github/workflows/ci.yml          deterministic gate: format + analyze + test  (must pass)
@@ -39,13 +43,16 @@ dispatcher enforces it:
 - Each `agent-ready` issue states what it is **blocked by** — either GitHub's
   native "blocked by" relationship, or a `Blocked by #N` / `Depends on #N` line
   in the body. The dispatcher reads both.
-- On each cron tick `dispatch-agent.yml` picks the **lowest-numbered ready issue
+- On each tick `dispatch-agent.yml` picks the **lowest-numbered ready issue
   whose blockers are all closed**, labels it `agent-working` (the claim), and
-  runs Claude on it. At most `MAX_IN_FLIGHT` (default **1**) agent PRs are in
-  flight at once, so each agent branches from a `main` that already contains all
-  prior merged work — no cross-PR conflicts, deterministic order.
-- A claim is released when the PR merges (its `Closes #N` closes the issue) or,
-  if the run failed before opening a PR, automatically on the next tick.
+  runs Claude on it. At most `MAX_IN_FLIGHT` (default **2**) agent PRs may be
+  open at once. The agent branches from `main` using the naming convention
+  `claude/issue-N[-slug]`, so each agent sees all prior merged work.
+- Two labels track a slot's lifecycle: `agent-working` (agent running, no PR
+  yet) and `agent-pr-open` (PR open, awaiting review). Both count toward the
+  cap. On success the dispatcher swaps them and adds `agent-ok` to the PR; on
+  failure it removes `agent-working` so the issue re-queues on the next tick.
+  A slot fully frees when the PR merges and `Closes #N` closes the issue.
 
 So the order is: **set dependencies → label `agent-ready` → the dispatcher
 serializes the rest.** Bump `MAX_IN_FLIGHT` in `dispatch-agent.yml` once you
@@ -114,13 +121,16 @@ machine-specific overrides in `.claude/settings.local.json` (gitignored).
 
 ### 4. Create the queue + trust labels
 ```bash
-gh label create agent-ready   --color 5319e7 --description "Queued for the agent dispatcher to implement"
-gh label create agent-working --color fbca04 --description "Claimed by the dispatcher; a PR is in flight"
-gh label create agent-ok      --color 0e8a16 --description "Greenlit: run the AI review/security workflows on this PR"
+gh label create agent-ready    --color 5319e7 --description "Queued for the agent dispatcher to implement"
+gh label create agent-working  --color fbca04 --description "Dispatcher claimed this issue; agent is currently running"
+gh label create agent-pr-open  --color 0052cc --description "Agent PR open, awaiting review"
+gh label create agent-ok       --color 0e8a16 --description "Greenlit: run the AI review/security workflows on this PR"
 ```
-`dispatch-agent.yml` adds/removes `agent-working` itself — you only ever apply
-`agent-ready` (the issue template does this for you). `agent-ok` is the manual
-greenlight for the PR-triggered workflows (see [Trust & triggers](#trust--triggers)).
+`dispatch-agent.yml` manages `agent-working` and `agent-pr-open` automatically
+— you only ever apply `agent-ready` (the issue template does this for you).
+`agent-ok` is added automatically to agent PRs by the dispatcher; it can also
+be applied manually to greenlight a third-party PR for the review workflows
+(see [Trust & triggers](#trust--triggers)).
 The dispatcher is **event-driven** — labelling an issue `agent-ready` (or a PR
 merging, which frees a slot) kicks it off within seconds, with a low-frequency
 cron (`7,37 * * * *`) as a backstop since GitHub throttles short schedules. Like
@@ -157,7 +167,9 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
 - **Dispatch now / unstick:** run the *Agent dispatcher* workflow manually
   (Actions → Agent dispatcher → Run workflow) — optionally pass an issue number
   to force it past the queue. If a claim is stuck (PR closed without merging, or
-  a stalled run), remove the `agent-working` label to re-queue it.
+  a stalled run), remove whichever slot label is present (`agent-working` if the
+  agent never finished, `agent-pr-open` if the PR was closed without merging) to
+  re-queue the issue.
 - **Definition of done** (what agents and CI both enforce) — from repo root:
   ```bash
   (cd flutter/packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test)
@@ -213,9 +225,10 @@ other one to consider for visual, agent-driven UI work at that stage.
   pin DPR and bundle DM Sans to avoid flakiness.
 - **Coverage thresholds** — enforce ≥80% on `core`/services once the suite is
   fleshed out (e.g. via a coverage check step or a service like Codecov).
-- **Parallel dispatch** — `MAX_IN_FLIGHT` is 1 today (strict serial order, zero
-  cross-PR conflicts). Raise it in `dispatch-agent.yml` to let independent,
-  non-overlapping issues run concurrently once the test gate is trustworthy.
+- **Parallel dispatch** — `MAX_IN_FLIGHT` is 2, allowing two agent PRs open
+  simultaneously. Independent issues with no shared files run safely in parallel;
+  issues that touch the same code should use `Blocked by` dependencies to stay
+  serial. Raise or lower the cap in `dispatch-agent.yml` as the queue grows.
 - **`core` NFC normalisation** — username validation needs NFC before the
   structural check; tracked as a TODO in `flutter/packages/core/lib/src/username.dart`.
 
