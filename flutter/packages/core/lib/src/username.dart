@@ -8,6 +8,8 @@
 ///  - must start AND end with a letter or digit,
 ///  - the whitelist inherently rejects whitespace, control/format/surrogate/
 ///    private-use/unassigned code points, emoji and symbols.
+library;
+
 ///
 /// TODO(core): NFC normalisation must be applied before validation. Dart's core
 /// library has no built-in NFC, and `core` is intentionally dependency-free, so

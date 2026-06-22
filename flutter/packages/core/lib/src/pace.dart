@@ -15,8 +15,7 @@ double expectedIntakeMl({
   required int activeWindowMin,
 }) {
   assert(activeWindowMin > 0, 'active window must be positive');
-  final elapsed =
-      math.max(0, math.min(activeWindowMin, elapsedActiveMin));
+  final elapsed = math.max(0, math.min(activeWindowMin, elapsedActiveMin));
   return goalMl * (elapsed / activeWindowMin);
 }
 
