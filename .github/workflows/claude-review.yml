@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      issues: write
       id-token: write
     steps:
       - uses: actions/checkout@v7
@@ -50,7 +51,14 @@ jobs:
           # PRs get reviewed; this just lifts the bot-actor block inside the action.
           allowed_bots: "github-actions[bot]"
           prompt: |
-            Review this pull request's diff. Priorities, in order:
+            Review this pull request's diff.
+
+            Context:
+              Repository: ${{ github.repository }}
+              PR: #${{ github.event.pull_request.number }}
+              Event: ${{ github.event.action }}
+
+            Priorities, in order:
             1. Correctness bugs and missing edge cases.
             2. Parity Rulebook violations (engineering/decisions/design-system.md
                → Appendix): rounding, units, boundaries, BAC chain, validation.
@@ -64,3 +72,29 @@ jobs:
 
             Post inline comments on the specific lines. Skip pure formatting nits
             (CI owns those). End with a one-line verdict.
+
+            Fact check your findings with online sources before posting a
+            possibly incorrect comment. Especially if it is related to
+            deprecations or migrations.
+
+            For findings that cannot be resolved without human input, read
+            `.claude/commands/defer-to-issue.md` and follow its process. When
+            running `gh issue create`, substitute REPO with the Repository and
+            #N with the PR number from the Context block above. Apply the event
+            gate from the Context: only create issues on "opened" or "reopened",
+            never on "synchronize".
+
+            After posting all comments (and creating any deferred issues), write
+            exactly one line to $RUNNER_TEMP/review_verdict.txt:
+            - "FAIL" — if you found any finding in priorities 1–4 that is NOT deferred.
+            - "PASS" — if there are no blocking findings (deferred items are PASS).
+
+      - name: Enforce verdict
+        run: |
+          verdict=$(cat "$RUNNER_TEMP/review_verdict.txt" 2>/dev/null \
+            | tr -d '[:space:]' || echo "PASS")
+          echo "Code review verdict: $verdict"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::error::Code review found blocking issues. See inline PR comments."
+            exit 1
+          fi
