@@ -202,6 +202,127 @@ class FooScreen extends ConsumerWidget {
 }
 ```
 
+## Testability seams
+
+Every layer has a defined injection point. Scaffold each one so tests can reach it without a real database or widget tree.
+
+### Database — always injectable, never a singleton
+
+`AppDatabase` must accept a `QueryExecutor` so tests can pass an in-memory engine.
+Register `appDatabaseProvider` once in `flutter/lib/providers/app_database_provider.dart`;
+every other provider watches it rather than constructing the DB directly.
+
+```dart
+// flutter/lib/data/app_database.dart
+@DriftDatabase(tables: [FooEntries /*, ... */])
+class AppDatabase extends _$AppDatabase {
+  AppDatabase([QueryExecutor? executor])
+      : super(executor ?? _openConnection());
+
+  @override
+  int get schemaVersion => 1;
+
+  static QueryExecutor _openConnection() =>
+      driftDatabase(name: 'drinks_mate');
+
+  late final FooEntriesDao fooEntriesDao = FooEntriesDao(this);
+}
+```
+
+Tests pass `NativeDatabase.memory()` — real SQLite engine, no disk, no teardown friction:
+
+```dart
+// flutter/test/helpers/test_database.dart
+import 'package:drift/native.dart';
+import 'package:drinks_mate/data/app_database.dart';
+
+AppDatabase createTestDatabase() => AppDatabase(NativeDatabase.memory());
+```
+
+Do **not** mock the DAO. An in-memory database tests real SQL (soft-delete filtering,
+ordering, date-range queries) at negligible cost. Mocking the DAO hides the most
+common class of repository bug.
+
+### Repository — unit-test with ProviderContainer
+
+Override `appDatabaseProvider` with the in-memory DB; read the repository through a
+`ProviderContainer` so no widget tree is needed:
+
+```dart
+// flutter/test/repositories/foo_repository_test.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:drinks_mate/providers/app_database_provider.dart';
+import 'package:drinks_mate/providers/foo_provider.dart';
+import '../helpers/test_database.dart';
+
+void main() {
+  late AppDatabase db;
+  late ProviderContainer container;
+
+  setUp(() {
+    db = createTestDatabase();
+    container = ProviderContainer(
+      overrides: [appDatabaseProvider.overrideWithValue(db)],
+    );
+  });
+
+  tearDown(() async {
+    container.dispose();
+    await db.close();
+  });
+
+  test('watchActive returns empty on a fresh database', () async {
+    final items = await container.read(activeFoosProvider.future);
+    expect(items, isEmpty);
+  });
+}
+```
+
+### Widget tests — override the repository provider with a fake
+
+For widget tests that should not hit a database at all, override the repository
+provider directly with a hand-written fake. Prefer fakes over mocks: a fake that
+implements `FooRepository`'s concrete API fails to compile when the API changes,
+giving you a build-time safety net.
+
+```dart
+// flutter/test/helpers/fake_foo_repository.dart
+import 'package:drinks_mate/repositories/foo_repository.dart';
+import 'package:drinks_mate/domain/foo_model.dart';
+
+class FakeFooRepository extends FooRepository {
+  FakeFooRepository() : super(null as dynamic); // bypasses DAO
+
+  final _items = <FooModel>[];
+
+  @override
+  Stream<List<FooModel>> watchActive() => Stream.value(List.of(_items));
+
+  @override
+  Future<void> add(FooModel item) async => _items.add(item);
+}
+```
+
+```dart
+// in a widget test
+await tester.pumpWidget(
+  ProviderScope(
+    overrides: [
+      fooRepositoryProvider.overrideWithValue(FakeFooRepository()),
+    ],
+    child: const FooScreen(),
+  ),
+);
+```
+
+### Abstract interfaces — skip unless you need cross-cutting fakes
+
+With Riverpod provider overrides you rarely need abstract interfaces. Add one only
+if multiple screens need the same fake in many test files (shared fake earns its
+keep) or if you want compile-time enforcement that the fake stays in sync. For a
+single-developer Phase 1 project the concrete-class approach above is sufficient.
+
 ## Definition of done (run after every change)
 
 ```bash
