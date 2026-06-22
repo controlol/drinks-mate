@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh .claude/hooks/format-dart.sh"
+            "command": "bash -c 'ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd) && sh \"$ROOT/.claude/hooks/format-dart.sh\"'"
           }
         ]
       }

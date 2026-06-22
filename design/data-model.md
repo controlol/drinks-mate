@@ -38,7 +38,7 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
 | `id`             | string / UUID         | Stable identifier, generated locally.                                                  |
-| `name`           | string                | Required. 3–30 characters; same character whitelist as `username` (see "Username character rules"). |
+| `name`           | string                | Required. 3–30 characters. Allows Unicode letters `L*`, ASCII digits `0–9`, connectors (`_ - .`), and **ASCII space** — enables multi-word names like "Glass of water". Must start and end with a letter or digit. Rejects control characters, zero-width characters, emoji, and other symbols. See `validatePresetName()` in `core`. |
 | `beverageType`   | enum                  | Required. One of the values in `BeverageType` (see below).                             |
 | `volumeMl`       | integer               | Required, must be > 0.                                                                 |
 | `abvPercent`     | decimal \| null       | Required when `beverageType` is alcoholic; null otherwise.                             |
