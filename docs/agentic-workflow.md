@@ -129,6 +129,7 @@ gh label create agent-ready    --color 5319e7 --description "Queued for the agen
 gh label create agent-working  --color fbca04 --description "Dispatcher claimed this issue; agent is currently running"
 gh label create agent-pr-open  --color 0052cc --description "Agent PR open, awaiting review"
 gh label create agent-ok       --color 0e8a16 --description "Greenlit: run the AI review/security workflows on this PR"
+gh label create needs-input    --color e4e669 --description "Needs human input, decision, or asset before the agent can proceed"
 ```
 `dispatch-agent.yml` manages `agent-working` and `agent-pr-open` automatically
 — you only ever apply `agent-ready` (the issue template does this for you).
@@ -185,6 +186,12 @@ security scan blocks merge directly — not just as advisory comments.
   `agent-ready`), set its **Depends on** if it must wait for other issues, or
   comment `@claude <instruction>` on any issue/PR for an immediate, interactive
   run.
+- **Deferred review findings:** when the code reviewer finds something it cannot
+  fix without human input (missing design asset, unresolved spec ambiguity,
+  product decision), it opens a `needs-input` issue instead of failing the PR.
+  Supply the required input in the issue, then add `agent-ready` when ready for
+  the agent to act on it. Do NOT add `agent-ready` yourself until the input is
+  complete — the dispatcher picks up `agent-ready` issues immediately.
 - **Order a batch:** label everything `agent-ready`, then express the chain with
   dependencies (native "blocked by" or `Blocked by #N` in the body). The
   dispatcher releases them one at a time as their blockers merge — no need to
