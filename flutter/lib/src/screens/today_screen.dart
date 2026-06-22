@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/drink_preset.dart';
 import '../repository/providers.dart';
+import '../utils/color_utils.dart';
 import 'log_drink_sheet.dart';
 import 'settings_screen.dart';
 
@@ -154,7 +155,7 @@ class _QuickLogTile extends ConsumerWidget {
             Icon(
               Icons.local_drink_outlined,
               size: 28,
-              color: _parseColor(preset.iconColor),
+              color: parseIconColor(preset.iconColor),
             ),
             const SizedBox(height: 4),
             Text(
@@ -171,14 +172,22 @@ class _QuickLogTile extends ConsumerWidget {
   }
 
   Future<void> _quickLog(BuildContext context, WidgetRef ref) async {
-    await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logged ${preset.name}'),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+    try {
+      await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logged ${preset.name}'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to log drink')));
+      }
     }
   }
 }
@@ -192,7 +201,11 @@ class _LogDrinkButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          16, 8, 16, MediaQuery.of(context).padding.bottom + 16),
+        16,
+        8,
+        16,
+        MediaQuery.of(context).padding.bottom + 16,
+      ),
       child: FilledButton.icon(
         icon: const Icon(Icons.add),
         label: const Text('Log drink'),
@@ -231,12 +244,3 @@ Widget _settingsButton(BuildContext context) => IconButton(
         MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
       ),
     );
-
-Color? _parseColor(String hex) {
-  try {
-    final value = int.parse(hex.replaceFirst('#', ''), radix: 16);
-    return Color(0xFF000000 | value);
-  } catch (_) {
-    return null;
-  }
-}

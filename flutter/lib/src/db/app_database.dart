@@ -37,10 +37,14 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
         },
         onUpgrade: (m, from, to) async {
+          // Add an `if (from < N)` block for each schema version bump.
+          // Each block must be cumulative — a user upgrading directly from v1
+          // to v3 must run BOTH the v1→v2 and v2→v3 blocks in sequence.
           if (from < 2) {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
           }
+          // if (from < 3) { ... }
         },
         beforeOpen: (_) async {
           await _seedMissingDefaultPresets();

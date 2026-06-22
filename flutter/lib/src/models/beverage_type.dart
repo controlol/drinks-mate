@@ -54,7 +54,7 @@ enum BeverageType {
         'spirit' => spirit,
         'cocktail' => cocktail,
         'other_alcohol' => otherAlcohol,
-        _ => throw ArgumentError('Unknown beverage type: $value'),
+        _ => other, // unknown stored value → treat as non-alcoholic "other"
       };
 
   String get displayName => switch (this) {

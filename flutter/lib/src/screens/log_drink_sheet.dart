@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/drink_preset.dart';
 import '../repository/providers.dart';
+import '../utils/color_utils.dart';
 
 /// S2 — Log drink bottom sheet.
 ///
@@ -25,7 +26,6 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
   DrinkPreset? _selected;
   late TextEditingController _volumeCtrl;
   DateTime _consumedAt = DateTime.now();
-  bool _logging = false;
 
   @override
   void initState() {
@@ -55,16 +55,20 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     final volume = int.tryParse(_volumeCtrl.text);
     if (volume == null || volume <= 0) return;
 
-    setState(() => _logging = true);
+    // C6: close immediately; write settles in background.
+    final repo = ref.read(drinksRepositoryProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
     try {
-      await ref.read(drinksRepositoryProvider).logDrink(
-            preset: preset,
-            volumeMl: volume,
-            consumedAt: _consumedAt,
-          );
-      if (mounted) Navigator.of(context).pop(true);
-    } finally {
-      if (mounted) setState(() => _logging = false);
+      await repo.logDrink(
+        preset: preset,
+        volumeMl: volume,
+        consumedAt: _consumedAt,
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Failed to log drink')),
+      );
     }
   }
 
@@ -76,17 +80,14 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
       maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollController) => _selected == null
-          ? _PickPhase(
-              scrollController: scrollController,
-              onPick: _pickPreset,
-            )
+          ? _PickPhase(scrollController: scrollController, onPick: _pickPreset)
           : _ConfirmPhase(
               preset: _selected!,
               volumeCtrl: _volumeCtrl,
               consumedAt: _consumedAt,
               onTimeChanged: (dt) => setState(() => _consumedAt = dt),
               onBack: _back,
-              onConfirm: _logging ? null : _confirm,
+              onConfirm: _confirm,
             ),
     );
   }
@@ -97,10 +98,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
 // ---------------------------------------------------------------------------
 
 class _PickPhase extends ConsumerWidget {
-  const _PickPhase({
-    required this.scrollController,
-    required this.onPick,
-  });
+  const _PickPhase({required this.scrollController, required this.onPick});
 
   final ScrollController scrollController;
   final ValueChanged<DrinkPreset> onPick;
@@ -148,7 +146,7 @@ class _PresetTile extends StatelessWidget {
     return ListTile(
       leading: Icon(
         Icons.local_drink_outlined,
-        color: _parseColor(preset.iconColor),
+        color: parseIconColor(preset.iconColor),
       ),
       title: Text(preset.name),
       subtitle: Text('${preset.volumeMl} ml'),
@@ -176,7 +174,7 @@ class _ConfirmPhase extends StatelessWidget {
   final DateTime consumedAt;
   final ValueChanged<DateTime> onTimeChanged;
   final VoidCallback onBack;
-  final VoidCallback? onConfirm;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -190,8 +188,10 @@ class _ConfirmPhase extends StatelessWidget {
             onPressed: onBack,
             tooltip: 'Back to preset list',
           ),
-          title:
-              Text(preset.name, style: Theme.of(context).textTheme.titleLarge),
+          title: Text(
+            preset.name,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           subtitle: Text(preset.beverageType.displayName),
         ),
         const Divider(),
@@ -200,8 +200,10 @@ class _ConfirmPhase extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               const SizedBox(height: 8),
-              Text('Volume (ml)',
-                  style: Theme.of(context).textTheme.labelLarge),
+              Text(
+                'Volume (ml)',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: volumeCtrl,
@@ -215,25 +217,20 @@ class _ConfirmPhase extends StatelessWidget {
               const SizedBox(height: 20),
               Text('Time', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 8),
-              _TimeButton(
-                consumedAt: consumedAt,
-                onChanged: onTimeChanged,
-              ),
+              _TimeButton(consumedAt: consumedAt, onChanged: onTimeChanged),
             ],
           ),
         ),
         Padding(
           padding: EdgeInsets.fromLTRB(
-              16, 8, 16, MediaQuery.of(context).padding.bottom + 16),
+            16,
+            8,
+            16,
+            MediaQuery.of(context).padding.bottom + 16,
+          ),
           child: FilledButton(
             onPressed: onConfirm,
-            child: onConfirm == null
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Confirm'),
+            child: const Text('Confirm'),
           ),
         ),
       ],
@@ -262,7 +259,12 @@ class _TimeButton extends StatelessWidget {
         );
         if (picked != null) {
           final updated = DateTime(
-              local.year, local.month, local.day, picked.hour, picked.minute);
+            local.year,
+            local.month,
+            local.day,
+            picked.hour,
+            picked.minute,
+          );
           onChanged(updated);
         }
       },
@@ -288,14 +290,5 @@ class _SheetHandle extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-Color? _parseColor(String hex) {
-  try {
-    final value = int.parse(hex.replaceFirst('#', ''), radix: 16);
-    return Color(0xFF000000 | value);
-  } catch (_) {
-    return null;
   }
 }

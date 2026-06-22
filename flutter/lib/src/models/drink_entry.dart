@@ -17,6 +17,7 @@ class DrinkEntry {
     required this.consumedAt,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
 
   final String id;
@@ -31,4 +32,5 @@ class DrinkEntry {
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
 }

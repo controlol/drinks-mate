@@ -22,9 +22,7 @@ class DrinksRepository {
   // ---------------------------------------------------------------------------
 
   Stream<List<DrinkPreset>> watchVisiblePresets() =>
-      _db.watchVisiblePresets().map(
-            (rows) => rows.map(_rowToPreset).toList(),
-          );
+      _db.watchVisiblePresets().map((rows) => rows.map(_rowToPreset).toList());
 
   // ---------------------------------------------------------------------------
   // Entries
@@ -40,7 +38,7 @@ class DrinksRepository {
     DateTime? consumedAt,
   }) async {
     final now = DateTime.now().toUtc();
-    final consumed = (consumedAt ?? DateTime.now()).toUtc();
+    final consumed = consumedAt?.toUtc() ?? now;
     final companion = DrinkEntriesCompanion.insert(
       id: _uuid.v4(),
       name: Value(preset.name),
@@ -63,8 +61,10 @@ class DrinksRepository {
   /// Excludes alcoholic beverages — data-model.md §BeverageType: "the two
   /// flows are strictly disjoint; a beer does not move the daily-water goal."
   /// Emits a new value whenever a drink is logged or deleted.
-  Stream<int> watchTodayTotalMl() {
-    final window = dayWindow(now: DateTime.now());
+  /// [now] is injected by the provider so the boundary timer and the query
+  /// window share the exact same instant.
+  Stream<int> watchTodayTotalMl({DateTime? now}) {
+    final window = dayWindow(now: now ?? DateTime.now());
     final nonAlcoholicTypes = BeverageType.values
         .where((t) => !t.isAlcoholic)
         .map((t) => t.stored)
