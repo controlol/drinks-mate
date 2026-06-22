@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.drinks_mate"
+    namespace = "com.controlol.drinks_mate"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -17,11 +17,11 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.drinks_mate"
+        applicationId = "com.controlol.drinks_mate"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 26        // D1: Android 8.0+ (notification channels require API 26)
+        targetSdk = 36    // D1: Play mandates target 36 from 31 Aug 2026
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -41,10 +41,10 @@ kotlin {
     }
 }
 
-dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-}
-
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
