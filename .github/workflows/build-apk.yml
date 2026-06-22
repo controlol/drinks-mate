@@ -3,7 +3,9 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -13,6 +15,8 @@ jobs:
   build-apk:
     name: Build Android APK
     runs-on: ubuntu-latest
+    # Only run when CI passed; workflow_dispatch bypasses this check.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     defaults:
       run:
         working-directory: flutter
