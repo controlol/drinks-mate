@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'settings_screen.dart';
+
 /// Party tab placeholder — Party Session feature lands here in a later issue.
 ///
 /// The emerald / mint accent is Party-Mode-only (C5 quarantine rule); it will
@@ -10,6 +12,10 @@ class PartyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Party'),
+        actions: [_settingsButton(context)],
+      ),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -32,3 +38,12 @@ class PartyScreen extends StatelessWidget {
     );
   }
 }
+
+Widget _settingsButton(BuildContext context) => IconButton(
+      icon: const Icon(Icons.settings_outlined),
+      tooltip: 'Settings',
+      onPressed: () => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+      ),
+    );

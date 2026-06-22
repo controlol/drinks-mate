@@ -8,8 +8,6 @@
 ///  - must start AND end with a letter or digit,
 ///  - the whitelist inherently rejects whitespace, control/format/surrogate/
 ///    private-use/unassigned code points, emoji and symbols.
-library;
-
 ///
 /// TODO(core): NFC normalisation must be applied before validation — callers
 /// passing NFD-encoded input (e.g. é as U+0065 + U+0301) receive a spurious
@@ -18,6 +16,7 @@ library;
 /// intentionally dependency-free; the caller must normalise first.
 /// Track this before `validateUsername` is user-facing — file a GitHub issue
 /// and add `// TODO(core): NFC — tracked in #<n>` once the number is known.
+library;
 
 class UsernameValidation {
   const UsernameValidation.valid()

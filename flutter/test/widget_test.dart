@@ -4,16 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('app shell renders with 4-tab NavigationBar', (tester) async {
+  testWidgets('app shell renders with 3-tab NavigationBar', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: DrinksMateApp()));
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
   });
 
-  testWidgets('all 4 tab labels are visible', (tester) async {
+  testWidgets('all 3 tab labels are visible', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: DrinksMateApp()));
     final navBar = find.byType(NavigationBar);
-    for (final label in ['Today', 'History', 'Party', 'Settings']) {
+    for (final label in ['Today', 'Party', 'History']) {
       expect(
         find.descendant(of: navBar, matching: find.text(label)),
         findsOneWidget,
@@ -50,15 +50,15 @@ void main() {
     expect(find.text('Party Session feature coming soon.'), findsOneWidget);
   });
 
-  testWidgets('tapping Settings tab switches screen', (tester) async {
+  testWidgets('gear icon navigates to Settings full-screen', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: DrinksMateApp()));
 
-    final navBar = find.byType(NavigationBar);
-    await tester.tap(
-      find.descendant(of: navBar, matching: find.text('Settings')),
-    );
+    // Tap the settings gear icon in the Today tab header.
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
+    // Settings screen is pushed; tab bar is hidden (Navigator covers AppShell).
     expect(find.text('App settings coming soon.'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
   });
 }

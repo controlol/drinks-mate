@@ -18,8 +18,8 @@ const Color kColorHoney = Color(0xFFF5A623);
 abstract final class AppTheme {
   AppTheme._();
 
-  static ThemeData get light => _build(Brightness.light);
-  static ThemeData get dark => _build(Brightness.dark);
+  static final ThemeData light = _build(Brightness.light);
+  static final ThemeData dark = _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
     final scheme = ColorScheme.fromSeed(

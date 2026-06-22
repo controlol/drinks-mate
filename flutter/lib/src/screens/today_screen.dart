@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'settings_screen.dart';
+
 /// Today tab placeholder — hydration tracking feature lands here in issue #2.
 class TodayScreen extends StatelessWidget {
   const TodayScreen({super.key});
@@ -7,6 +9,10 @@ class TodayScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Today'),
+        actions: [_settingsButton(context)],
+      ),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -29,3 +35,12 @@ class TodayScreen extends StatelessWidget {
     );
   }
 }
+
+Widget _settingsButton(BuildContext context) => IconButton(
+      icon: const Icon(Icons.settings_outlined),
+      tooltip: 'Settings',
+      onPressed: () => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+      ),
+    );

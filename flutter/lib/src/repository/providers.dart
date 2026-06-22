@@ -1,17 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/app_database.dart';
 import 'drinks_repository.dart';
 
-/// Lazily opens the Drift database. Nothing in the placeholder shell reads
-/// this provider, so widget tests never trigger [NativeDatabase] construction.
-final appDatabaseProvider = Provider<AppDatabase>((ref) {
+/// Package-private — widgets must use [drinksRepositoryProvider] instead of
+/// reaching [AppDatabase] directly (CLAUDE.md: "Drift types never reach widgets").
+final _appDatabaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
-  ref.onDispose(db.close);
+  ref.onDispose(() => unawaited(db.close()));
   return db;
 });
 
 /// Repository provider — the only seam widgets use to reach persisted data.
 final drinksRepositoryProvider = Provider<DrinksRepository>((ref) {
-  return DrinksRepository(ref.watch(appDatabaseProvider));
+  return DrinksRepository(ref.watch(_appDatabaseProvider));
 });

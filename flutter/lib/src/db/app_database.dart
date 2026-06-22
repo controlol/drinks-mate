@@ -18,6 +18,15 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          // TODO(db): add step-wise migrations before bumping schemaVersion;
+          // v1 has no tables so upgrade is currently unreachable, but the hook
+          // is here to prevent a silent startup crash when the first table lands.
+        },
+      );
 }
 
 LazyDatabase _openConnection() {

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 
-/// Settings tab placeholder — S4 Settings screen lands here in a later issue.
+/// Settings placeholder — S4 Settings screen lands here in a later issue.
 ///
-/// Note: the design spec (user-experience.md, designer-brief.md) reaches
-/// Settings via a gear icon in the page header rather than a bottom-nav tab.
-/// Issue #1 explicitly scaffolds Settings as a 4th tab for the shell; the
-/// navigation model will be reconciled when S4 Settings is implemented.
+/// Reached by tapping the gear icon in the header of any top-level tab screen
+/// (per user-experience.md S4). Presented as a full-screen push; the bottom
+/// tab bar is hidden because the Navigator route covers AppShell entirely.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
