@@ -47,8 +47,9 @@ All three must pass (format clean, analyze clean, tests green). CI (`.github/wor
 
 ## Subagents available (`.claude/agents/`)
 
+- `feature-scaffolder` — scaffolds a new feature end-to-end: Drift table → DAO → domain model → repository → Riverpod provider → widget stub. Use when starting any new entity or screen.
 - `test-author` — writes/maintains `core` test vectors from the design docs.
 - `spec-auditor` — checks a change against the Parity Rulebook.
 - `reviewer` — reviews a diff for correctness, parity, and constraint violations.
 
-Delegate explicitly, e.g. "use the spec-auditor subagent to check this BAC change".
+Delegate explicitly, e.g. "use the feature-scaffolder to scaffold DrinkEntry" or "use the spec-auditor subagent to check this BAC change".
