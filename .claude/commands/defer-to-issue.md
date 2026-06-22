@@ -16,21 +16,38 @@ The following categories are NEVER deferrable. If in doubt, FAIL:
   (`Account`, `Friendship`, `ShareSetting`); no banned dependencies
 - Missing unit tests for new `core` computation
 
-## Deferrable — only when blocked on human input
+## Deferrable — only when blocked on human input AND the PR can still ship
 
-Defer a finding only when fixing it is **impossible without human input**:
+Apply both tests. A finding is deferrable only when:
 
-- A UX or product decision where the spec lists multiple options and no choice
-  was made (e.g. "which default unit — ml or oz — should the picker open to?")
-- A missing asset (icon, image, font, fixture file) referenced in code but not
-  yet committed — the agent cannot create design assets
-- A missing or ambiguous spec: the code references behaviour not described
-  anywhere in `design/` and the correct implementation is unclear
-- An architectural scope question that requires a product owner decision
-  (e.g. "should this feature extend into Phase 2?")
+1. **Fixing it is impossible without human input** — a product decision, a
+   missing asset the agent cannot create, an unresolved spec ambiguity, or a
+   question requiring external context not in the repository.
 
-Do NOT defer: technical debt, low-priority nits, stylistic preferences,
-deprecation warnings the agent could fix, or anything you could resolve yourself.
+2. **The PR can ship and deliver its intended value without resolving it** — the
+   feature works, the data model is correct, and no breaking change will be
+   forced when the deferred decision is eventually made.
+
+If either test fails, the finding **blocks** (FAIL), even if it looks like a
+deferrable type.
+
+Examples that are **small enough to defer**:
+- A secondary icon or illustration that could use a placeholder for now
+- A minor UX wording choice where either option ships without breakage
+- A colour or style token where a reasonable default already exists
+
+Examples that are **too big to defer** (must FAIL):
+- The core algorithm or data model depends on a design decision not yet made —
+  shipping now would require a breaking migration or rewrite later
+- The feature is non-functional without the missing input (e.g. a required icon
+  in a screen with no fallback, a mandatory config value with no default)
+- The PR's implementation direction needs to fundamentally change pending the
+  decision — deferring just delays a revert
+
+Acceptable deferrable types: UX/product decision, missing asset, ambiguous spec,
+out-of-scope Phase 2 question.
+Do NOT defer: technical debt, nits, deprecation warnings you could fix, or
+anything you could resolve yourself.
 
 ## How to defer
 
