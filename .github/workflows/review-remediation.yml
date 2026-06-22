@@ -1,0 +1,116 @@
+name: Review Remediation
+
+# When an AI review (code or security) fails on a claude/* PR, run the agent
+# once to address the findings and push fixes to the same branch.
+#
+# The PR re-enters the normal CI + review cycle once the fixes are pushed.
+# Capped at one attempt per PR via the `agent-remediation` label — if the
+# second review also fails, a human must intervene.
+#
+# NOTE: workflow_run only fires from the default branch, so this workflow takes
+# effect only after it is merged to main.
+
+on:
+  workflow_run:
+    workflows: ["Claude PR Review", "Security Review"]
+    types: [completed]
+
+jobs:
+  remediate:
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'claude/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Find PR and check remediation cap
+        id: pr
+        run: |
+          set -euo pipefail
+
+          pr_number=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" \
+            --json number --jq '.[0].number // ""')
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for branch $HEAD_BRANCH — skipping remediation."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
+
+          # Only attempt one automated remediation cycle per PR.
+          already=$(gh pr view "$pr_number" --repo "$REPO" --json labels \
+            --jq '[.labels[].name] | contains(["agent-remediation"]) | if . then 1 else 0 end')
+          if [ "${already:-0}" -eq 1 ]; then
+            echo "Remediation already attempted for PR #$pr_number — skipping."
+            gh pr comment "$pr_number" --repo "$REPO" \
+              --body "⚠️ Automated remediation already ran and the review still fails. Manual intervention required." \
+              || true
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        if: steps.pr.outputs.skip != 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        if: steps.pr.outputs.skip != 'true'
+        with:
+          channel: stable
+          cache: true
+
+      - name: Mark remediation in progress
+        if: steps.pr.outputs.skip != 'true'
+        run: |
+          gh label create "agent-remediation" --repo "$REPO" \
+            --color "e99695" \
+            --description "Automated review remediation attempted on this PR" \
+            2>/dev/null || true
+          gh pr edit "${{ steps.pr.outputs.pr }}" --repo "$REPO" \
+            --add-label "agent-remediation" || true
+
+      - name: Fix review findings
+        if: steps.pr.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--permission-mode bypassPermissions"
+          allowed_bots: "github-actions[bot]"
+          prompt: |
+            PR #${{ steps.pr.outputs.pr }} in ${{ github.repository }} failed an
+            automated review. Your task: fix every blocking finding and push the
+            fixes to the existing branch (do NOT open a new PR).
+
+            1. Read the PR reviews and inline comments:
+                 gh pr view ${{ steps.pr.outputs.pr }} --json reviews,reviewComments
+
+            2. Address every BLOCKING finding — this includes:
+               - Correctness bugs and missing edge cases
+               - Parity Rulebook violations (engineering/decisions/design-system.md)
+               - Phase-1 constraint breaches (core must stay pure Dart, no Phase-2 entities)
+               - Missing tests for new core computation
+               - CRITICAL or HIGH security issues
+
+            3. Delegate to subagents where appropriate:
+               - `spec-auditor` to verify Parity Rulebook fixes
+               - `test-author` to add or fix core unit tests
+
+            4. Run the definition-of-done checks until all pass:
+                 (cd flutter/packages/core && dart format --output=none --set-exit-if-changed . && dart analyze --fatal-infos && dart test)
+                 (cd flutter && dart format --output=none --set-exit-if-changed . && flutter analyze && flutter test)
+
+            5. Push the fixes to the existing branch.
+               Use commit message: "fix: address automated review findings"

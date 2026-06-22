@@ -24,12 +24,16 @@ GitHub Issue                              @claude comment
                            adds agent-ok to the PR
                          │
                          ▼
-.github/workflows/ci.yml          deterministic gate: format + analyze + test  (must pass)
-.github/workflows/claude-review.yml  agentic review: inline comments on the diff
-.github/workflows/security-review.yml  AI security scan
+.github/workflows/ci.yml              deterministic gate: format + analyze + test
+.github/workflows/claude-review.yml   agentic review: inline comments + verdict
+.github/workflows/security-review.yml agentic security scan: inline comments + verdict
+                         │ all three pass?
+                         ▼
+.github/workflows/auto-approve.yml    posts a bot approval automatically
+.github/workflows/review-remediation.yml  (on failure) agent fixes findings, re-pushes
                          │
                          ▼
-Branch protection  ──►  human approval  ──►  merge  ──►  issue closes, queue slot frees
+Branch protection  ──►  bot approval counts  ──►  merge  ──►  issue closes, queue slot frees
 ```
 
 The keystone is the **test suite** (`flutter/packages/core/test/`, `flutter/test/`): every other
@@ -137,8 +141,22 @@ cron (`7,37 * * * *`) as a backstop since GitHub throttles short schedules. Like
 all workflows it only runs from the **default branch**, so this takes effect
 once merged to `main`.
 
-### 5. Turn on branch protection for `main`
-Require the CI checks and at least one approving review before merge:
+### 5. Enable Actions to approve PRs
+
+`auto-approve.yml` uses `GITHUB_TOKEN` to post an approving review. GitHub
+blocks this by default:
+
+**Settings → Actions → General → "Allow GitHub Actions to create and approve
+pull requests"** → enable.
+
+Without this, the auto-approve step fails silently with a 403 and agent PRs
+still need a human to click Approve.
+
+### 6. Turn on branch protection for `main`
+
+Require the CI checks, the review checks, and at least one approving review
+before merge. The bot approval from `auto-approve.yml` satisfies that last
+requirement for agent PRs:
 
 ```bash
 gh api -X PUT repos/:owner/:repo/branches/main/protection \
@@ -146,13 +164,20 @@ gh api -X PUT repos/:owner/:repo/branches/main/protection \
   -f 'required_status_checks[strict]=true' \
   -f 'required_status_checks[contexts][]=core package (pure Dart)' \
   -f 'required_status_checks[contexts][]=flutter app' \
+  -f 'required_status_checks[contexts][]=review' \
+  -f 'required_status_checks[contexts][]=security' \
   -F 'enforce_admins=true' \
   -F 'required_pull_request_reviews[required_approving_review_count]=1' \
   -F 'restrictions=null'
 ```
 
-> Keep a human in the merge loop until you trust the pipeline. The agentic and
-> security reviews advise; they do not auto-merge.
+Adding `review` and `security` as required checks means a failing AI review or
+security scan blocks merge directly — not just as advisory comments.
+
+> **Merge:** once all four status checks are green, `auto-approve.yml` posts a
+> bot approval and the PR can be merged without any human interaction. Enable
+> auto-merge on the PR (`gh pr merge --auto --squash`) or let the agent do it
+> in the dispatch prompt if you want fully hands-off merging.
 
 ## Day-to-day
 

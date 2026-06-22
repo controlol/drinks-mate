@@ -1,7 +1,12 @@
 name: Security Review
 
-# AI-powered security scan of PR diffs (anthropics/claude-code-security-review).
-# Flags injection, secret leakage, unsafe persistence/serialisation, etc.
+# AI-powered security scan of PR diffs using claude-code-action (OAuth token,
+# same auth as claude-review.yml). Replaces the anthropics/claude-code-security-review
+# action which required a separate ANTHROPIC_API_KEY.
+#
+# The job fails when Claude rates at least one finding CRITICAL or HIGH, blocking
+# merge (once this check is added to branch protection). All findings are posted
+# as inline PR comments.
 
 on:
   pull_request:
@@ -9,9 +14,9 @@ on:
 
 jobs:
   security:
-    # Trust gate (see claude-review.yml): only auto-run on PRs from the owner or
-    # the pipeline's own claude/* branches; any other PR must be greenlit by a
-    # maintainer adding the `agent-ok` label.
+    # Trust gate: same rule as claude-review.yml — only auto-run on PRs from the
+    # owner or the pipeline's own claude/* branches. Any other PR must be greenlit
+    # by a maintainer adding the `agent-ok` label.
     if: >
       github.event.pull_request.draft == false && (
         github.event.pull_request.author_association == 'OWNER' ||
@@ -23,13 +28,56 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Claude security review
-        uses: anthropics/claude-code-security-review@main
+        uses: anthropics/claude-code-action@v1
         with:
-          claude-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          comment-pr: true
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--permission-mode bypassPermissions"
+          allowed_bots: "github-actions[bot]"
+          prompt: |
+            Perform a security review of PR #${{ github.event.pull_request.number }}
+            in ${{ github.repository }}. This is a Flutter/Dart mobile app with a
+            local-only SQLite database (Drift) — no server, no accounts, Phase 1.
+
+            Check the diff for:
+            1. Secret / credential leakage — hardcoded API keys, tokens, passwords,
+               or any value that looks like a secret committed to source.
+            2. Unsafe file-system access — path traversal, world-readable storage,
+               sensitive data written to unprotected locations.
+            3. Insecure persistence — sensitive data stored in plaintext (Drift
+               columns that should be encrypted), unprotected SharedPreferences.
+            4. Injection — any user-supplied value passed unsanitised to
+               Process.run, a shell command, or a dynamic query builder.
+            5. Cleartext network traffic — HTTP instead of HTTPS, missing cert
+               validation, insecure WebSocket.
+            6. Newly added pub.dev packages with known CVEs or that request
+               excessive platform permissions (check pubspec.yaml changes).
+
+            Rate every finding: CRITICAL, HIGH, MEDIUM, or LOW.
+            Post an inline comment on the specific diff line for each finding.
+            Skip findings that are clearly outside this diff.
+
+            After posting all comments, write exactly one line to
+            $RUNNER_TEMP/security_verdict.txt:
+            - "FAIL" — if there is at least one CRITICAL or HIGH finding.
+            - "PASS" — if all findings are MEDIUM / LOW, or there are none.
+
+            End with a one-line summary comment on the PR (e.g.
+            "Security review: PASS — no high-severity findings." or
+            "Security review: FAIL — 2 HIGH findings, see inline comments.").
+
+      - name: Enforce verdict
+        run: |
+          verdict=$(cat "$RUNNER_TEMP/security_verdict.txt" 2>/dev/null \
+            | tr -d '[:space:]' || echo "PASS")
+          echo "Security verdict: $verdict"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::error::Security review found CRITICAL or HIGH severity issues. See inline PR comments."
+            exit 1
+          fi

@@ -64,3 +64,22 @@ jobs:
 
             Post inline comments on the specific lines. Skip pure formatting nits
             (CI owns those). End with a one-line verdict.
+
+            Fact check your findings with online sources before posting a
+            possibly incorrect comment. Especially if it is related to
+            deprecations or migrations.
+
+            After posting all comments, write exactly one line to
+            $RUNNER_TEMP/review_verdict.txt:
+            - "FAIL" — if you found any finding in priorities 1–4 above.
+            - "PASS" — if there are no findings or only minor nits.
+
+      - name: Enforce verdict
+        run: |
+          verdict=$(cat "$RUNNER_TEMP/review_verdict.txt" 2>/dev/null \
+            | tr -d '[:space:]' || echo "PASS")
+          echo "Code review verdict: $verdict"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::error::Code review found blocking issues. See inline PR comments."
+            exit 1
+          fi
