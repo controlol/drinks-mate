@@ -26,6 +26,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
   DrinkPreset? _selected;
   late TextEditingController _volumeCtrl;
   DateTime _consumedAt = DateTime.now();
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -50,6 +51,9 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
   void _back() => setState(() => _selected = null);
 
   Future<void> _confirm() async {
+    if (_submitting) return;
+    _submitting = true;
+
     final preset = _selected;
     if (preset == null) return;
     final volume = int.tryParse(_volumeCtrl.text);

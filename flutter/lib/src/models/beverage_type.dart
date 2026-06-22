@@ -54,8 +54,13 @@ enum BeverageType {
         'spirit' => spirit,
         'cocktail' => cocktail,
         'other_alcohol' => otherAlcohol,
-        _ => other, // unknown stored value → treat as non-alcoholic "other"
+        _ => _unknownType(value),
       };
+
+  static BeverageType _unknownType(String value) {
+    assert(false, 'BeverageType.fromStored: unrecognised value "$value"');
+    return other;
+  }
 
   String get displayName => switch (this) {
         water => 'Water',
