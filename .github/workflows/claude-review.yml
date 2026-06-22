@@ -31,6 +31,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Claude review
         uses: anthropics/claude-code-action@v1
         with:
