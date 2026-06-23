@@ -5,7 +5,7 @@
 ///  - Parity Rulebook → "DrinkPreset name" row (data-model.md §DrinkPreset).
 ///
 /// [validateUsername] rules:
-///  - length 3–30 (after NFC normalisation — see TODO below),
+///  - length 3–30 (measured after NFC normalisation),
 ///  - allowed chars: Unicode letters `\p{L}` + ASCII digits + connectors `_ - .`,
 ///  - must start AND end with a letter or digit,
 ///  - whitespace, control/format/surrogate/private-use/unassigned, emoji and
@@ -15,15 +15,9 @@
 ///  - length 3–30,
 ///  - allowed chars: same as username **plus ASCII space**,
 ///  - must start AND end with a letter or digit (leading/trailing spaces rejected).
-///
-/// TODO(core): NFC normalisation must be applied before validation — callers
-/// passing NFD-encoded input (e.g. é as U+0065 + U+0301) receive a spurious
-/// error today because U+0301 (combining acute, category Mn) is not in
-/// [\p{L}0-9_.-]. Dart's core library has no built-in NFC and `core` is
-/// intentionally dependency-free; the caller must normalise first.
-/// Track this before either function is user-facing — file a GitHub issue
-/// and add `// TODO(core): NFC — tracked in #<n>` once the number is known.
 library;
+
+import 'package:unorm_dart/unorm_dart.dart' as unorm;
 
 class UsernameValidation {
   const UsernameValidation.valid()
@@ -44,6 +38,13 @@ final RegExp _usernamePattern = RegExp(
   unicode: true,
 );
 
+/// Returns the NFC canonical form of [s] for storage or comparison.
+///
+/// Apply this before persisting any value that was validated by
+/// [validateUsername] or [validatePresetName], so visually identical inputs
+/// produce the same stored bytes (data-model.md §Username rules).
+String normalizeNfc(String s) => unorm.nfc(s);
+
 /// Validates a username against the Parity Rulebook structural rules.
 ///
 /// [minLength]/[maxLength] default to the username bounds (3–30); pass
@@ -53,14 +54,15 @@ UsernameValidation validateUsername(
   int minLength = 3,
   int maxLength = 30,
 }) {
+  final normalized = unorm.nfc(input);
   // Count user-perceived characters, not UTF-16 code units.
-  final length = input.runes.length;
+  final length = normalized.runes.length;
   if (length < minLength || length > maxLength) {
     return UsernameValidation.invalid(
       'Must be $minLength–$maxLength characters.',
     );
   }
-  if (!_usernamePattern.hasMatch(input)) {
+  if (!_usernamePattern.hasMatch(normalized)) {
     return const UsernameValidation.invalid(
       'Use letters, digits, and _ - . — must start and end with a letter or digit.',
     );
@@ -81,11 +83,12 @@ final RegExp _presetNamePattern = RegExp(
 /// Same structural rules as [validateUsername] except ASCII space is allowed
 /// between words (e.g. "Glass of water" is valid).
 UsernameValidation validatePresetName(String input) {
-  final length = input.runes.length;
+  final normalized = unorm.nfc(input);
+  final length = normalized.runes.length;
   if (length < 3 || length > 30) {
     return const UsernameValidation.invalid('Must be 3–30 characters.');
   }
-  if (!_presetNamePattern.hasMatch(input)) {
+  if (!_presetNamePattern.hasMatch(normalized)) {
     return const UsernameValidation.invalid(
       'Use letters, digits, spaces, and _ - . — must start and end with a letter or digit.',
     );

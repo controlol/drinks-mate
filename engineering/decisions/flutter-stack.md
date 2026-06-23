@@ -4,7 +4,7 @@
 
 ## Summary
 
-Drinks Mate is a **single Flutter codebase** for iOS and Android. Build Phase 1 as a **Flutter (stable channel) app on Dart 3**, **Material 3** with a fully custom design system, targeting **iOS 18.0+** and **Android `minSdk 26` / `targetSdk 36`**. Lean on **first-party Flutter + a small set of well-maintained, widely-used packages**: **Drift** for persistence (typed SQLite — first-class migrations, transactions, Phase-2 sync-ready), **flutter_local_notifications** (+ `timezone`) for the local-notification engine, **fl_chart** for History + the Party BAC chart, **flutter_svg** for the two-shade tinted drink icons, **Riverpod** for state/DI, and a **dependency-free pure-Dart `core` package** for every C4 algorithm.
+Drinks Mate is a **single Flutter codebase** for iOS and Android. Build Phase 1 as a **Flutter (stable channel) app on Dart 3**, **Material 3** with a fully custom design system, targeting **iOS 18.0+** and **Android `minSdk 26` / `targetSdk 36`**. Lean on **first-party Flutter + a small set of well-maintained, widely-used packages**: **Drift** for persistence (typed SQLite — first-class migrations, transactions, Phase-2 sync-ready), **flutter_local_notifications** (+ `timezone`) for the local-notification engine, **fl_chart** for History + the Party BAC chart, **flutter_svg** for the two-shade tinted drink icons, **Riverpod** for state/DI, and a **pure-Dart `core` package** (no Flutter/Drift/native-plugin deps) for every C4 algorithm.
 
 Because there is one codebase, behavioural and visual parity hold **by construction**: every algorithm is implemented once and every screen is drawn once. The **one genuinely harder area is notifications** (D4): iOS provides no hook to run code when a *local* notification delivers, so the recommended-volume content is baked at schedule time and refreshed by a **uniform rolling-window re-arm on both platforms**. The **only hard "must be native" surface is in the explicitly-deferred Later bucket** (Apple Watch / Wear OS apps; Flutter does not target watchOS) — out of scope for Phases 1–3.
 
@@ -18,7 +18,7 @@ Because there is one codebase, behavioural and visual parity hold **by construct
 | D4 | Local notifications | **flutter_local_notifications** + `timezone`; uniform rolling-window re-arm; background-isolate quick-log | flutter_local_notifications, timezone | Medium-High |
 | D5 | Charts | **fl_chart** for History bars + BAC line; red wash via `CustomPainter` | fl_chart | High |
 | D6 | Drink-icon tinting | **flutter_svg** + runtime two-shade HSL tint in pure Dart (`core`) | flutter_svg | High |
-| D7 | Shared computation | Dependency-free pure-Dart **`core`** package; parity by construction; design fixtures become unit tests | none (in-house) | High |
+| D7 | Shared computation | Pure-Dart **`core`** package (no Flutter/Drift/native-plugin deps); parity by construction; design fixtures become unit tests | pure-Dart packages only | High |
 
 ---
 
@@ -193,13 +193,13 @@ Because there is one codebase, behavioural and visual parity hold **by construct
 
 ---
 
-## D7 — Shared computation: dependency-free pure-Dart `core` package
+## D7 — Shared computation: pure-Dart `core` package
 
 - **Status:** Proposed
 - **Area:** shared-computation
 - **Constraint(s) addressed:** C4 (BAC, pace/recommended-volume, goal, username validation, day-boundary bucketing + 7-day aggregates), supports D4/D6.
 
-**Decision.** Put every C4 algorithm in a standalone **pure-Dart `core` package** with **no Flutter imports** — pure functions over plain value types: BAC estimation (grams → Watson/Widmark → meal modifier → zero-order elimination β=0.15 → summation; g/L canonical, mmol/L = ×21.7), pace/recommended-volume (0.5-glass increments, clamp 0.5–2.0), hydration goal (`30 ml × weight`, round to 100), username validation (Unicode `L*`/digits/`_-.`, NFC, 3–30), day-boundary bucketing + 7-day aggregates, and the D6 HSL tint. Implement each formula with the **exact rounding/clamping rules transcribed verbatim from the [Parity Rulebook](./design-system.md#appendix--parity-rulebook)**, and back them with unit tests seeded by the design docs' worked examples (the **0.362 g/L** BAC example, the **2100 ml** goal, the username structural cases).
+**Decision.** Put every C4 algorithm in a standalone **pure-Dart `core` package** with **no Flutter, Drift, or native-plugin imports** (pure-Dart supplements are permitted) — pure functions over plain value types: BAC estimation (grams → Watson/Widmark → meal modifier → zero-order elimination β=0.15 → summation; g/L canonical, mmol/L = ×21.7), pace/recommended-volume (0.5-glass increments, clamp 0.5–2.0), hydration goal (`30 ml × weight`, round to 100), username validation (Unicode `L*`/digits/`_-.`, NFC, 3–30), day-boundary bucketing + 7-day aggregates, and the D6 HSL tint. Implement each formula with the **exact rounding/clamping rules transcribed verbatim from the [Parity Rulebook](./design-system.md#appendix--parity-rulebook)**, and back them with unit tests seeded by the design docs' worked examples (the **0.362 g/L** BAC example, the **2100 ml** goal, the username structural cases).
 
 **Options considered.**
 
@@ -209,7 +209,7 @@ Because there is one codebase, behavioural and visual parity hold **by construct
 | Algorithms scattered in view-models | ❌ rejected | Hard to test in isolation; couples math to UI. |
 | Dual implementation + shared golden-vector CI gate | ❌ rejected | Machinery to guard a cross-platform drift that cannot occur in a single codebase. The worked examples are still kept — as ordinary regression tests. |
 
-**Rationale.** The BAC chain has many branch points (Watson/Widmark, the meal min-modifier, orphan `t_zero`, rounding) where an implementation can get a number subtly wrong. A single Dart implementation behind unit tests pins each formula to its spec — the BAC curve, the pace deficit, the goal, the username rules, and the icon shades are computed once, so there is no "do iOS and Android agree?" question to answer. Keep `core` free of Flutter/Drift imports so it's reused by the D4 scheduler, the D6 icon shading, the Party tab, and History. Watch one detail: pin the order of operations and rounding points so the regression fixtures (especially edge cases — recommended-volume on a 0.25-glass boundary, BAC near the 80%-cap threshold, the orphan absorbed-vs-decayed boundary, the unspecified-gender path) lock the spec down.
+**Rationale.** The BAC chain has many branch points (Watson/Widmark, the meal min-modifier, orphan `t_zero`, rounding) where an implementation can get a number subtly wrong. A single Dart implementation behind unit tests pins each formula to its spec — the BAC curve, the pace deficit, the goal, the username rules, and the icon shades are computed once, so there is no "do iOS and Android agree?" question to answer. Keep `core` free of Flutter/Drift/native-plugin imports so it's reused by the D4 scheduler, the D6 icon shading, the Party tab, and History. Pure-Dart packages (no native code, no Flutter dependency) are permitted when a stdlib implementation would be impractical (e.g. full Unicode composition tables). Watch one detail: pin the order of operations and rounding points so the regression fixtures (especially edge cases — recommended-volume on a 0.25-glass boundary, BAC near the 80%-cap threshold, the orphan absorbed-vs-decayed boundary, the unspecified-gender path) lock the spec down.
 
 **Parity implication.** Not a concern — one implementation.
 
@@ -232,7 +232,7 @@ The posture is **Flutter + a small set of mainstream, actively-maintained packag
 | **fl_chart** | Charts (D5) | C3 — History bars + BAC line chart. |
 | **flutter_svg** (or `vector_graphics`) | Drink icons (D6) | C5 — two-shade runtime-tinted SVG icons. |
 | **permission_handler** / `app_settings` (small) | Notification permission + settings deep-link (D4) | C2 — permission-optional, deep link to system settings. |
-| **`core`** (in-house, pure Dart) | Shared computation (D7) | C4 — all algorithms; no external deps. |
+| **`core`** (in-house, pure Dart) | Shared computation (D7) | C4 — all algorithms; no Flutter/Drift/native-plugin deps; pure-Dart supplements permitted. |
 
 Deliberately **excluded** in Phase 1: any networking/HTTP client, FCM/push, analytics, crash reporting — none ship in Phase 1 (C0). No account/sync/social packages.
 

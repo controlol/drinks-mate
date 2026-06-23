@@ -41,6 +41,33 @@ void main() {
     test('custom bounds support tokenName (1–30)', () {
       expect(validateUsername('x', minLength: 1).isValid, isTrue);
     });
+
+    test('NFC normalisation: NFD input is accepted after normalisation', () {
+      // 'café' is NFD for 'café' (e=U+0065, combining acute=U+0301).
+      // After NFC this becomes 'café' (4 NFC code points) — a valid 4-char
+      // username. Source: Parity Rulebook §Username length ("3–30 characters
+      // after NFC normalisation") and §Username normalisation ("validate
+      // against the normalised form").
+      expect(ok('café'), isTrue);
+
+      // 29 ASCII letters + NFD 'é' (2 runes) = 31 runes raw
+      // → 30 NFC code points after normalisation → at max boundary (allowed).
+      // Source: Parity Rulebook §Username length (max 30 measured after NFC).
+      expect(ok('a' * 29 + 'é'), isTrue);
+
+      // 30 ASCII letters + NFD 'é' (2 runes) = 32 runes raw
+      // → 31 NFC code points after normalisation → too long (> 30 max).
+      // Source: Parity Rulebook §Username length (max 30 measured after NFC).
+      expect(ok('a' * 30 + 'é'), isFalse);
+    });
+
+    test('NFC normalisation: ASCII-only input is unchanged', () {
+      // NFC(ASCII) == ASCII; existing behaviour must be preserved.
+      // Source: Parity Rulebook §Username normalisation.
+      expect(ok('luc'), isTrue);
+      expect(ok('user123'), isTrue);
+      expect(ok('ab'), isFalse); // < minLength
+    });
   });
 
   group('validatePresetName (Parity Rulebook — DrinkPreset name rule)', () {
@@ -75,7 +102,7 @@ void main() {
     test('rejects tabs, newlines, and non-ASCII whitespace', () {
       expect(ok('Green\ttea'), isFalse);
       expect(ok('Green\ntea'), isFalse);
-      expect(ok('Green tea'), isFalse); // non-breaking space
+      expect(ok('Green tea'), isFalse); // non-breaking space (U+00A0)
     });
 
     test('rejects emoji and symbols', () {
@@ -91,6 +118,23 @@ void main() {
 
     test('Unicode letters allowed', () {
       expect(ok('Café latte'), isTrue); // é is \p{L}
+    });
+
+    test('NFC normalisation: NFD input accepted after normalisation', () {
+      // 'Café latte' is NFD for 'Café latte' (e=U+0065, combining
+      // acute=U+0301). After NFC this becomes 'Café latte' — a valid preset
+      // name (10 NFC code points including the space).
+      // Source: Parity Rulebook §DrinkPreset name (3–30 chars, Unicode letters
+      // L* allowed). NFC normalisation is applied by validatePresetName() per
+      // the same §Username normalisation rule applied consistently.
+      expect(ok('Café latte'), isTrue);
+    });
+
+    test('NFC normalisation: ASCII-only input is unchanged', () {
+      // NFC(ASCII) == ASCII; existing behaviour must be preserved.
+      // Source: Parity Rulebook §DrinkPreset name.
+      expect(ok('Glass of water'), isTrue);
+      expect(ok('ab'), isFalse);
     });
   });
 }

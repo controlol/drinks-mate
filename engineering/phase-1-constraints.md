@@ -48,7 +48,7 @@ All notifications are **scheduled locally on-device**; Phase 1 has no push backe
 
 ## C4 — Shared computation (single implementation, exact to spec)
 
-These are pure algorithms specified to the formula in `design/`. They live in one pure-Dart `core` package ([flutter-stack.md → D7](./decisions/flutter-stack.md#d7--shared-computation-dependency-free-pure-dart-core-package)), so outputs are identical across platforms **by construction**. What matters is correctness to spec; a single implementation means the platforms cannot diverge.
+These are pure algorithms specified to the formula in `design/`. They live in one pure-Dart `core` package ([flutter-stack.md → D7](./decisions/flutter-stack.md#d7--shared-computation-pure-dart-core-package)), so outputs are identical across platforms **by construction**. What matters is correctness to spec; a single implementation means the platforms cannot diverge.
 
 - **Hydration goal suggestion:** `30 ml × weight_kg`, rounded to nearest 100 ml. — [features.md → F2](../design/features.md#f2--daily-hydration-goal)
 - **Pace / expected-intake** linear model and **recommended volume** (0.5-glass increments, clamp 0.5–2.0). — [notifications.md → Recommended volume](../design/notifications.md#recommended-volume-per-reminder)
