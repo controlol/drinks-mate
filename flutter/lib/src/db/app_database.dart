@@ -7,29 +7,41 @@ import 'package:path_provider/path_provider.dart';
 
 import 'tables/drink_entry_table.dart';
 import 'tables/drink_preset_table.dart';
+import 'tables/user_preferences_table.dart';
+import 'tables/user_profile_table.dart';
 
 part 'app_database.g.dart';
 
 /// Stable UUID for "Glass of water" — referenced by UserPreferences later.
 const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 
-/// Phase-1 Drift database — schema version 2.
+/// Well-known primary key for the UserPreferences singleton.
+///
+/// Using a fixed id enforces the singleton at the storage layer (INSERT OR
+/// IGNORE on a known PK). Not a random UUID — this is intentional (C1 allows
+/// well-known ids for singleton records).
+const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
+
+/// Phase-1 Drift database — schema version 3.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
+/// v3 (issue #9): UserProfiles + UserPreferences tables + preferences seeding.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
 ///
-/// Drift row types are named [DrinkPresetRow] / [DrinkEntryRow] (via
-/// @DataClassName) to avoid a name collision with the pure-Dart domain models
-/// in lib/src/models/.
-@DriftDatabase(tables: [DrinkPresets, DrinkEntries])
+/// Drift row types are named [DrinkPresetRow] / [DrinkEntryRow] /
+/// [UserProfileRow] / [UserPreferencesRow] (via @DataClassName) to avoid name
+/// collisions with the pure-Dart domain models in lib/src/models/.
+@DriftDatabase(
+  tables: [DrinkPresets, DrinkEntries, UserProfiles, UserPreferencesTable],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -44,10 +56,14 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
           }
-          // if (from < 3) { ... }
+          if (from < 3) {
+            await m.createTable(userProfiles);
+            await m.createTable(userPreferencesTable);
+          }
         },
         beforeOpen: (_) async {
           await _seedMissingDefaultPresets();
+          await _seedDefaultPreferences();
         },
       );
 
@@ -195,6 +211,44 @@ class AppDatabase extends _$AppDatabase {
       );
 
   // ---------------------------------------------------------------------------
+  // Seeding — UserPreferences singleton (issue #9)
+  // ---------------------------------------------------------------------------
+
+  /// Idempotently inserts the [UserPreferences] singleton on every open.
+  ///
+  /// Uses INSERT OR IGNORE so existing rows (including user-edited fields) are
+  /// left untouched. [installedAt] is captured at first-open time and never
+  /// changes because subsequent opens are ignored (D3 migration strategy).
+  Future<void> _seedDefaultPreferences() async {
+    final now = DateTime.now().toUtc();
+    final companion = UserPreferencesTableCompanion.insert(
+      id: kUserPreferencesId,
+      // 2 000 ml placeholder; onboarding updates this via weightKg × 30.
+      dailyGoalMl: 2000,
+      dayBoundaryHour: const Value(5),
+      units: const Value('metric'),
+      currency: const Value('EUR'),
+      reminderEnabled: true,
+      reminderStartHour: const Value(8),
+      reminderEndHour: const Value(22),
+      reminderIntervalMin: const Value(90),
+      inactivityReminderEnabled: true,
+      weeklySummaryEnabled: true,
+      defaultDrinkPresetId: const Value(kWaterGlassPresetId),
+      bacOnLockScreenEnabled: false,
+      // Party Mode notifications are OFF by default (notifications.md §4).
+      approachingCapNotifEnabled: false,
+      soberEstimateNotifEnabled: false,
+      installedAt: now.millisecondsSinceEpoch,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await into(
+      userPreferencesTable,
+    ).insert(companion, mode: InsertMode.insertOrIgnore);
+  }
+
+  // ---------------------------------------------------------------------------
   // DrinkPreset queries
   // ---------------------------------------------------------------------------
 
@@ -237,6 +291,49 @@ class AppDatabase extends _$AppDatabase {
       );
     return query.watchSingle().map((row) => row.read(expr) ?? 0);
   }
+
+  // ---------------------------------------------------------------------------
+  // UserPreferences queries
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of the singleton [UserPreferencesRow].
+  Stream<UserPreferencesRow> watchPreferences() => (select(
+        userPreferencesTable,
+      )..where((t) => t.id.equals(kUserPreferencesId)))
+          .watchSingle();
+
+  /// One-shot read of the singleton [UserPreferencesRow].
+  Future<UserPreferencesRow> getPreferences() => (select(
+        userPreferencesTable,
+      )..where((t) => t.id.equals(kUserPreferencesId)))
+          .getSingle();
+
+  /// Partial update of the singleton preferences row.
+  Future<void> updatePreferences(UserPreferencesTableCompanion companion) =>
+      (update(
+        userPreferencesTable,
+      )..where((t) => t.id.equals(kUserPreferencesId)))
+          .write(companion);
+
+  // ---------------------------------------------------------------------------
+  // UserProfile queries
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of the first live [UserProfileRow] (null if none exists).
+  Stream<UserProfileRow?> watchProfile() => (select(userProfiles)
+        ..where((t) => t.deletedAt.isNull())
+        ..limit(1))
+      .watchSingleOrNull();
+
+  /// One-shot read of the first live profile (null if none exists).
+  Future<UserProfileRow?> getProfile() => (select(userProfiles)
+        ..where((t) => t.deletedAt.isNull())
+        ..limit(1))
+      .getSingleOrNull();
+
+  /// Insert or replace the user profile by id.
+  Future<void> upsertProfile(UserProfilesCompanion companion) =>
+      into(userProfiles).insertOnConflictUpdate(companion);
 }
 
 LazyDatabase _openConnection() {

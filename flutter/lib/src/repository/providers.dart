@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/app_database.dart';
 import '../models/drink_preset.dart';
+import '../models/user_preferences.dart';
+import '../models/user_profile.dart';
 import 'drinks_repository.dart';
+import 'preferences_repository.dart';
 
 /// Package-private — widgets use [drinksRepositoryProvider] instead of
 /// reaching [AppDatabase] directly (D2: Drift types never reach widgets).
@@ -36,4 +39,25 @@ final todayTotalMlProvider = StreamProvider<int>((ref) {
   final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   return ref.watch(drinksRepositoryProvider).watchTodayTotalMl(now: now);
+});
+
+// ---------------------------------------------------------------------------
+// Preferences providers (issue #9)
+// ---------------------------------------------------------------------------
+
+/// Repository provider for user preferences and profile data.
+///
+/// Reuses [_appDatabaseProvider] — never creates a second [AppDatabase].
+final preferencesRepositoryProvider = Provider<PreferencesRepository>((ref) {
+  return PreferencesRepository(ref.watch(_appDatabaseProvider));
+});
+
+/// Reactive stream of the [UserPreferences] singleton.
+final userPreferencesProvider = StreamProvider<UserPreferences>((ref) {
+  return ref.watch(preferencesRepositoryProvider).watchPreferences();
+});
+
+/// Reactive stream of the live [UserProfile]; null until onboarding writes it.
+final userProfileProvider = StreamProvider<UserProfile?>((ref) {
+  return ref.watch(preferencesRepositoryProvider).watchProfile();
 });
