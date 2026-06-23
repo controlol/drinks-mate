@@ -98,9 +98,8 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   }
 
   Future<void> _animateTo(int page) async {
-    final duration = ReduceMotion.isEnabled(context)
-        ? Duration.zero
-        : MotionTokens.standard;
+    final duration =
+        ReduceMotion.isEnabled(context) ? Duration.zero : MotionTokens.standard;
     await _pageController.animateToPage(
       page,
       duration: duration,
@@ -131,9 +130,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     );
 
     try {
-      await ref
-          .read(preferencesRepositoryProvider)
-          .completeOnboarding(
+      await ref.read(preferencesRepositoryProvider).completeOnboarding(
             username: _usernameController.text,
             profile: profile,
             dailyGoalMl: _parsedGoal,
@@ -230,8 +227,8 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       style: _ctaStyle,
       onPressed:
           (_page == 1 && !_usernameIsValid) || (_page == 2 && !_weightIsValid)
-          ? null
-          : _onNext,
+              ? null
+              : _onNext,
       child: const Text('Next'),
     );
   }
@@ -450,8 +447,8 @@ class _BirthDateButton extends StatelessWidget {
     final label = value == null
         ? 'Date of birth (optional)'
         : '${value!.year.toString().padLeft(4, '0')}-'
-              '${value!.month.toString().padLeft(2, '0')}-'
-              '${value!.day.toString().padLeft(2, '0')}';
+            '${value!.month.toString().padLeft(2, '0')}-'
+            '${value!.day.toString().padLeft(2, '0')}';
 
     return OutlinedButton.icon(
       key: const Key('onboarding_birth_date_button'),
@@ -595,9 +592,8 @@ class _ProgressDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = ReduceMotion.isEnabled(context)
-        ? Duration.zero
-        : MotionTokens.fast;
+    final duration =
+        ReduceMotion.isEnabled(context) ? Duration.zero : MotionTokens.fast;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(

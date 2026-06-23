@@ -28,11 +28,11 @@ Widget _wrap(Widget child, PreferencesRepository repo) {
 }
 
 UserProfile _profile(DateTime now) => UserProfile(
-  id: 'test-profile-id',
-  weightKg: 70.0,
-  createdAt: now,
-  updatedAt: now,
-);
+      id: 'test-profile-id',
+      weightKg: 70.0,
+      createdAt: now,
+      updatedAt: now,
+    );
 
 // ---------------------------------------------------------------------------
 // Tests
