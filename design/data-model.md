@@ -295,6 +295,39 @@ Display conversion to imperial (fl oz, lb, in, °F where relevant) happens at th
 
 When the user enters a value in imperial in the UI (e.g. "12 fl oz"), the UI converts to metric before writing to the database. Round-tripping (imperial → metric → imperial) may lose minor precision; this is acceptable.
 
+### Conversion constants and display precision
+
+All rounding uses **half-away-from-zero** (round 0.5 up for positive values).
+
+**Volume — fl oz.** The app uses the **US fluid ounce** throughout; the UK imperial fl oz (28.4130625 ml) is explicitly not used.
+
+| Direction | Constant | Display precision |
+| --------- | -------- | ----------------- |
+| ml → fl oz | **1 US fl oz = 29.5735295625 ml** (NIST) | 1 decimal place |
+| fl oz → ml | same constant | nearest integer ml |
+
+**Mass — lb.** Uses the **international avoirdupois pound**.
+
+| Direction | Constant | Display precision |
+| --------- | -------- | ----------------- |
+| kg → lb | **1 kg = 2.20462262185 lb** | 1 decimal place |
+| lb → kg | same constant | 3 decimal places (sub-gram accuracy for storage) |
+
+**Height — ft/in.** Uses the **exact international inch**.
+
+| Direction | Constant | Method | Display precision |
+| --------- | -------- | ------ | ----------------- |
+| cm → ft/in | **1 in = 2.54 cm** (exact) | total_inches = round(cm / 2.54); feet = total_inches ÷ 12; inches = total_inches mod 12 | nearest inch (split into ft + in) |
+| ft/in → cm | same constant | — | 1 decimal place |
+
+**Metric display precision.** When displaying stored metric values (no unit conversion involved):
+
+| Value | Display precision |
+| ----- | ----------------- |
+| Volume | nearest integer ml |
+| Mass | 1 decimal place (kg) |
+| Height | 1 decimal place (cm) |
+
 ## Storage requirements
 
 - Data must persist across app restarts and device reboots.
