@@ -153,14 +153,23 @@ jobs:
                    -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
                    -f id="<THREAD_NODE_ID>" || true
 
-            7. Write a short markdown summary of the remediation to
-               $RUNNER_TEMP/remediation_summary.txt. Include:
-               - Each finding addressed (one bullet per finding)
-               - Any finding that could NOT be fixed and why (e.g. needs human input)
-               Keep it under 10 bullets. Example format:
+            7. Write a markdown summary of the remediation to
+               $RUNNER_TEMP/remediation_summary.txt covering ALL findings from
+               step 1, grouped into two sections:
+
+               **Addressed** (blocking findings you fixed — one bullet each)
+               **Not addressed** (everything else — note the finding and why it
+               was left for human review, e.g. non-blocking, needs a product
+               decision, out of scope for automated remediation)
+
+               Example:
+               **Addressed**
                - Fixed: `FormatService.formatVolume` returned wrong unit label in imperial mode (line 42)
                - Fixed: Added unit test for 0 kg edge case in hydration goal calculation
-               - Skipped: Ambiguous spec requirement in §Units display — needs human decision
+
+               **Not addressed**
+               - Low: variable name `v` is not descriptive — style nit, non-blocking
+               - Medium: consider extracting helper — design preference, left for human review
 
       - name: Update remediation comment
         if: always() && steps.pr.outputs.skip != 'true' && steps.start_comment.outputs.comment_id != ''
