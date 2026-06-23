@@ -66,8 +66,7 @@ jobs:
           # Fetch the latest run of each required workflow at this commit SHA.
           # group_by(.name) + sort_by(.created_at) | last picks the most recent
           # run per workflow, so retries don't block the approval.
-          results=$(gh api "repos/$REPO/actions/runs" \
-            -f head_sha="$HEAD_SHA" \
+          results=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA" \
             --jq '
               .workflow_runs
               | map(select(.name | IN("CI", "Claude PR Review", "Security Review")))
