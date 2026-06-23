@@ -178,12 +178,8 @@ jobs:
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ -f "$RUNNER_TEMP/remediation_summary.txt" ]; then
-            summary=$(cat "$RUNNER_TEMP/remediation_summary.txt")
-            cat > "$RUNNER_TEMP/update_body.txt" << BODY_EOF
-          🤖 **Automated remediation complete.** [View run →]($run_url)
-
-          $summary
-          BODY_EOF
+            printf '🤖 **Automated remediation complete.** [View run →](%s)\n\n' "$run_url" > "$RUNNER_TEMP/update_body.txt"
+            cat "$RUNNER_TEMP/remediation_summary.txt" >> "$RUNNER_TEMP/update_body.txt"
           else
             cat > "$RUNNER_TEMP/update_body.txt" << BODY_EOF
           ⚠️ **Automated remediation failed.** The fix step did not complete successfully — manual intervention may be required. [View run →]($run_url)
