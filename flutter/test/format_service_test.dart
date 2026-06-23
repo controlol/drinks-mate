@@ -1,0 +1,251 @@
+// Tests for FormatService — display-boundary conversions reading UserPreferences.
+//
+// We test FormatService directly (not through the Riverpod provider) by
+// constructing UserPreferences stubs. This avoids an in-memory Drift database
+// and keeps the tests fast and deterministic.
+//
+// Currency formatting pins locale to 'en_US' so symbol-position and
+// decimal-separator checks are deterministic regardless of the host machine's
+// locale.
+
+import 'package:drinks_mate/src/models/user_preferences.dart';
+import 'package:drinks_mate/src/services/format_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+// ---------------------------------------------------------------------------
+// Stub helpers
+// ---------------------------------------------------------------------------
+
+UserPreferences _prefs({
+  String units = 'metric',
+  String currency = 'EUR',
+}) {
+  final now = DateTime.utc(2026, 1, 1);
+  return UserPreferences(
+    id: 'test',
+    dailyGoalMl: 2000,
+    dayBoundaryHour: 5,
+    units: units,
+    currency: currency,
+    reminderEnabled: true,
+    reminderStartHour: 8,
+    reminderEndHour: 22,
+    reminderIntervalMin: 90,
+    inactivityReminderEnabled: true,
+    weeklySummaryEnabled: true,
+    bacOnLockScreenEnabled: false,
+    approachingCapNotifEnabled: false,
+    soberEstimateNotifEnabled: false,
+    installedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+void main() {
+  // -------------------------------------------------------------------------
+  // formatVolume
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatVolume — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('rounds ml to nearest integer', () {
+      expect(svc.formatVolume(240.0), equals('240 ml'));
+    });
+
+    test('rounds fractional ml', () {
+      expect(svc.formatVolume(240.6), equals('241 ml'));
+    });
+
+    test('zero', () {
+      expect(svc.formatVolume(0), equals('0 ml'));
+    });
+  });
+
+  group('FormatService.formatVolume — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('240 ml → 8.1 fl oz', () {
+      // 240 / 29.5735295625 = 8.1153..., rounds to 8.1
+      expect(svc.formatVolume(240.0), equals('8.1 fl oz'));
+    });
+
+    test('355 ml → 12.0 fl oz', () {
+      // 355 / 29.5735295625 = 12.0039..., rounds to 12.0
+      expect(svc.formatVolume(355.0), equals('12.0 fl oz'));
+    });
+
+    test('zero', () {
+      expect(svc.formatVolume(0), equals('0.0 fl oz'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // formatMass
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatMass — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('shows one decimal place', () {
+      expect(svc.formatMass(70.0), equals('70.0 kg'));
+    });
+
+    test('fractional kg', () {
+      expect(svc.formatMass(65.5), equals('65.5 kg'));
+    });
+  });
+
+  group('FormatService.formatMass — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('70 kg → 154.3 lb', () {
+      // 70 * 2.20462262185 = 154.3235..., rounds to 154.3
+      expect(svc.formatMass(70.0), equals('154.3 lb'));
+    });
+
+    test('50 kg → 110.2 lb', () {
+      // 50 * 2.20462262185 = 110.2311..., rounds to 110.2
+      expect(svc.formatMass(50.0), equals('110.2 lb'));
+    });
+
+    test('zero', () {
+      expect(svc.formatMass(0), equals('0.0 lb'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // formatHeight
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatHeight — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('shows one decimal place', () {
+      expect(svc.formatHeight(175.0), equals('175.0 cm'));
+    });
+
+    test('fractional cm', () {
+      expect(svc.formatHeight(175.5), equals('175.5 cm'));
+    });
+  });
+
+  group('FormatService.formatHeight — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('180 cm → 5 ft 11 in', () {
+      // 180 / 2.54 = 70.866..., rounds to 71 in → 5 ft 11 in
+      expect(svc.formatHeight(180.0), equals('5 ft 11 in'));
+    });
+
+    test('152.4 cm → 5 ft 0 in', () {
+      // 152.4 / 2.54 = 60.0 exactly → 5 ft 0 in
+      expect(svc.formatHeight(152.4), equals('5 ft 0 in'));
+    });
+
+    test('30.48 cm → 1 ft 0 in', () {
+      // 30.48 / 2.54 = 12.0 exactly → 1 ft 0 in
+      expect(svc.formatHeight(30.48), equals('1 ft 0 in'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // formatPrice
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatPrice', () {
+    // All formatPrice tests pin locale to 'en_US' for deterministic output.
+    // The Parity Rulebook states symbol position and decimal separator follow
+    // device locale; en_US gives prefix-symbol with '.' decimal separator.
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(currency: 'EUR')));
+
+    test('EUR: 250 minor units → €2.50 (en_US locale)', () {
+      expect(svc.formatPrice(250, 'EUR', locale: 'en_US'), equals('€2.50'));
+    });
+
+    test('EUR: 0 minor units → €0.00', () {
+      expect(svc.formatPrice(0, 'EUR', locale: 'en_US'), equals('€0.00'));
+    });
+
+    test('USD: 999 minor units → \$9.99', () {
+      expect(svc.formatPrice(999, 'USD', locale: 'en_US'), equals('\$9.99'));
+    });
+
+    test('GBP: 800 minor units → £8.00', () {
+      expect(svc.formatPrice(800, 'GBP', locale: 'en_US'), equals('£8.00'));
+    });
+
+    test('EUR: 4250 minor units → €42.50', () {
+      // Covers the grouped-currency example from data-model.md §Currency.
+      expect(svc.formatPrice(4250, 'EUR', locale: 'en_US'), equals('€42.50'));
+    });
+
+    test('GBP: 4200 minor units → £42.00', () {
+      // Matches the "€42.50 + £8.00" multi-currency example in Parity Rulebook.
+      expect(svc.formatPrice(4200, 'GBP', locale: 'en_US'), equals('£42.00'));
+    });
+
+    test('integer minor units avoid floating-point drift in totals', () {
+      // Rulebook: "Money is always stored in the minor unit as an integer …
+      // This avoids floating-point rounding in totals."
+      // 10 × 33 minor units = 330 minor units = €3.30, not €3.2999…
+      final total = List.generate(10, (_) => 33).reduce((a, b) => a + b);
+      expect(total, equals(330));
+      expect(svc.formatPrice(total, 'EUR', locale: 'en_US'), equals('€3.30'));
+    });
+
+    test(
+      'locale parameter affects symbol position and decimal separator (de_DE)',
+      () {
+        // Parity Rulebook: "symbol position & decimal separator follow device
+        // locale conventions, not the currency."
+        // de_DE: decimal separator is ',', symbol follows the amount.
+        final result = svc.formatPrice(250, 'EUR', locale: 'de_DE');
+        // Verify the decimal separator is a comma and the symbol is present.
+        expect(result, contains('2,50'));
+        expect(result, contains('€'));
+        // In de_DE the symbol appears after the amount, not before it.
+        final euroIndex = result.indexOf('€');
+        final amountIndex = result.indexOf('2');
+        expect(
+          euroIndex > amountIndex,
+          isTrue,
+          reason: 'In de_DE locale, € symbol should follow the amount',
+        );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Storage invariant: metric values are never written to DB from FormatService
+  // -------------------------------------------------------------------------
+
+  group('FormatService does not write to storage', () {
+    // FormatService is read-only — it only formats values for display.
+    // This test confirms that formatVolume/formatMass/formatHeight/formatPrice
+    // return strings without mutating the underlying preferences object.
+
+    test('formatting does not change the prefs object', () {
+      final prefs = _prefs(units: 'imperial', currency: 'USD');
+      final svc = FormatService(prefs);
+
+      // Call all formatters — none of them should throw or mutate prefs.
+      svc.formatVolume(500);
+      svc.formatMass(70);
+      svc.formatHeight(175);
+      svc.formatPrice(1000, 'USD', locale: 'en_US');
+
+      // prefs is still unmodified — units is still 'imperial', currency 'USD'.
+      expect(prefs.units, equals('imperial'));
+      expect(prefs.currency, equals('USD'));
+    });
+  });
+}
