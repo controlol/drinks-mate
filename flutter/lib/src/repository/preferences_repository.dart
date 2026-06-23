@@ -168,6 +168,49 @@ class PreferencesRepository {
     );
   }
 
+  /// Atomically writes the onboarding result: username + daily goal + profile.
+  ///
+  /// The profile row is written first; the username is written last so it acts
+  /// as the commit marker for the onboarding gate in [_AppGate]. If either
+  /// write fails, Drift rolls back the transaction and the gate remains on the
+  /// onboarding flow.
+  ///
+  /// NFC-normalises and validates [username] before persisting (data-model.md
+  /// §Username rules). Throws [ArgumentError] on invalid username.
+  Future<void> completeOnboarding({
+    required String username,
+    required UserProfile profile,
+    required int dailyGoalMl,
+  }) async {
+    final normalized = normalizeNfc(username);
+    final validation = validateUsername(normalized);
+    if (!validation.isValid) {
+      throw ArgumentError.value(username, 'username', validation.error);
+    }
+    final now = DateTime.now().toUtc();
+    await _db.transaction(() async {
+      await _db.upsertProfile(
+        UserProfilesCompanion(
+          id: Value(profile.id),
+          gender: Value(profile.gender),
+          weightKg: Value(profile.weightKg),
+          heightCm: Value(profile.heightCm),
+          birthDate: Value(profile.birthDate),
+          createdAt: Value(profile.createdAt),
+          updatedAt: Value(now),
+          deletedAt: Value(profile.deletedAt),
+        ),
+      );
+      await _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          username: Value(normalized),
+          dailyGoalMl: Value(dailyGoalMl),
+          updatedAt: Value(now),
+        ),
+      );
+    });
+  }
+
   /// Create or replace the user profile.
   ///
   /// [profile.id] must be a stable UUID — callers should generate it once and

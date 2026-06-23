@@ -12,17 +12,14 @@ void main() {
     // Standard mid-day case (well after boundary)                         //
     // ------------------------------------------------------------------ //
 
-    test(
-      'now at 10:00 local → window is [today 05:00, tomorrow 05:00]',
-      () {
-        // Source: Parity Rulebook — Day boundary rule.
-        final now = DateTime(2026, 6, 22, 10, 0); // Mon 10:00
-        final (start, end) = dayWindow(now: now);
+    test('now at 10:00 local → window is [today 05:00, tomorrow 05:00]', () {
+      // Source: Parity Rulebook — Day boundary rule.
+      final now = DateTime(2026, 6, 22, 10, 0); // Mon 10:00
+      final (start, end) = dayWindow(now: now);
 
-        expect(start, DateTime(2026, 6, 22, 5, 0));
-        expect(end, DateTime(2026, 6, 23, 5, 0));
-      },
-    );
+      expect(start, DateTime(2026, 6, 22, 5, 0));
+      expect(end, DateTime(2026, 6, 23, 5, 0));
+    });
 
     // ------------------------------------------------------------------ //
     // Before boundary: falls in the previous day's window                 //
@@ -62,18 +59,15 @@ void main() {
     // Midnight case: 00:30 falls in the previous day's window             //
     // ------------------------------------------------------------------ //
 
-    test(
-      'now at 00:30 local (midnight) → falls in previous day\'s window',
-      () {
-        // Source: Parity Rulebook — Day boundary rule.
-        // 00:30 < 05:00 → previous day's window.
-        final now = DateTime(2026, 6, 22, 0, 30);
-        final (start, end) = dayWindow(now: now);
+    test('now at 00:30 local (midnight) → falls in previous day\'s window', () {
+      // Source: Parity Rulebook — Day boundary rule.
+      // 00:30 < 05:00 → previous day's window.
+      final now = DateTime(2026, 6, 22, 0, 30);
+      final (start, end) = dayWindow(now: now);
 
-        expect(start, DateTime(2026, 6, 21, 5, 0)); // yesterday 05:00
-        expect(end, DateTime(2026, 6, 22, 5, 0)); // today 05:00
-      },
-    );
+      expect(start, DateTime(2026, 6, 21, 5, 0)); // yesterday 05:00
+      expect(end, DateTime(2026, 6, 22, 5, 0)); // today 05:00
+    });
 
     // ------------------------------------------------------------------ //
     // Custom boundary: 00:00 — standard calendar days                     //
@@ -187,82 +181,70 @@ void main() {
     // Returned datetimes must be local (not UTC)                          //
     // ------------------------------------------------------------------ //
 
-    test(
-      'start and end are local datetimes (isUtc == false)',
-      () {
-        // Source: Parity Rulebook — "A drink's day = the window
-        // [dayBoundary, next dayBoundary) containing its consumedAt (local)."
-        // All boundary computations are in local time; UTC datetimes would
-        // silently produce wrong buckets on non-UTC devices.
-        final now = DateTime(2026, 6, 22, 10, 0);
-        final (start, end) = dayWindow(now: now);
+    test('start and end are local datetimes (isUtc == false)', () {
+      // Source: Parity Rulebook — "A drink's day = the window
+      // [dayBoundary, next dayBoundary) containing its consumedAt (local)."
+      // All boundary computations are in local time; UTC datetimes would
+      // silently produce wrong buckets on non-UTC devices.
+      final now = DateTime(2026, 6, 22, 10, 0);
+      final (start, end) = dayWindow(now: now);
 
-        expect(start.isUtc, isFalse);
-        expect(end.isUtc, isFalse);
-      },
-    );
+      expect(start.isUtc, isFalse);
+      expect(end.isUtc, isFalse);
+    });
 
     // ------------------------------------------------------------------ //
     // Window is always exactly 24 hours (on days without a DST transition)//
     // ------------------------------------------------------------------ //
 
-    test(
-      'end − start == 24 hours for a mid-year non-DST-transition day',
-      () {
-        // Source: Parity Rulebook — Day boundary rule.
-        // The window [boundary, next boundary) spans exactly one calendar day.
-        // This holds on any day that doesn't contain a DST wall-clock transition.
-        // (On spring-forward or fall-back days the Duration would be 23h or 25h,
-        // which is correct and expected — do not use a known transition date here.)
-        final now = DateTime(2026, 6, 22, 10, 0); // mid-year, no DST transition
-        final (start, end) = dayWindow(now: now);
+    test('end − start == 24 hours for a mid-year non-DST-transition day', () {
+      // Source: Parity Rulebook — Day boundary rule.
+      // The window [boundary, next boundary) spans exactly one calendar day.
+      // This holds on any day that doesn't contain a DST wall-clock transition.
+      // (On spring-forward or fall-back days the Duration would be 23h or 25h,
+      // which is correct and expected — do not use a known transition date here.)
+      final now = DateTime(2026, 6, 22, 10, 0); // mid-year, no DST transition
+      final (start, end) = dayWindow(now: now);
 
-        expect(end.difference(start), const Duration(hours: 24));
-      },
-    );
+      expect(end.difference(start), const Duration(hours: 24));
+    });
 
     // ------------------------------------------------------------------ //
     // Consistency: start and end boundary timestamps are coherent         //
     // ------------------------------------------------------------------ //
 
-    test(
-      'start.hour and end.hour match the configured boundary hour',
-      () {
-        // Source: Parity Rulebook — Day boundary rule (configurable).
-        final now = DateTime(2026, 6, 22, 10, 0);
-        final (start, end) = dayWindow(now: now, boundaryHour: 5);
+    test('start.hour and end.hour match the configured boundary hour', () {
+      // Source: Parity Rulebook — Day boundary rule (configurable).
+      final now = DateTime(2026, 6, 22, 10, 0);
+      final (start, end) = dayWindow(now: now, boundaryHour: 5);
 
-        expect(start.hour, 5);
-        expect(start.minute, 0);
-        expect(end.hour, 5);
-        expect(end.minute, 0);
-      },
-    );
+      expect(start.hour, 5);
+      expect(start.minute, 0);
+      expect(end.hour, 5);
+      expect(end.minute, 0);
+    });
 
-    test(
-      'now is always contained in [start, end): start <= now < end',
-      () {
-        // Source: Parity Rulebook — Day boundary rule.
-        // The half-open window must contain its own `now` argument.
-        final cases = [
-          DateTime(2026, 6, 22, 10, 0), // mid-day
-          DateTime(2026, 6, 22, 4, 59), // just before boundary
-          DateTime(2026, 6, 22, 5, 0), // exactly at boundary
-          DateTime(2026, 6, 22, 0, 30), // midnight
-          DateTime(2026, 3, 1, 3, 0), // month-end before boundary
-          DateTime(2026, 1, 1, 0, 30), // year-end
-        ];
+    test('now is always contained in [start, end): start <= now < end', () {
+      // Source: Parity Rulebook — Day boundary rule.
+      // The half-open window must contain its own `now` argument.
+      final cases = [
+        DateTime(2026, 6, 22, 10, 0), // mid-day
+        DateTime(2026, 6, 22, 4, 59), // just before boundary
+        DateTime(2026, 6, 22, 5, 0), // exactly at boundary
+        DateTime(2026, 6, 22, 0, 30), // midnight
+        DateTime(2026, 3, 1, 3, 0), // month-end before boundary
+        DateTime(2026, 1, 1, 0, 30), // year-end
+      ];
 
-        for (final now in cases) {
-          final (start, end) = dayWindow(now: now);
-          expect(
-            !start.isAfter(now) && now.isBefore(end),
-            isTrue,
-            reason: 'now ($now) must satisfy start <= now < end '
-                '(got [$start, $end))',
-          );
-        }
-      },
-    );
+      for (final now in cases) {
+        final (start, end) = dayWindow(now: now);
+        expect(
+          !start.isAfter(now) && now.isBefore(end),
+          isTrue,
+          reason: 'now ($now) must satisfy start <= now < end '
+              '(got [$start, $end))',
+        );
+      }
+    });
   });
 }

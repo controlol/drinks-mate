@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:drinks_mate/app.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:flutter/material.dart';
@@ -14,8 +15,32 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// [drinksRepositoryProvider] is still overridden with a real in-memory DB so
 /// that [logDrink] calls work without touching the file system.
+///
+/// [userPreferencesProvider] is overridden with a pre-onboarded snapshot so
+/// [_AppGate] routes directly to [AppShell] without showing [OnboardingFlow].
 Widget _appWithFakeStreams() {
   final db = AppDatabase(NativeDatabase.memory());
+  final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  final preOnboardedPrefs = UserPreferences(
+    id: kUserPreferencesId,
+    username: 'test_user',
+    dailyGoalMl: 2000,
+    dayBoundaryHour: 5,
+    units: 'metric',
+    currency: 'EUR',
+    reminderEnabled: true,
+    reminderStartHour: 8,
+    reminderEndHour: 22,
+    reminderIntervalMin: 90,
+    inactivityReminderEnabled: true,
+    weeklySummaryEnabled: true,
+    bacOnLockScreenEnabled: false,
+    approachingCapNotifEnabled: false,
+    soberEstimateNotifEnabled: false,
+    installedAt: epoch,
+    createdAt: epoch,
+    updatedAt: epoch,
+  );
   return ProviderScope(
     overrides: [
       // Repository uses an in-memory DB — no file system needed.
@@ -25,6 +50,10 @@ Widget _appWithFakeStreams() {
       visiblePresetsProvider
           .overrideWith((_) => Stream.value(const <DrinkPreset>[])),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
+      // Simulate a completed onboarding (username != null) so _AppGate routes
+      // to AppShell instead of OnboardingFlow.
+      userPreferencesProvider
+          .overrideWith((_) => Stream.value(preOnboardedPrefs)),
     ],
     child: const DrinksMateApp(),
   );
@@ -33,12 +62,16 @@ Widget _appWithFakeStreams() {
 void main() {
   testWidgets('app shell renders with 3-tab NavigationBar', (tester) async {
     await tester.pumpWidget(_appWithFakeStreams());
+    await tester
+        .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationDestination), findsNWidgets(3));
   });
 
   testWidgets('all 3 tab labels are visible', (tester) async {
     await tester.pumpWidget(_appWithFakeStreams());
+    await tester
+        .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
     final navBar = find.byType(NavigationBar);
     for (final label in ['Today', 'Party', 'History']) {
       expect(
@@ -59,6 +92,8 @@ void main() {
 
   testWidgets('tapping History tab switches screen', (tester) async {
     await tester.pumpWidget(_appWithFakeStreams());
+    await tester
+        .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     // Today screen is initially visible.
     expect(find.text("Today's intake"), findsOneWidget);
@@ -77,6 +112,8 @@ void main() {
 
   testWidgets('tapping Party tab switches screen', (tester) async {
     await tester.pumpWidget(_appWithFakeStreams());
+    await tester
+        .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     final navBar = find.byType(NavigationBar);
     await tester.tap(find.descendant(of: navBar, matching: find.text('Party')));
@@ -87,6 +124,8 @@ void main() {
 
   testWidgets('gear icon navigates to Settings full-screen', (tester) async {
     await tester.pumpWidget(_appWithFakeStreams());
+    await tester
+        .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();

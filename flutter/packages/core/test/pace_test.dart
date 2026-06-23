@@ -7,7 +7,10 @@ void main() {
     test('start of window → 0', () {
       expect(
         expectedIntakeMl(
-            goalMl: 2100, elapsedActiveMin: 0, activeWindowMin: 840),
+          goalMl: 2100,
+          elapsedActiveMin: 0,
+          activeWindowMin: 840,
+        ),
         0,
       );
     });
@@ -15,7 +18,10 @@ void main() {
     test('halfway through the active window → half the goal', () {
       expect(
         expectedIntakeMl(
-            goalMl: 2100, elapsedActiveMin: 420, activeWindowMin: 840),
+          goalMl: 2100,
+          elapsedActiveMin: 420,
+          activeWindowMin: 840,
+        ),
         closeTo(1050, 0.0001),
       );
     });
@@ -23,7 +29,10 @@ void main() {
     test('clamps elapsed below 0 (before active start)', () {
       expect(
         expectedIntakeMl(
-            goalMl: 2100, elapsedActiveMin: -60, activeWindowMin: 840),
+          goalMl: 2100,
+          elapsedActiveMin: -60,
+          activeWindowMin: 840,
+        ),
         0,
       );
     });
@@ -31,7 +40,10 @@ void main() {
     test('clamps elapsed above the window (after active end)', () {
       expect(
         expectedIntakeMl(
-            goalMl: 2100, elapsedActiveMin: 9999, activeWindowMin: 840),
+          goalMl: 2100,
+          elapsedActiveMin: 9999,
+          activeWindowMin: 840,
+        ),
         2100,
       );
     });
