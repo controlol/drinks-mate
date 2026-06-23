@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/drift.dart';
 
 import '../db/app_database.dart';
@@ -149,19 +150,41 @@ class PreferencesRepository {
     return row == null ? null : _rowToProfile(row);
   }
 
+  /// Update the username (NFC-normalised, validated).
+  ///
+  /// Validates against the Parity Rulebook character whitelist via core's
+  /// [validateUsername]. NFC normalisation is the caller's responsibility until
+  /// core adds a built-in helper (see TODO in username.dart).
+  Future<void> updateUsername(String username) {
+    final validation = validateUsername(username);
+    if (!validation.isValid) {
+      throw ArgumentError.value(username, 'username', validation.error);
+    }
+    return _db.updatePreferences(
+      UserPreferencesTableCompanion(
+        username: Value(username),
+        updatedAt: Value(DateTime.now().toUtc()),
+      ),
+    );
+  }
+
   /// Create or replace the user profile.
   ///
   /// [profile.id] must be a stable UUID — callers should generate it once and
   /// keep it (e.g. stored in the returned [UserProfile]). Passing the same id
   /// on subsequent calls updates the existing row (ON CONFLICT REPLACE).
   Future<void> upsertProfile(UserProfile profile) async {
-    assert(profile.id.isNotEmpty, 'UserProfile.id must be a non-empty UUID');
+    if (profile.id.isEmpty) {
+      throw ArgumentError.value(
+        profile.id,
+        'profile.id',
+        'must be a non-empty UUID',
+      );
+    }
     final now = DateTime.now().toUtc();
-    final id = profile.id;
     await _db.upsertProfile(
       UserProfilesCompanion(
-        id: Value(id),
-        username: Value(profile.username),
+        id: Value(profile.id),
         gender: Value(profile.gender),
         weightKg: Value(profile.weightKg),
         heightCm: Value(profile.heightCm),
@@ -180,6 +203,7 @@ class PreferencesRepository {
   static UserPreferences _rowToPreferences(UserPreferencesRow row) =>
       UserPreferences(
         id: row.id,
+        username: row.username,
         dailyGoalMl: row.dailyGoalMl,
         dayBoundaryHour: row.dayBoundaryHour,
         units: row.units,
@@ -205,7 +229,6 @@ class PreferencesRepository {
 
   static UserProfile _rowToProfile(UserProfileRow row) => UserProfile(
         id: row.id,
-        username: row.username,
         gender: row.gender,
         weightKg: row.weightKg,
         heightCm: row.heightCm,

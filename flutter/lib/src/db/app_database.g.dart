@@ -1409,12 +1409,6 @@ class $UserProfilesTable extends UserProfiles
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
       'id', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _usernameMeta =
-      const VerificationMeta('username');
-  @override
-  late final GeneratedColumn<String> username = GeneratedColumn<String>(
-      'username', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _genderMeta = const VerificationMeta('gender');
   @override
   late final GeneratedColumn<String> gender = GeneratedColumn<String>(
@@ -1459,7 +1453,6 @@ class $UserProfilesTable extends UserProfiles
   @override
   List<GeneratedColumn> get $columns => [
         id,
-        username,
         gender,
         weightKg,
         heightCm,
@@ -1482,10 +1475,6 @@ class $UserProfilesTable extends UserProfiles
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
-    }
-    if (data.containsKey('username')) {
-      context.handle(_usernameMeta,
-          username.isAcceptableOrUnknown(data['username']!, _usernameMeta));
     }
     if (data.containsKey('gender')) {
       context.handle(_genderMeta,
@@ -1530,8 +1519,6 @@ class $UserProfilesTable extends UserProfiles
     return UserProfileRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
-      username: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}username']),
       gender: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}gender']),
       weightKg: attachedDatabase.typeMapping
@@ -1557,7 +1544,6 @@ class $UserProfilesTable extends UserProfiles
 
 class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   final String id;
-  final String? username;
   final String? gender;
 
   /// Stored in kilograms (metric canonical — C1).
@@ -1574,7 +1560,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   final DateTime? deletedAt;
   const UserProfileRow(
       {required this.id,
-      this.username,
       this.gender,
       this.weightKg,
       this.heightCm,
@@ -1586,9 +1571,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
-    if (!nullToAbsent || username != null) {
-      map['username'] = Variable<String>(username);
-    }
     if (!nullToAbsent || gender != null) {
       map['gender'] = Variable<String>(gender);
     }
@@ -1612,9 +1594,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   UserProfilesCompanion toCompanion(bool nullToAbsent) {
     return UserProfilesCompanion(
       id: Value(id),
-      username: username == null && nullToAbsent
-          ? const Value.absent()
-          : Value(username),
       gender:
           gender == null && nullToAbsent ? const Value.absent() : Value(gender),
       weightKg: weightKg == null && nullToAbsent
@@ -1639,7 +1618,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserProfileRow(
       id: serializer.fromJson<String>(json['id']),
-      username: serializer.fromJson<String?>(json['username']),
       gender: serializer.fromJson<String?>(json['gender']),
       weightKg: serializer.fromJson<double?>(json['weightKg']),
       heightCm: serializer.fromJson<double?>(json['heightCm']),
@@ -1654,7 +1632,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
-      'username': serializer.toJson<String?>(username),
       'gender': serializer.toJson<String?>(gender),
       'weightKg': serializer.toJson<double?>(weightKg),
       'heightCm': serializer.toJson<double?>(heightCm),
@@ -1667,7 +1644,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
 
   UserProfileRow copyWith(
           {String? id,
-          Value<String?> username = const Value.absent(),
           Value<String?> gender = const Value.absent(),
           Value<double?> weightKg = const Value.absent(),
           Value<double?> heightCm = const Value.absent(),
@@ -1677,7 +1653,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
           Value<DateTime?> deletedAt = const Value.absent()}) =>
       UserProfileRow(
         id: id ?? this.id,
-        username: username.present ? username.value : this.username,
         gender: gender.present ? gender.value : this.gender,
         weightKg: weightKg.present ? weightKg.value : this.weightKg,
         heightCm: heightCm.present ? heightCm.value : this.heightCm,
@@ -1689,7 +1664,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   UserProfileRow copyWithCompanion(UserProfilesCompanion data) {
     return UserProfileRow(
       id: data.id.present ? data.id.value : this.id,
-      username: data.username.present ? data.username.value : this.username,
       gender: data.gender.present ? data.gender.value : this.gender,
       weightKg: data.weightKg.present ? data.weightKg.value : this.weightKg,
       heightCm: data.heightCm.present ? data.heightCm.value : this.heightCm,
@@ -1704,7 +1678,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   String toString() {
     return (StringBuffer('UserProfileRow(')
           ..write('id: $id, ')
-          ..write('username: $username, ')
           ..write('gender: $gender, ')
           ..write('weightKg: $weightKg, ')
           ..write('heightCm: $heightCm, ')
@@ -1717,14 +1690,13 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, username, gender, weightKg, heightCm,
-      birthDate, createdAt, updatedAt, deletedAt);
+  int get hashCode => Object.hash(id, gender, weightKg, heightCm, birthDate,
+      createdAt, updatedAt, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is UserProfileRow &&
           other.id == this.id &&
-          other.username == this.username &&
           other.gender == this.gender &&
           other.weightKg == this.weightKg &&
           other.heightCm == this.heightCm &&
@@ -1736,7 +1708,6 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
 
 class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
   final Value<String> id;
-  final Value<String?> username;
   final Value<String?> gender;
   final Value<double?> weightKg;
   final Value<double?> heightCm;
@@ -1747,7 +1718,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
   final Value<int> rowid;
   const UserProfilesCompanion({
     this.id = const Value.absent(),
-    this.username = const Value.absent(),
     this.gender = const Value.absent(),
     this.weightKg = const Value.absent(),
     this.heightCm = const Value.absent(),
@@ -1759,7 +1729,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
   });
   UserProfilesCompanion.insert({
     required String id,
-    this.username = const Value.absent(),
     this.gender = const Value.absent(),
     this.weightKg = const Value.absent(),
     this.heightCm = const Value.absent(),
@@ -1773,7 +1742,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
         updatedAt = Value(updatedAt);
   static Insertable<UserProfileRow> custom({
     Expression<String>? id,
-    Expression<String>? username,
     Expression<String>? gender,
     Expression<double>? weightKg,
     Expression<double>? heightCm,
@@ -1785,7 +1753,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (username != null) 'username': username,
       if (gender != null) 'gender': gender,
       if (weightKg != null) 'weight_kg': weightKg,
       if (heightCm != null) 'height_cm': heightCm,
@@ -1799,7 +1766,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
 
   UserProfilesCompanion copyWith(
       {Value<String>? id,
-      Value<String?>? username,
       Value<String?>? gender,
       Value<double?>? weightKg,
       Value<double?>? heightCm,
@@ -1810,7 +1776,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
       Value<int>? rowid}) {
     return UserProfilesCompanion(
       id: id ?? this.id,
-      username: username ?? this.username,
       gender: gender ?? this.gender,
       weightKg: weightKg ?? this.weightKg,
       heightCm: heightCm ?? this.heightCm,
@@ -1827,9 +1792,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
-    }
-    if (username.present) {
-      map['username'] = Variable<String>(username.value);
     }
     if (gender.present) {
       map['gender'] = Variable<String>(gender.value);
@@ -1862,7 +1824,6 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
   String toString() {
     return (StringBuffer('UserProfilesCompanion(')
           ..write('id: $id, ')
-          ..write('username: $username, ')
           ..write('gender: $gender, ')
           ..write('weightKg: $weightKg, ')
           ..write('heightCm: $heightCm, ')
@@ -1887,6 +1848,12 @@ class $UserPreferencesTableTable extends UserPreferencesTable
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
       'id', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _usernameMeta =
+      const VerificationMeta('username');
+  @override
+  late final GeneratedColumn<String> username = GeneratedColumn<String>(
+      'username', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _dailyGoalMlMeta =
       const VerificationMeta('dailyGoalMl');
   @override
@@ -2027,6 +1994,7 @@ class $UserPreferencesTableTable extends UserPreferencesTable
   @override
   List<GeneratedColumn> get $columns => [
         id,
+        username,
         dailyGoalMl,
         dayBoundaryHour,
         units,
@@ -2060,6 +2028,10 @@ class $UserPreferencesTableTable extends UserPreferencesTable
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('username')) {
+      context.handle(_usernameMeta,
+          username.isAcceptableOrUnknown(data['username']!, _usernameMeta));
     }
     if (data.containsKey('daily_goal_ml')) {
       context.handle(
@@ -2196,6 +2168,8 @@ class $UserPreferencesTableTable extends UserPreferencesTable
     return UserPreferencesRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      username: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}username']),
       dailyGoalMl: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}daily_goal_ml'])!,
       dayBoundaryHour: attachedDatabase.typeMapping
@@ -2250,6 +2224,10 @@ class UserPreferencesRow extends DataClass
     implements Insertable<UserPreferencesRow> {
   final String id;
 
+  /// Display username — NFC-normalised before storing (Parity Rulebook §Username).
+  /// Null until the user completes onboarding.
+  final String? username;
+
   /// Daily hydration goal in millilitres (metric canonical — C1).
   /// Updated during onboarding. Seeded to 2000 ml as a placeholder.
   final int dailyGoalMl;
@@ -2293,6 +2271,7 @@ class UserPreferencesRow extends DataClass
   final DateTime updatedAt;
   const UserPreferencesRow(
       {required this.id,
+      this.username,
       required this.dailyGoalMl,
       required this.dayBoundaryHour,
       required this.units,
@@ -2315,6 +2294,9 @@ class UserPreferencesRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    if (!nullToAbsent || username != null) {
+      map['username'] = Variable<String>(username);
+    }
     map['daily_goal_ml'] = Variable<int>(dailyGoalMl);
     map['day_boundary_hour'] = Variable<int>(dayBoundaryHour);
     map['units'] = Variable<String>(units);
@@ -2346,6 +2328,9 @@ class UserPreferencesRow extends DataClass
   UserPreferencesTableCompanion toCompanion(bool nullToAbsent) {
     return UserPreferencesTableCompanion(
       id: Value(id),
+      username: username == null && nullToAbsent
+          ? const Value.absent()
+          : Value(username),
       dailyGoalMl: Value(dailyGoalMl),
       dayBoundaryHour: Value(dayBoundaryHour),
       units: Value(units),
@@ -2376,6 +2361,7 @@ class UserPreferencesRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserPreferencesRow(
       id: serializer.fromJson<String>(json['id']),
+      username: serializer.fromJson<String?>(json['username']),
       dailyGoalMl: serializer.fromJson<int>(json['dailyGoalMl']),
       dayBoundaryHour: serializer.fromJson<int>(json['dayBoundaryHour']),
       units: serializer.fromJson<String>(json['units']),
@@ -2408,6 +2394,7 @@ class UserPreferencesRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'username': serializer.toJson<String?>(username),
       'dailyGoalMl': serializer.toJson<int>(dailyGoalMl),
       'dayBoundaryHour': serializer.toJson<int>(dayBoundaryHour),
       'units': serializer.toJson<String>(units),
@@ -2434,6 +2421,7 @@ class UserPreferencesRow extends DataClass
 
   UserPreferencesRow copyWith(
           {String? id,
+          Value<String?> username = const Value.absent(),
           int? dailyGoalMl,
           int? dayBoundaryHour,
           String? units,
@@ -2454,6 +2442,7 @@ class UserPreferencesRow extends DataClass
           DateTime? updatedAt}) =>
       UserPreferencesRow(
         id: id ?? this.id,
+        username: username.present ? username.value : this.username,
         dailyGoalMl: dailyGoalMl ?? this.dailyGoalMl,
         dayBoundaryHour: dayBoundaryHour ?? this.dayBoundaryHour,
         units: units ?? this.units,
@@ -2484,6 +2473,7 @@ class UserPreferencesRow extends DataClass
   UserPreferencesRow copyWithCompanion(UserPreferencesTableCompanion data) {
     return UserPreferencesRow(
       id: data.id.present ? data.id.value : this.id,
+      username: data.username.present ? data.username.value : this.username,
       dailyGoalMl:
           data.dailyGoalMl.present ? data.dailyGoalMl.value : this.dailyGoalMl,
       dayBoundaryHour: data.dayBoundaryHour.present
@@ -2535,6 +2525,7 @@ class UserPreferencesRow extends DataClass
   String toString() {
     return (StringBuffer('UserPreferencesRow(')
           ..write('id: $id, ')
+          ..write('username: $username, ')
           ..write('dailyGoalMl: $dailyGoalMl, ')
           ..write('dayBoundaryHour: $dayBoundaryHour, ')
           ..write('units: $units, ')
@@ -2560,6 +2551,7 @@ class UserPreferencesRow extends DataClass
   @override
   int get hashCode => Object.hash(
       id,
+      username,
       dailyGoalMl,
       dayBoundaryHour,
       units,
@@ -2583,6 +2575,7 @@ class UserPreferencesRow extends DataClass
       identical(this, other) ||
       (other is UserPreferencesRow &&
           other.id == this.id &&
+          other.username == this.username &&
           other.dailyGoalMl == this.dailyGoalMl &&
           other.dayBoundaryHour == this.dayBoundaryHour &&
           other.units == this.units &&
@@ -2606,6 +2599,7 @@ class UserPreferencesRow extends DataClass
 class UserPreferencesTableCompanion
     extends UpdateCompanion<UserPreferencesRow> {
   final Value<String> id;
+  final Value<String?> username;
   final Value<int> dailyGoalMl;
   final Value<int> dayBoundaryHour;
   final Value<String> units;
@@ -2627,6 +2621,7 @@ class UserPreferencesTableCompanion
   final Value<int> rowid;
   const UserPreferencesTableCompanion({
     this.id = const Value.absent(),
+    this.username = const Value.absent(),
     this.dailyGoalMl = const Value.absent(),
     this.dayBoundaryHour = const Value.absent(),
     this.units = const Value.absent(),
@@ -2649,6 +2644,7 @@ class UserPreferencesTableCompanion
   });
   UserPreferencesTableCompanion.insert({
     required String id,
+    this.username = const Value.absent(),
     required int dailyGoalMl,
     this.dayBoundaryHour = const Value.absent(),
     this.units = const Value.absent(),
@@ -2681,6 +2677,7 @@ class UserPreferencesTableCompanion
         updatedAt = Value(updatedAt);
   static Insertable<UserPreferencesRow> custom({
     Expression<String>? id,
+    Expression<String>? username,
     Expression<int>? dailyGoalMl,
     Expression<int>? dayBoundaryHour,
     Expression<String>? units,
@@ -2703,6 +2700,7 @@ class UserPreferencesTableCompanion
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (username != null) 'username': username,
       if (dailyGoalMl != null) 'daily_goal_ml': dailyGoalMl,
       if (dayBoundaryHour != null) 'day_boundary_hour': dayBoundaryHour,
       if (units != null) 'units': units,
@@ -2734,6 +2732,7 @@ class UserPreferencesTableCompanion
 
   UserPreferencesTableCompanion copyWith(
       {Value<String>? id,
+      Value<String?>? username,
       Value<int>? dailyGoalMl,
       Value<int>? dayBoundaryHour,
       Value<String>? units,
@@ -2755,6 +2754,7 @@ class UserPreferencesTableCompanion
       Value<int>? rowid}) {
     return UserPreferencesTableCompanion(
       id: id ?? this.id,
+      username: username ?? this.username,
       dailyGoalMl: dailyGoalMl ?? this.dailyGoalMl,
       dayBoundaryHour: dayBoundaryHour ?? this.dayBoundaryHour,
       units: units ?? this.units,
@@ -2786,6 +2786,9 @@ class UserPreferencesTableCompanion
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (username.present) {
+      map['username'] = Variable<String>(username.value);
     }
     if (dailyGoalMl.present) {
       map['daily_goal_ml'] = Variable<int>(dailyGoalMl.value);
@@ -2857,6 +2860,7 @@ class UserPreferencesTableCompanion
   String toString() {
     return (StringBuffer('UserPreferencesTableCompanion(')
           ..write('id: $id, ')
+          ..write('username: $username, ')
           ..write('dailyGoalMl: $dailyGoalMl, ')
           ..write('dayBoundaryHour: $dayBoundaryHour, ')
           ..write('units: $units, ')
@@ -3523,7 +3527,6 @@ typedef $$DrinkEntriesTableProcessedTableManager = ProcessedTableManager<
 typedef $$UserProfilesTableCreateCompanionBuilder = UserProfilesCompanion
     Function({
   required String id,
-  Value<String?> username,
   Value<String?> gender,
   Value<double?> weightKg,
   Value<double?> heightCm,
@@ -3536,7 +3539,6 @@ typedef $$UserProfilesTableCreateCompanionBuilder = UserProfilesCompanion
 typedef $$UserProfilesTableUpdateCompanionBuilder = UserProfilesCompanion
     Function({
   Value<String> id,
-  Value<String?> username,
   Value<String?> gender,
   Value<double?> weightKg,
   Value<double?> heightCm,
@@ -3558,9 +3560,6 @@ class $$UserProfilesTableFilterComposer
   });
   ColumnFilters<String> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<String> get username => $composableBuilder(
-      column: $table.username, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get gender => $composableBuilder(
       column: $table.gender, builder: (column) => ColumnFilters(column));
@@ -3596,9 +3595,6 @@ class $$UserProfilesTableOrderingComposer
   ColumnOrderings<String> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get username => $composableBuilder(
-      column: $table.username, builder: (column) => ColumnOrderings(column));
-
   ColumnOrderings<String> get gender => $composableBuilder(
       column: $table.gender, builder: (column) => ColumnOrderings(column));
 
@@ -3632,9 +3628,6 @@ class $$UserProfilesTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get username =>
-      $composableBuilder(column: $table.username, builder: (column) => column);
 
   GeneratedColumn<String> get gender =>
       $composableBuilder(column: $table.gender, builder: (column) => column);
@@ -3685,7 +3678,6 @@ class $$UserProfilesTableTableManager extends RootTableManager<
               $$UserProfilesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<String> id = const Value.absent(),
-            Value<String?> username = const Value.absent(),
             Value<String?> gender = const Value.absent(),
             Value<double?> weightKg = const Value.absent(),
             Value<double?> heightCm = const Value.absent(),
@@ -3697,7 +3689,6 @@ class $$UserProfilesTableTableManager extends RootTableManager<
           }) =>
               UserProfilesCompanion(
             id: id,
-            username: username,
             gender: gender,
             weightKg: weightKg,
             heightCm: heightCm,
@@ -3709,7 +3700,6 @@ class $$UserProfilesTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             required String id,
-            Value<String?> username = const Value.absent(),
             Value<String?> gender = const Value.absent(),
             Value<double?> weightKg = const Value.absent(),
             Value<double?> heightCm = const Value.absent(),
@@ -3721,7 +3711,6 @@ class $$UserProfilesTableTableManager extends RootTableManager<
           }) =>
               UserProfilesCompanion.insert(
             id: id,
-            username: username,
             gender: gender,
             weightKg: weightKg,
             heightCm: heightCm,
@@ -3756,6 +3745,7 @@ typedef $$UserProfilesTableProcessedTableManager = ProcessedTableManager<
 typedef $$UserPreferencesTableTableCreateCompanionBuilder
     = UserPreferencesTableCompanion Function({
   required String id,
+  Value<String?> username,
   required int dailyGoalMl,
   Value<int> dayBoundaryHour,
   Value<String> units,
@@ -3779,6 +3769,7 @@ typedef $$UserPreferencesTableTableCreateCompanionBuilder
 typedef $$UserPreferencesTableTableUpdateCompanionBuilder
     = UserPreferencesTableCompanion Function({
   Value<String> id,
+  Value<String?> username,
   Value<int> dailyGoalMl,
   Value<int> dayBoundaryHour,
   Value<String> units,
@@ -3811,6 +3802,9 @@ class $$UserPreferencesTableTableFilterComposer
   });
   ColumnFilters<String> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get username => $composableBuilder(
+      column: $table.username, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get dailyGoalMl => $composableBuilder(
       column: $table.dailyGoalMl, builder: (column) => ColumnFilters(column));
@@ -3891,6 +3885,9 @@ class $$UserPreferencesTableTableOrderingComposer
   ColumnOrderings<String> get id => $composableBuilder(
       column: $table.id, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get username => $composableBuilder(
+      column: $table.username, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get dailyGoalMl => $composableBuilder(
       column: $table.dailyGoalMl, builder: (column) => ColumnOrderings(column));
 
@@ -3969,6 +3966,9 @@ class $$UserPreferencesTableTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get username =>
+      $composableBuilder(column: $table.username, builder: (column) => column);
 
   GeneratedColumn<int> get dailyGoalMl => $composableBuilder(
       column: $table.dailyGoalMl, builder: (column) => column);
@@ -4056,6 +4056,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
                   $db: db, $table: table),
           updateCompanionCallback: ({
             Value<String> id = const Value.absent(),
+            Value<String?> username = const Value.absent(),
             Value<int> dailyGoalMl = const Value.absent(),
             Value<int> dayBoundaryHour = const Value.absent(),
             Value<String> units = const Value.absent(),
@@ -4078,6 +4079,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
           }) =>
               UserPreferencesTableCompanion(
             id: id,
+            username: username,
             dailyGoalMl: dailyGoalMl,
             dayBoundaryHour: dayBoundaryHour,
             units: units,
@@ -4100,6 +4102,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
           ),
           createCompanionCallback: ({
             required String id,
+            Value<String?> username = const Value.absent(),
             required int dailyGoalMl,
             Value<int> dayBoundaryHour = const Value.absent(),
             Value<String> units = const Value.absent(),
@@ -4122,6 +4125,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
           }) =>
               UserPreferencesTableCompanion.insert(
             id: id,
+            username: username,
             dailyGoalMl: dailyGoalMl,
             dayBoundaryHour: dayBoundaryHour,
             units: units,

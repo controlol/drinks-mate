@@ -16,6 +16,10 @@ class UserPreferencesTable extends Table {
 
   TextColumn get id => text()();
 
+  /// Display username — NFC-normalised before storing (Parity Rulebook §Username).
+  /// Null until the user completes onboarding.
+  TextColumn get username => text().nullable()();
+
   /// Daily hydration goal in millilitres (metric canonical — C1).
   /// Updated during onboarding. Seeded to 2000 ml as a placeholder.
   IntColumn get dailyGoalMl => integer()();

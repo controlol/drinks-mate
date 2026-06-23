@@ -6,7 +6,6 @@
 class UserProfile {
   const UserProfile({
     required this.id,
-    this.username,
     this.gender,
     this.weightKg,
     this.heightCm,
@@ -17,9 +16,6 @@ class UserProfile {
   });
 
   final String id;
-
-  /// Display name — same character rules as data-model.md §Username.
-  final String? username;
 
   /// 'male' | 'female' | 'unspecified'. Stored as-is; displayed localised.
   final String? gender;
@@ -41,7 +37,6 @@ class UserProfile {
 
   UserProfile copyWith({
     String? id,
-    Object? username = _sentinel,
     Object? gender = _sentinel,
     Object? weightKg = _sentinel,
     Object? heightCm = _sentinel,
@@ -52,7 +47,6 @@ class UserProfile {
   }) {
     return UserProfile(
       id: id ?? this.id,
-      username: username == _sentinel ? this.username : username as String?,
       gender: gender == _sentinel ? this.gender : gender as String?,
       weightKg: weightKg == _sentinel ? this.weightKg : weightKg as double?,
       heightCm: heightCm == _sentinel ? this.heightCm : heightCm as double?,

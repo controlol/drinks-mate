@@ -20,7 +20,7 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// Using a fixed id enforces the singleton at the storage layer (INSERT OR
 /// IGNORE on a known PK). Not a random UUID — this is intentional (C1 allows
 /// well-known ids for singleton records).
-const String kUserPreferencesId = 'preferences-singleton-v1';
+const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
 /// Phase-1 Drift database — schema version 3.
 ///
@@ -235,7 +235,7 @@ class AppDatabase extends _$AppDatabase {
       inactivityReminderEnabled: true,
       weeklySummaryEnabled: true,
       defaultDrinkPresetId: const Value(kWaterGlassPresetId),
-      bacOnLockScreenEnabled: true,
+      bacOnLockScreenEnabled: false,
       // Party Mode notifications are OFF by default (notifications.md §4).
       approachingCapNotifEnabled: false,
       soberEstimateNotifEnabled: false,
@@ -320,16 +320,16 @@ class AppDatabase extends _$AppDatabase {
   // ---------------------------------------------------------------------------
 
   /// Reactive stream of the first live [UserProfileRow] (null if none exists).
-  Stream<UserProfileRow?> watchProfile() => (select(
-        userProfiles,
-      )..where((t) => t.deletedAt.isNull()))
-          .watchSingleOrNull();
+  Stream<UserProfileRow?> watchProfile() => (select(userProfiles)
+        ..where((t) => t.deletedAt.isNull())
+        ..limit(1))
+      .watchSingleOrNull();
 
   /// One-shot read of the first live profile (null if none exists).
-  Future<UserProfileRow?> getProfile() => (select(
-        userProfiles,
-      )..where((t) => t.deletedAt.isNull()))
-          .getSingleOrNull();
+  Future<UserProfileRow?> getProfile() => (select(userProfiles)
+        ..where((t) => t.deletedAt.isNull())
+        ..limit(1))
+      .getSingleOrNull();
 
   /// Insert or replace the user profile by id.
   Future<void> upsertProfile(UserProfilesCompanion companion) =>

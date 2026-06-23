@@ -40,40 +40,42 @@ void main() {
       expect(prefs.weeklySummaryEnabled, isTrue);
       expect(prefs.defaultDrinkPresetId, kWaterGlassPresetId);
       expect(prefs.bacCapGramsPerL, isNull);
-      expect(prefs.bacOnLockScreenEnabled, isTrue);
+      expect(prefs.bacOnLockScreenEnabled, isFalse);
       // Party Mode notifications are OFF by default (notifications.md §4).
       expect(prefs.approachingCapNotifEnabled, isFalse);
       expect(prefs.soberEstimateNotifEnabled, isFalse);
       expect(prefs.installedAt, isNotNull);
     });
 
-    test('installedAt is stable across re-opens (INSERT OR IGNORE semantics)',
-        () async {
-      // First open — captures installedAt.
-      final db1 = _memDb();
-      final prefs1 = await PreferencesRepository(db1).getPreferences();
-      final installedAt1 = prefs1.installedAt;
-      await db1.close();
+    test(
+      'installedAt is stable across re-opens (INSERT OR IGNORE semantics)',
+      () async {
+        // First open — captures installedAt.
+        final db1 = _memDb();
+        final prefs1 = await PreferencesRepository(db1).getPreferences();
+        final installedAt1 = prefs1.installedAt;
+        await db1.close();
 
-      // A second open of the SAME in-memory db would reset since NativeDatabase
-      // is ephemeral, so we verify idempotency within a single open by calling
-      // _seedDefaultPreferences twice (simulated via a second getPreferences).
-      //
-      // The real scenario (re-open of a file db) is tested by asserting that
-      // calling getPreferences twice returns the same row without duplicating it.
-      final db2 = _memDb();
-      addTearDown(db2.close);
-      final repo2 = PreferencesRepository(db2);
-      final prefs2a = await repo2.getPreferences();
-      final prefs2b = await repo2.getPreferences();
-      expect(prefs2a.installedAt, prefs2b.installedAt);
-      expect(prefs2a.id, prefs2b.id);
-      // installedAt should not be zero.
-      expect(prefs2a.installedAt.millisecondsSinceEpoch, isPositive);
+        // A second open of the SAME in-memory db would reset since NativeDatabase
+        // is ephemeral, so we verify idempotency within a single open by calling
+        // _seedDefaultPreferences twice (simulated via a second getPreferences).
+        //
+        // The real scenario (re-open of a file db) is tested by asserting that
+        // calling getPreferences twice returns the same row without duplicating it.
+        final db2 = _memDb();
+        addTearDown(db2.close);
+        final repo2 = PreferencesRepository(db2);
+        final prefs2a = await repo2.getPreferences();
+        final prefs2b = await repo2.getPreferences();
+        expect(prefs2a.installedAt, prefs2b.installedAt);
+        expect(prefs2a.id, prefs2b.id);
+        // installedAt should not be zero.
+        expect(prefs2a.installedAt.millisecondsSinceEpoch, isPositive);
 
-      // Both opens produce a non-null, positive installedAt.
-      expect(installedAt1.millisecondsSinceEpoch, isPositive);
-    });
+        // Both opens produce a non-null, positive installedAt.
+        expect(installedAt1.millisecondsSinceEpoch, isPositive);
+      },
+    );
 
     test('only one preferences row exists after seeding', () async {
       final db = _memDb();
@@ -181,9 +183,7 @@ void main() {
       // Drift stores DateTimeColumn as epoch-seconds, so tolerance of 1 s.
       expect(
         prefs.updatedAt.millisecondsSinceEpoch,
-        greaterThanOrEqualTo(
-          beforeUpdate.millisecondsSinceEpoch - 1000,
-        ),
+        greaterThanOrEqualTo(beforeUpdate.millisecondsSinceEpoch - 1000),
       );
     });
   });
@@ -228,7 +228,6 @@ void main() {
       final now = DateTime.now().toUtc();
       final profile = UserProfile(
         id: 'test-profile-id',
-        username: 'Alice',
         gender: 'female',
         weightKg: 65.0,
         heightCm: 168.0,
@@ -242,7 +241,6 @@ void main() {
 
       expect(saved, isNotNull);
       expect(saved!.id, 'test-profile-id');
-      expect(saved.username, 'Alice');
       expect(saved.gender, 'female');
       expect(saved.weightKg, 65.0);
       expect(saved.heightCm, 168.0);
@@ -253,7 +251,6 @@ void main() {
       final now = DateTime.now().toUtc();
       final original = UserProfile(
         id: 'test-profile-id',
-        username: 'Alice',
         gender: 'female',
         weightKg: 65.0,
         createdAt: now,
@@ -266,7 +263,17 @@ void main() {
 
       final saved = await repo.getProfile();
       expect(saved!.weightKg, 70.0);
-      expect(saved.username, 'Alice');
+      expect(saved.gender, 'female');
+    });
+
+    test('updateUsername validates and persists username', () async {
+      await repo.updateUsername('Alice');
+      final prefs = await repo.getPreferences();
+      expect(prefs.username, 'Alice');
+    });
+
+    test('updateUsername rejects invalid username', () async {
+      expect(() => repo.updateUsername('ab'), throwsA(isA<ArgumentError>()));
     });
 
     test('watchProfile stream emits null then profile after upsert', () async {
@@ -277,12 +284,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       final now = DateTime.now().toUtc();
-      await repo.upsertProfile(UserProfile(
-        id: 'p1',
-        weightKg: 72.0,
-        createdAt: now,
-        updatedAt: now,
-      ));
+      await repo.upsertProfile(
+        UserProfile(id: 'p1', weightKg: 72.0, createdAt: now, updatedAt: now),
+      );
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
 

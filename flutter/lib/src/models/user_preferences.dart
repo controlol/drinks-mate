@@ -6,6 +6,7 @@
 class UserPreferences {
   const UserPreferences({
     required this.id,
+    this.username,
     required this.dailyGoalMl,
     required this.dayBoundaryHour,
     required this.units,
@@ -27,6 +28,9 @@ class UserPreferences {
   });
 
   final String id;
+
+  /// Display username — NFC-normalised; null until onboarding sets it.
+  final String? username;
 
   /// Daily hydration goal in millilitres (metric canonical).
   final int dailyGoalMl;
@@ -75,6 +79,7 @@ class UserPreferences {
 
   UserPreferences copyWith({
     String? id,
+    Object? username = _sentinel,
     int? dailyGoalMl,
     int? dayBoundaryHour,
     String? units,
@@ -96,6 +101,7 @@ class UserPreferences {
   }) {
     return UserPreferences(
       id: id ?? this.id,
+      username: username == _sentinel ? this.username : username as String?,
       dailyGoalMl: dailyGoalMl ?? this.dailyGoalMl,
       dayBoundaryHour: dayBoundaryHour ?? this.dayBoundaryHour,
       units: units ?? this.units,

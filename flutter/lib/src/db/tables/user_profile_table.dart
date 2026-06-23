@@ -11,7 +11,6 @@ import 'package:drift/drift.dart';
 @DataClassName('UserProfileRow')
 class UserProfiles extends Table {
   TextColumn get id => text()();
-  TextColumn get username => text().nullable()();
   TextColumn get gender => text().nullable()();
 
   /// Stored in kilograms (metric canonical — C1).
