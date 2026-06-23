@@ -122,8 +122,12 @@ jobs:
             automated review. Your task: fix every blocking finding and push the
             fixes to the existing branch (do NOT open a new PR).
 
-            1. Read the PR reviews and inline comments:
-                 gh pr view ${{ steps.pr.outputs.pr }} --json reviews,reviewComments
+            1. Fetch all unresolved review threads — this gives you both the findings
+               to fix and the node IDs needed to resolve them afterward:
+                 gh api graphql \
+                   -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:50){nodes{id isResolved comments(first:5){nodes{body path line author{login}}}}}}}}' \
+                   -f owner="${REPO%%/*}" -f repo="${REPO##*/}" \
+                   -F pr=${{ steps.pr.outputs.pr }}
 
             2. Address every BLOCKING finding — this includes:
                - Correctness bugs and missing edge cases
@@ -143,16 +147,8 @@ jobs:
             5. Push the fixes to the existing branch.
                Use commit message: "fix: address automated review findings"
 
-            6. For each blocking finding you fixed, resolve its inline PR review thread
-               (best-effort — a failure here must NOT stop your work; use `|| true`):
-
-               First, fetch all unresolved thread IDs:
-                 gh api graphql \
-                   -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:50){nodes{id isResolved comments(first:1){nodes{body path line}}}}}}}' \
-                   -f owner="${REPO%%/*}" -f repo="${REPO##*/}" \
-                   -F pr=${{ steps.pr.outputs.pr }}
-
-               Then resolve each thread whose finding you addressed:
+            6. For each blocking finding you fixed, resolve its thread using the node
+               ID from step 1 (best-effort — must NOT stop your work; use `|| true`):
                  gh api graphql \
                    -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
                    -f id="<THREAD_NODE_ID>" || true
