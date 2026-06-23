@@ -68,7 +68,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   int get _parsedGoal {
     final n = int.tryParse(_goalController.text.trim());
-    return (n != null && n > 0) ? n : dailyGoalMl(70.0);
+    if (n != null && n > 0) return n;
+    // Fall back to weight-derived goal (not hardcoded 70 kg) so a 65 kg user
+    // who clears the field still gets 2000 ml, not 2100.
+    final w = double.tryParse(_weightController.text.trim());
+    return dailyGoalMl(w != null && w > 0 ? w : 70.0);
   }
 
   void _syncGoalFromWeight() {
@@ -325,7 +329,7 @@ class _PersonalInfoPage extends StatelessWidget {
           Text('About you', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 4),
           Text(
-            'All fields are optional.',
+            'Gender, height, and birthday are optional.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 24),

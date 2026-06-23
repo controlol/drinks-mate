@@ -39,7 +39,11 @@ class _AppGate extends ConsumerWidget {
     return prefsAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (_, __) => const AppShell(),
+      error: (_, __) => const Scaffold(
+        body: Center(
+          child: Text('Could not load preferences. Please restart the app.'),
+        ),
+      ),
       data: (prefs) =>
           prefs.username == null ? const OnboardingFlow() : const AppShell(),
     );

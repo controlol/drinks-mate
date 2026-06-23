@@ -346,6 +346,55 @@ void main() {
       expect(prefs.dailyGoalMl, 2500);
     });
 
+    // Regression: clearing the goal field must fall back to weight-derived goal,
+    // not the hardcoded 70 kg default. 65 kg → 2000, not 2100.
+    testWidgets(
+      'cleared goal field falls back to weight-derived goal (P1 regression)',
+      (tester) async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = PreferencesRepository(db);
+
+        await tester.pumpWidget(_wrap(const OnboardingFlow(), repo));
+        await tester.pump();
+
+        await tester.tap(find.text("Let's start"));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('onboarding_username_field')),
+          'Reg',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        // Enter 65 kg — goal field updates to 2000 via _syncGoalFromWeight.
+        await tester.enterText(
+          find.byKey(const Key('onboarding_weight_field')),
+          '65',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        // Clear the goal field — fallback must use the 65 kg weight, not 70 kg.
+        await tester.enterText(
+          find.byKey(const Key('onboarding_goal_field')),
+          '',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('onboarding_cta_done')));
+        await tester.pumpAndSettle();
+
+        final prefs = await repo.getPreferences();
+        expect(prefs.dailyGoalMl, 2000);
+      },
+    );
+
     testWidgets('profile row is created with entered weight', (tester) async {
       final db = _memDb();
       addTearDown(db.close);
