@@ -99,7 +99,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d002',
-          name: 'Bottle of water (0.5L)',
+          name: 'Bottle of water 500ml',
           beverageType: 'water',
           volumeMl: 500,
           iconKey: 'bottle',
@@ -109,7 +109,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d003',
-          name: 'Can of water (0.33L)',
+          name: 'Can of water 330ml',
           beverageType: 'water',
           volumeMl: 330,
           iconKey: 'can',
@@ -179,7 +179,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d010',
-          name: 'Alcohol-free beer (0.33L)',
+          name: 'Alcohol-free beer 330ml',
           beverageType: 'non_alcoholic_beer',
           volumeMl: 330,
           iconKey: 'beer_glass',
@@ -191,7 +191,7 @@ class AppDatabase extends _$AppDatabase {
         // Colours from BeverageType.defaultIconColor.
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d011',
-          name: 'Small beer (0.2L)',
+          name: 'Small beer 200ml',
           beverageType: 'beer',
           volumeMl: 200,
           abvPercent: 5.0,
@@ -202,7 +202,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d012',
-          name: 'Beer (0.33L)',
+          name: 'Beer 330ml',
           beverageType: 'beer',
           volumeMl: 330,
           abvPercent: 5.0,
@@ -396,8 +396,9 @@ class AppDatabase extends _$AppDatabase {
         ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
       .watch();
 
-  /// All non-deleted alcoholic presets (including hidden) ordered by [sortOrder].
-  /// Used by Party Mode.
+  /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
+  /// Used by Party Mode (log-drink picker — party-session.md §Price overrides
+  /// explicitly excludes hidden presets).
   Stream<List<DrinkPresetRow>> watchAlcoholicPresets() {
     const alcoholicTypes = [
       'beer',
@@ -408,7 +409,10 @@ class AppDatabase extends _$AppDatabase {
     ];
     return (select(drinkPresets)
           ..where(
-            (t) => t.deletedAt.isNull() & t.beverageType.isIn(alcoholicTypes),
+            (t) =>
+                t.deletedAt.isNull() &
+                t.isHidden.equals(false) &
+                t.beverageType.isIn(alcoholicTypes),
           )
           ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
         .watch();
@@ -439,7 +443,9 @@ class AppDatabase extends _$AppDatabase {
   Future<void> reorderPresets(List<String> orderedIds, DateTime now) =>
       transaction(() async {
         for (var i = 0; i < orderedIds.length; i++) {
-          await (update(drinkPresets)..where((t) => t.id.equals(orderedIds[i])))
+          await (update(
+            drinkPresets,
+          )..where((t) => t.id.equals(orderedIds[i])))
               .write(
             DrinkPresetsCompanion(
               sortOrder: Value(i + 1),

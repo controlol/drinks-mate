@@ -120,8 +120,9 @@ void main() {
       },
     );
 
-    test('still includes a hidden alcoholic preset', () async {
-      // watchAlcoholicPresets() includes hidden — source: repo docstring.
+    test('excludes a hidden alcoholic preset', () async {
+      // party-session.md §Price overrides: "One row per DrinkPreset (excluding
+      // hidden ones)" — hidden presets must not appear in the Party Mode picker.
       final db = _memDb();
       addTearDown(db.close);
       final repo = DrinksRepository(db);
@@ -132,8 +133,8 @@ void main() {
       await repo.hidePreset(targetId);
       final afterHide = await repo.watchAlcoholicPresets().first;
 
-      expect(afterHide.length, 4);
-      expect(afterHide.any((p) => p.id == targetId), isTrue);
+      expect(afterHide.length, 3);
+      expect(afterHide.any((p) => p.id == targetId), isFalse);
     });
 
     test('does NOT include non-alcoholic presets', () async {
@@ -445,29 +446,27 @@ void main() {
       },
     );
 
-    test(
-      'seeded default (isUserCreated == false) can be soft-deleted',
-      () async {
-        // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
-        // or delete them — there is no special protection." Seeded defaults
-        // re-seed via INSERT OR IGNORE on next open (reset-to-defaults mechanic).
-        final db = _memDb();
-        addTearDown(db.close);
-        final repo = DrinksRepository(db);
+    test('seeded default (isUserCreated == false) can be soft-deleted',
+        () async {
+      // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
+      // or delete them — there is no special protection." Seeded defaults
+      // re-seed via INSERT OR IGNORE on next open (reset-to-defaults mechanic).
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
 
-        final presets = await repo.watchAllPresets().first;
-        final seeded = presets.firstWhere((p) => !p.isUserCreated);
+      final presets = await repo.watchAllPresets().first;
+      final seeded = presets.firstWhere((p) => !p.isUserCreated);
 
-        await repo.deletePreset(seeded.id);
+      await repo.deletePreset(seeded.id);
 
-        final after = await repo.watchAllPresets().first;
-        expect(after.any((p) => p.id == seeded.id), isFalse);
+      final after = await repo.watchAllPresets().first;
+      expect(after.any((p) => p.id == seeded.id), isFalse);
 
-        // Verify deletedAt is non-null in raw row.
-        final raw = await db.getPresetById(seeded.id);
-        expect(raw!.deletedAt, isNotNull);
-      },
-    );
+      // Verify deletedAt is non-null in raw row.
+      final raw = await db.getPresetById(seeded.id);
+      expect(raw!.deletedAt, isNotNull);
+    });
 
     test('non-existent id throws StateError', () async {
       // Source: DrinksRepository.deletePreset() — "Throws StateError if the
