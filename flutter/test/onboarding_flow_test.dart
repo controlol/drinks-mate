@@ -213,40 +213,44 @@ void main() {
       expect(prefs.username, 'Alice');
     });
 
-    testWidgets('default goal of 2000 ml is written when no weight entered', (
-      tester,
-    ) async {
-      final db = _memDb();
-      addTearDown(db.close);
-      final repo = PreferencesRepository(db);
+    // §S5: "a user who taps 'next' through the whole thing ends up with weight
+    // 70 kg … daily goal 2100 ml". Weight defaults to 70, goal defaults to
+    // dailyGoalMl(70) = 2100 — verify the tap-through path persists 2100.
+    testWidgets(
+      'tap-through defaults persist 2100 ml goal (§S5 spec example)',
+      (tester) async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = PreferencesRepository(db);
 
-      await tester.pumpWidget(_wrap(const OnboardingFlow(), repo));
-      await tester.pump();
+        await tester.pumpWidget(_wrap(const OnboardingFlow(), repo));
+        await tester.pump();
 
-      await tester.tap(find.text("Let's start"));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text("Let's start"));
+        await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('onboarding_username_field')),
-        'NoWeight',
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('onboarding_cta_next')));
-      await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('onboarding_username_field')),
+          'TapThrough',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
 
-      // Skip personal info without entering weight.
-      await tester.tap(find.byKey(const Key('onboarding_cta_next')));
-      await tester.pumpAndSettle();
+        // Accept default weight (70 kg) — no change needed.
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('onboarding_cta_next')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('onboarding_cta_done')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('onboarding_cta_done')));
+        await tester.pumpAndSettle();
 
-      final prefs = await repo.getPreferences();
-      expect(prefs.dailyGoalMl, 2000);
-    });
+        final prefs = await repo.getPreferences();
+        expect(prefs.dailyGoalMl, 2100);
+      },
+    );
 
     // Parity Rulebook §hydration: dailyGoalMl = round_to_nearest(30 × kg, 100).
     // 70 kg → 30×70 = 2100 → rounds to 2100.

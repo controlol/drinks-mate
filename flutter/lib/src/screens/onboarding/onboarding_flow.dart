@@ -44,12 +44,14 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   // Step 3 — Personal Info
   String? _gender;
-  final _weightController = TextEditingController();
+  final _weightController = TextEditingController(text: '70');
   final _heightController = TextEditingController();
   DateTime? _birthDate;
 
   // Step 4 — Daily Goal
-  final _goalController = TextEditingController(text: '2000');
+  final _goalController = TextEditingController(
+    text: dailyGoalMl(70.0).toString(),
+  );
 
   @override
   void dispose() {
@@ -66,7 +68,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   int get _parsedGoal {
     final n = int.tryParse(_goalController.text.trim());
-    return (n != null && n > 0) ? n : 2000;
+    return (n != null && n > 0) ? n : dailyGoalMl(70.0);
   }
 
   void _syncGoalFromWeight() {
