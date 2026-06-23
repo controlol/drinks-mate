@@ -114,3 +114,9 @@ jobs:
 
             5. Push the fixes to the existing branch.
                Use commit message: "fix: address automated review findings"
+
+      - name: Remove remediation label on failure
+        if: failure() && steps.pr.outputs.skip != 'true'
+        run: |
+          gh pr edit "${{ steps.pr.outputs.pr }}" --repo "$REPO" \
+            --remove-label "agent-remediation" || true
