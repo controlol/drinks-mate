@@ -218,11 +218,32 @@ class _StatusPill extends StatelessWidget {
         fg = Theme.of(context).colorScheme.onPrimaryContainer;
       case PaceStatus.ahead:
         // Goal reached — use success/green to distinguish from "On pace".
-        // Paired with the text label "Ahead" as the non-colour signal.
+        // Parity Rulebook §Non-colour-signal rules: goal-met requires icon + text.
         label = 'Ahead';
         bg = kColorSuccess.withAlpha(38); // ~15% opacity
         fg = kColorSuccess;
     }
+
+    // Goal-met (ahead) renders icon + text per Rulebook §Non-colour-signal rules.
+    // Other states (on pace, behind) use text label only — Rulebook permits this.
+    final Widget content = status == PaceStatus.ahead
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle_outline, size: 14, color: fg),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: fg),
+              ),
+            ],
+          )
+        : Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg),
+          );
 
     return Semantics(
       label: '${SemanticsLabels.statusPill}: $label',
@@ -233,10 +254,7 @@ class _StatusPill extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg),
-        ),
+        child: content,
       ),
     );
   }

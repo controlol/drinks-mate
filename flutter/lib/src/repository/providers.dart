@@ -31,14 +31,22 @@ final visiblePresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
 /// Reactive stream of today's total intake in ml.
 /// Updates automatically whenever a drink is logged or deleted.
 ///
-/// Re-subscribes at each 05:00 day boundary so the query window rolls over
-/// without requiring an app restart.
+/// Re-subscribes at each day boundary so the query window rolls over
+/// without requiring an app restart. Uses [UserPreferences.dayBoundaryHour]
+/// so the window matches the one used by the progress card's expected intake.
 final todayTotalMlProvider = StreamProvider<int>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return Stream.value(0);
   final now = DateTime.now();
-  final nextBoundary = dayWindow(now: now).$2;
+  final nextBoundary = dayWindow(
+    now: now,
+    boundaryHour: prefs.dayBoundaryHour,
+  ).$2;
   final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
-  return ref.watch(drinksRepositoryProvider).watchTodayTotalMl(now: now);
+  return ref
+      .watch(drinksRepositoryProvider)
+      .watchTodayTotalMl(now: now, boundaryHour: prefs.dayBoundaryHour);
 });
 
 // ---------------------------------------------------------------------------
@@ -77,8 +85,10 @@ final sevenDayAverageMlProvider = StreamProvider<double>((ref) {
   final prefs = ref.watch(userPreferencesProvider).valueOrNull;
   if (prefs == null) return Stream.value(0.0);
   final now = DateTime.now();
-  final nextBoundary =
-      dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$2;
+  final nextBoundary = dayWindow(
+    now: now,
+    boundaryHour: prefs.dayBoundaryHour,
+  ).$2;
   final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   return ref
@@ -95,8 +105,10 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
   final prefs = ref.watch(userPreferencesProvider).valueOrNull;
   if (prefs == null) return Stream.value(0);
   final now = DateTime.now();
-  final nextBoundary =
-      dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$2;
+  final nextBoundary = dayWindow(
+    now: now,
+    boundaryHour: prefs.dayBoundaryHour,
+  ).$2;
   final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
   return ref.watch(drinksRepositoryProvider).watch7DayDaysOnGoal(

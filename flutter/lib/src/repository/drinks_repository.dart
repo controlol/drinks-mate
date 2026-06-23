@@ -63,8 +63,11 @@ class DrinksRepository {
   /// Emits a new value whenever a drink is logged or deleted.
   /// [now] is injected by the provider so the boundary timer and the query
   /// window share the exact same instant.
-  Stream<int> watchTodayTotalMl({DateTime? now}) {
-    final window = dayWindow(now: now ?? DateTime.now());
+  Stream<int> watchTodayTotalMl({DateTime? now, int boundaryHour = 5}) {
+    final window = dayWindow(
+      now: now ?? DateTime.now(),
+      boundaryHour: boundaryHour,
+    );
     final nonAlcoholicTypes = BeverageType.values
         .where((t) => !t.isAlcoholic)
         .map((t) => t.stored)
