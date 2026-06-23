@@ -18,11 +18,135 @@ class DrinksRepository {
   static const _uuid = Uuid();
 
   // ---------------------------------------------------------------------------
-  // Presets
+  // Presets — read
   // ---------------------------------------------------------------------------
 
+  /// Visible (non-hidden, non-deleted) presets ordered by [sortOrder].
   Stream<List<DrinkPreset>> watchVisiblePresets() =>
       _db.watchVisiblePresets().map((rows) => rows.map(_rowToPreset).toList());
+
+  /// All non-deleted presets (including hidden) ordered by [sortOrder].
+  /// Intended for the "Manage drinks" settings UI.
+  Stream<List<DrinkPreset>> watchAllPresets() =>
+      _db.watchAllPresets().map((rows) => rows.map(_rowToPreset).toList());
+
+  /// All non-deleted alcoholic presets (including hidden) ordered by [sortOrder].
+  /// Intended for the Party Mode preset picker.
+  Stream<List<DrinkPreset>> watchAlcoholicPresets() => _db
+      .watchAlcoholicPresets()
+      .map((rows) => rows.map(_rowToPreset).toList());
+
+  // ---------------------------------------------------------------------------
+  // Presets — write
+  // ---------------------------------------------------------------------------
+
+  /// Creates a new user-owned preset.
+  ///
+  /// Validates [name] via [validatePresetName]; throws [ArgumentError] on
+  /// failure. All other fields are passed through without additional validation
+  /// (scope: issue #16 AC — only name validation required here).
+  Future<DrinkPreset> createPreset({
+    required String name,
+    required BeverageType beverageType,
+    required int volumeMl,
+    double? abvPercent,
+    int? regularPriceMinor,
+    String? regularCurrency,
+    required String iconKey,
+    required String iconColor,
+    required int sortOrder,
+  }) async {
+    _assertValidPresetName(name);
+    final now = DateTime.now().toUtc();
+    final id = _uuid.v4();
+    await _db.insertPreset(
+      DrinkPresetsCompanion.insert(
+        id: id,
+        name: name,
+        beverageType: beverageType.stored,
+        volumeMl: volumeMl,
+        abvPercent: Value(abvPercent),
+        regularPriceMinor: Value(regularPriceMinor),
+        regularCurrency: Value(regularCurrency),
+        iconKey: iconKey,
+        iconColor: iconColor,
+        isUserCreated: true,
+        sortOrder: sortOrder,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final row = await _db.getPresetById(id);
+    return _rowToPreset(row!);
+  }
+
+  /// Updates mutable fields of an existing preset.
+  ///
+  /// Only the fields wrapped in a non-absent [Value] are written; omitted
+  /// fields retain their current values (no snapshot-immutability breach —
+  /// [DrinkEntry] rows are never touched).
+  ///
+  /// Validates [name] via [validatePresetName] when provided; throws
+  /// [ArgumentError] on failure.
+  Future<void> updatePreset({
+    required String id,
+    String? name,
+    int? volumeMl,
+    double? abvPercent,
+    int? regularPriceMinor,
+    String? regularCurrency,
+    String? iconKey,
+    String? iconColor,
+  }) async {
+    if (name != null) _assertValidPresetName(name);
+    final now = DateTime.now().toUtc();
+    await _db.updatePresetFields(
+      id,
+      DrinkPresetsCompanion(
+        name: name != null ? Value(name) : const Value.absent(),
+        volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
+        abvPercent:
+            abvPercent != null ? Value(abvPercent) : const Value.absent(),
+        regularPriceMinor: regularPriceMinor != null
+            ? Value(regularPriceMinor)
+            : const Value.absent(),
+        regularCurrency: regularCurrency != null
+            ? Value(regularCurrency)
+            : const Value.absent(),
+        iconKey: iconKey != null ? Value(iconKey) : const Value.absent(),
+        iconColor: iconColor != null ? Value(iconColor) : const Value.absent(),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  /// Hides a preset so it no longer appears in quick-log or the log-drink
+  /// picker. Hidden presets remain in the database and can be restored.
+  Future<void> hidePreset(String id) =>
+      _db.setPresetHidden(id, true, DateTime.now().toUtc());
+
+  /// Restores a previously hidden preset to the visible list.
+  Future<void> unhidePreset(String id) =>
+      _db.setPresetHidden(id, false, DateTime.now().toUtc());
+
+  /// Soft-deletes a preset (sets [deletedAt]).
+  ///
+  /// Applies to any preset — user-created or seeded default. Per data-model.md
+  /// §DrinkPreset: "The user can edit, hide, or delete them — there is no
+  /// special protection." A "Reset to defaults" action (future) re-seeds via
+  /// INSERT OR IGNORE on the stable preset UUIDs.
+  ///
+  /// Throws [StateError] if the preset does not exist.
+  Future<void> deletePreset(String id) async {
+    final row = await _db.getPresetById(id);
+    if (row == null) throw StateError('Preset $id not found.');
+    await _db.softDeletePreset(id, DateTime.now().toUtc());
+  }
+
+  /// Bulk-updates [sortOrder] for each id in [orderedIds] in a single
+  /// transaction. Index 0 receives sortOrder 1.
+  Future<void> reorderPresets(List<String> orderedIds) =>
+      _db.reorderPresets(orderedIds, DateTime.now().toUtc());
 
   // ---------------------------------------------------------------------------
   // Entries
@@ -94,4 +218,15 @@ class DrinksRepository {
         isHidden: row.isHidden,
         sortOrder: row.sortOrder,
       );
+
+  // ---------------------------------------------------------------------------
+  // Validation helpers
+  // ---------------------------------------------------------------------------
+
+  static void _assertValidPresetName(String name) {
+    final result = validatePresetName(name);
+    if (!result.isValid) {
+      throw ArgumentError.value(name, 'name', result.error);
+    }
+  }
 }
