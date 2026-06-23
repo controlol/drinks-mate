@@ -1,7 +1,7 @@
 name: core
 description: >-
-  Dependency-free pure-Dart computation core for Drinks Mate (BAC, hydration
-  goal, pace/recommended-volume, username validation). One implementation, so
+  Pure-Dart computation core for Drinks Mate (BAC, hydration goal,
+  pace/recommended-volume, username validation). One implementation, so
   iOS/Android parity holds by construction. See engineering/decisions/flutter-stack.md (D7)
   and the Parity Rulebook in engineering/decisions/design-system.md.
 publish_to: none
@@ -10,9 +10,12 @@ version: 0.1.0
 environment:
   sdk: ">=3.4.0 <4.0.0"
 
-# Deliberately NO dependencies. The core package must stay pure Dart with no
-# Flutter/Drift imports so it is trivially unit-testable and reusable by the
-# notification scheduler, icon tinting, Party tab, and History.
+# Pure Dart only — no Flutter/Drift imports. Only pure-Dart dependencies with
+# no native plugin are allowed so the package stays trivially unit-testable
+# and reusable by the notification scheduler, icon tinting, Party tab, and History.
+# unorm_dart (pure Dart, MIT) is the single allowed runtime dep for NFC normalisation.
 dev_dependencies:
   lints: ^4.0.0
   test: ^1.25.0
+dependencies:
+  unorm_dart: ^0.3.2

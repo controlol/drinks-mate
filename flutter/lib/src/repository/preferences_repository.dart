@@ -150,19 +150,19 @@ class PreferencesRepository {
     return row == null ? null : _rowToProfile(row);
   }
 
-  /// Update the username (NFC-normalised, validated).
+  /// Update the username (NFC-normalised, validated, then stored).
   ///
-  /// Validates against the Parity Rulebook character whitelist via core's
-  /// [validateUsername]. NFC normalisation is the caller's responsibility until
-  /// core adds a built-in helper (see TODO in username.dart).
+  /// NFC-normalises the input before validation and storage so visually
+  /// identical inputs produce the same stored bytes (data-model.md §Username).
   Future<void> updateUsername(String username) {
-    final validation = validateUsername(username);
+    final normalized = normalizeNfc(username);
+    final validation = validateUsername(normalized);
     if (!validation.isValid) {
       throw ArgumentError.value(username, 'username', validation.error);
     }
     return _db.updatePreferences(
       UserPreferencesTableCompanion(
-        username: Value(username),
+        username: Value(normalized),
         updatedAt: Value(DateTime.now().toUtc()),
       ),
     );
