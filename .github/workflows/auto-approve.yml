@@ -26,6 +26,7 @@ jobs:
       startsWith(github.event.workflow_run.head_branch, 'claude/')
     runs-on: ubuntu-latest
     permissions:
+      actions: read      # needed to query workflow run results
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
