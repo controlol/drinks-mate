@@ -47,10 +47,11 @@ jobs:
           echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
 
           # Only remediate PRs opened by the claude bot.
+          # gh uses GraphQL which returns the app slug as "app/claude".
           pr_author=$(gh pr view "$pr_number" --repo "$REPO" \
             --json author --jq '.author.login')
-          if [ "$pr_author" != "claude[bot]" ]; then
-            echo "PR #$pr_number not authored by claude[bot] (got: $pr_author) — skipping remediation."
+          if [ "$pr_author" != "app/claude" ]; then
+            echo "PR #$pr_number not authored by app/claude (got: $pr_author) — skipping remediation."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
