@@ -64,18 +64,34 @@ jobs:
                → Appendix): rounding, units, boundaries, BAC chain, validation.
             3. Phase-1 constraint breaches: `core` must stay pure Dart; no Phase-2
                entities; no banned dependencies.
-            4. Test gaps — new computation must have tests traced to design docs.
+            4. Test gaps — flag ONLY when a new pure-Dart function that computes a
+               numeric result was added with zero accompanying test coverage.
 
             For priorities 2 and 3, delegate the deep check to the `spec-auditor`
             subagent (.claude/agents/spec-auditor.md) and fold its findings into
             your review.
 
-            Post inline comments on the specific lines. Skip pure formatting nits
+            Complete the P1–P3 structural pass (correctness, Parity Rulebook via
+            the spec-auditor, Phase-1 constraints). Once a confirmed blocking
+            finding exists, you may stop hunting for additional low-priority nits —
+            surface a representative set rather than an exhaustive list.
+
+            Post inline comments on the specific lines. Only read files that appear
+            in this PR's diff; open a file outside the diff only to verify a
+            specific candidate finding — do not browse. Skip pure formatting nits
             (CI owns those). End with a one-line verdict.
 
-            Fact check your findings with online sources before posting a
-            possibly incorrect comment. Especially if it is related to
-            deprecations or migrations.
+            Verification policy — route each question to the right source:
+            - Spec, Parity Rulebook, or Phase-1 constraint questions: consult LOCAL
+              files only (engineering/, design/). The repo is the source of truth —
+              do NOT web-search these.
+            - Broader technology questions (framework/library/API usage, idioms,
+              deprecations, migrations): verify with the context7 MCP tools or web
+              search before posting. ALWAYS validate against the exact versions this
+              project pins — read flutter/pubspec.yaml and flutter/pubspec.lock and
+              scope the check to those resolved versions, never assume the latest
+              release. A deprecation/migration only matters if it applies to the
+              pinned version.
 
             For findings that cannot be resolved without human input, read
             `.claude/commands/defer-to-issue.md` and follow its process. When
