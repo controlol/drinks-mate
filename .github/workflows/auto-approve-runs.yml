@@ -22,11 +22,11 @@ on:
 jobs:
   approve-run:
     # Fast-fail without API calls: actor must be the remediation bot on a
-    # claude/* branch inside the same repo.
+    # same-repo branch. Branch name is NOT checked here — the
+    # agent-remediation label verified in the step below is the real gate.
     if: |
       github.event.workflow_run.actor.login == 'github-actions[bot]' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'claude/')
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: write
