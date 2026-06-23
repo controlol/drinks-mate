@@ -26,9 +26,7 @@
 library;
 
 class UsernameValidation {
-  const UsernameValidation.valid()
-      : isValid = true,
-        error = null;
+  const UsernameValidation.valid() : isValid = true, error = null;
   const UsernameValidation.invalid(this.error) : isValid = false;
 
   final bool isValid;

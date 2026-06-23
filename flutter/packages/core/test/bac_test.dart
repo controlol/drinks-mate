@@ -21,8 +21,10 @@ void main() {
       heightCm: 180,
       weightKg: 75,
     );
-    final initial =
-        bacInitialWatson(alcoholGrams: totalAlcohol, tbwLitres: tbw);
+    final initial = bacInitialWatson(
+      alcoholGrams: totalAlcohol,
+      tbwLitres: tbw,
+    );
 
     test('alcohol per beer ≈ 9.86 g', () {
       expect(perBeer, closeTo(9.8625, 0.0001));
@@ -42,7 +44,9 @@ void main() {
 
     test('after 2 hours ≈ 0.060 g/L', () {
       expect(
-          bacAtTime(bacInitial: initial, hoursSince: 2), closeTo(0.060, 0.001));
+        bacAtTime(bacInitial: initial, hoursSince: 2),
+        closeTo(0.060, 0.001),
+      );
     });
 
     test('clamps to 0 once eliminated (~2.4h+)', () {
@@ -54,17 +58,24 @@ void main() {
     test('alcoholGrams uses ethanol density 0.789', () {
       // 500 ml @ 40% → 500 × 0.40 × 0.789 = 157.8 g
       expect(
-          alcoholGrams(volumeMl: 500, abvPercent: 40), closeTo(157.8, 0.001));
+        alcoholGrams(volumeMl: 500, abvPercent: 40),
+        closeTo(157.8, 0.001),
+      );
     });
 
     test('unspecified gender uses female (conservative) TBW coefficients', () {
       final female = watsonTbwLitres(
-          gender: Gender.female, ageYears: 30, heightCm: 170, weightKg: 70);
+        gender: Gender.female,
+        ageYears: 30,
+        heightCm: 170,
+        weightKg: 70,
+      );
       final unspecified = watsonTbwLitres(
-          gender: Gender.unspecified,
-          ageYears: 30,
-          heightCm: 170,
-          weightKg: 70);
+        gender: Gender.unspecified,
+        ageYears: 30,
+        heightCm: 170,
+        weightKg: 70,
+      );
       expect(unspecified, female);
     });
 
@@ -79,10 +90,7 @@ void main() {
     });
 
     test('meal modifier: meal after the drink (Δt<0) → 1.0', () {
-      expect(
-        mealModifierSingle(size: MealSize.large, deltaHours: -1),
-        1.0,
-      );
+      expect(mealModifierSingle(size: MealSize.large, deltaHours: -1), 1.0);
     });
 
     test('meal modifier: across meals takes the min', () {

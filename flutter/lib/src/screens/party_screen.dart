@@ -40,10 +40,10 @@ class PartyScreen extends StatelessWidget {
 }
 
 Widget _settingsButton(BuildContext context) => IconButton(
-      icon: const Icon(Icons.settings_outlined),
-      tooltip: 'Settings',
-      onPressed: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-      ),
-    );
+  icon: const Icon(Icons.settings_outlined),
+  tooltip: 'Settings',
+  onPressed: () => Navigator.push<void>(
+    context,
+    MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+  ),
+);

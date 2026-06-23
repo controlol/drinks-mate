@@ -54,8 +54,10 @@ double widmarkR(Gender gender) => gender == Gender.male ? 0.68 : 0.55;
 ///
 /// `Δt<0 → 1.00`; else `1.00 − (1.00 − peak) × exp(−Δt/τ)`.
 /// peak/τ: small 0.95/1.5h, medium 0.85/2.5h, large 0.75/3.5h.
-double mealModifierSingle(
-    {required MealSize size, required double deltaHours}) {
+double mealModifierSingle({
+  required MealSize size,
+  required double deltaHours,
+}) {
   if (deltaHours < 0) return 1.0;
   final (peak, tau) = switch (size) {
     MealSize.small => (0.95, 1.5),
@@ -82,8 +84,7 @@ double bacInitialWatson({
   required double alcoholGrams,
   required double tbwLitres,
   double mealModifier = 1.0,
-}) =>
-    (alcoholGrams * bloodWaterFraction) / tbwLitres * mealModifier;
+}) => (alcoholGrams * bloodWaterFraction) / tbwLitres * mealModifier;
 
 /// Step 3 — initial BAC via the Widmark fallback (height missing), g/L.
 ///
@@ -93,8 +94,7 @@ double bacInitialWidmark({
   required double weightKg,
   required double r,
   double mealModifier = 1.0,
-}) =>
-    alcoholGrams / (weightKg * r) * mealModifier;
+}) => alcoholGrams / (weightKg * r) * mealModifier;
 
 /// Steps 4–5 — zero-order elimination from one drink.
 ///

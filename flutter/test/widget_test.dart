@@ -22,8 +22,9 @@ Widget _appWithFakeStreams() {
       drinksRepositoryProvider.overrideWithValue(DrinksRepository(db)),
       // Override the stream providers so Drift's QueryStream is never started,
       // and therefore its cleanup timer never fires mid-teardown.
-      visiblePresetsProvider
-          .overrideWith((_) => Stream.value(const <DrinkPreset>[])),
+      visiblePresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
     ],
     child: const DrinksMateApp(),
@@ -49,8 +50,9 @@ void main() {
     }
   });
 
-  testWidgets('Today screen shows intake card and Log drink button',
-      (tester) async {
+  testWidgets('Today screen shows intake card and Log drink button', (
+    tester,
+  ) async {
     await tester.pumpWidget(_appWithFakeStreams());
     await tester.pump(); // let StreamProvider emit the first value
     expect(find.text("Today's intake"), findsOneWidget);

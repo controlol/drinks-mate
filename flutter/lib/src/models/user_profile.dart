@@ -53,8 +53,9 @@ class UserProfile {
       birthDate: birthDate == _sentinel ? this.birthDate : birthDate as String?,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      deletedAt:
-          deletedAt == _sentinel ? this.deletedAt : deletedAt as DateTime?,
+      deletedAt: deletedAt == _sentinel
+          ? this.deletedAt
+          : deletedAt as DateTime?,
     );
   }
 }

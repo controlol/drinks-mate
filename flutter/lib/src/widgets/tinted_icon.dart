@@ -28,10 +28,7 @@ const Color kDetailPlaceholder = Color(0xFF000002);
 /// → [tintIconColor]). This class never re-implements the offset.
 @immutable
 class DrinkIconColorMapper extends ColorMapper {
-  const DrinkIconColorMapper({
-    required this.silhouette,
-    required this.detail,
-  });
+  const DrinkIconColorMapper({required this.silhouette, required this.detail});
 
   final Color silhouette;
   final Color detail;
@@ -105,10 +102,7 @@ class TintedIcon extends StatelessWidget {
       assetPath,
       width: size,
       height: size,
-      colorMapper: DrinkIconColorMapper(
-        silhouette: silhouette,
-        detail: detail,
-      ),
+      colorMapper: DrinkIconColorMapper(silhouette: silhouette, detail: detail),
       semanticsLabel: semanticsLabel,
       excludeFromSemantics: semanticsLabel == null,
     );

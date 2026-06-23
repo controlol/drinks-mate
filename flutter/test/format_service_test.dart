@@ -16,10 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 // Stub helpers
 // ---------------------------------------------------------------------------
 
-UserPreferences _prefs({
-  String units = 'metric',
-  String currency = 'EUR',
-}) {
+UserPreferences _prefs({String units = 'metric', String currency = 'EUR'}) {
   final now = DateTime.utc(2026, 1, 1);
   return UserPreferences(
     id: 'test',

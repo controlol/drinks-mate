@@ -45,27 +45,27 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async {
-          await m.createAll();
-        },
-        onUpgrade: (m, from, to) async {
-          // Add an `if (from < N)` block for each schema version bump.
-          // Each block must be cumulative — a user upgrading directly from v1
-          // to v3 must run BOTH the v1→v2 and v2→v3 blocks in sequence.
-          if (from < 2) {
-            await m.createTable(drinkPresets);
-            await m.createTable(drinkEntries);
-          }
-          if (from < 3) {
-            await m.createTable(userProfiles);
-            await m.createTable(userPreferencesTable);
-          }
-        },
-        beforeOpen: (_) async {
-          await _seedMissingDefaultPresets();
-          await _seedDefaultPreferences();
-        },
-      );
+    onCreate: (m) async {
+      await m.createAll();
+    },
+    onUpgrade: (m, from, to) async {
+      // Add an `if (from < N)` block for each schema version bump.
+      // Each block must be cumulative — a user upgrading directly from v1
+      // to v3 must run BOTH the v1→v2 and v2→v3 blocks in sequence.
+      if (from < 2) {
+        await m.createTable(drinkPresets);
+        await m.createTable(drinkEntries);
+      }
+      if (from < 3) {
+        await m.createTable(userProfiles);
+        await m.createTable(userPreferencesTable);
+      }
+    },
+    beforeOpen: (_) async {
+      await _seedMissingDefaultPresets();
+      await _seedDefaultPreferences();
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // Seeding — F14 default non-alcoholic presets
@@ -85,107 +85,107 @@ class AppDatabase extends _$AppDatabase {
   }
 
   static List<DrinkPresetsCompanion> _defaultPresetCompanions(DateTime now) => [
-        _preset(
-          id: kWaterGlassPresetId,
-          name: 'Glass of water',
-          beverageType: 'water',
-          volumeMl: 200,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 1,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d002',
-          name: 'Bottle of water (0.5L)',
-          beverageType: 'water',
-          volumeMl: 500,
-          iconKey: 'bottle',
-          iconColor: '#3b82f6',
-          sortOrder: 2,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d003',
-          name: 'Can of water (0.33L)',
-          beverageType: 'water',
-          volumeMl: 330,
-          iconKey: 'can',
-          iconColor: '#3b82f6',
-          sortOrder: 3,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d004',
-          name: 'Glass of tea',
-          beverageType: 'tea',
-          volumeMl: 250,
-          iconKey: 'mug',
-          iconColor: '#15803d',
-          sortOrder: 4,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d005',
-          name: 'Cup of coffee',
-          beverageType: 'coffee',
-          volumeMl: 200,
-          iconKey: 'mug',
-          iconColor: '#92400e',
-          sortOrder: 5,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d006',
-          name: 'Espresso',
-          beverageType: 'coffee',
-          volumeMl: 30,
-          iconKey: 'small_cup',
-          iconColor: '#92400e',
-          sortOrder: 6,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d007',
-          name: 'Glass of juice',
-          beverageType: 'juice',
-          volumeMl: 200,
-          iconKey: 'glass',
-          iconColor: '#ea580c',
-          sortOrder: 7,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d008',
-          name: 'Glass of lemonade',
-          beverageType: 'soft_drink',
-          volumeMl: 200,
-          iconKey: 'glass',
-          iconColor: '#7c3aed',
-          sortOrder: 8,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d009',
-          name: 'Glass of milk',
-          beverageType: 'milk',
-          volumeMl: 200,
-          iconKey: 'glass',
-          iconColor: '#d1d5db',
-          sortOrder: 9,
-          now: now,
-        ),
-        _preset(
-          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d010',
-          name: 'Alcohol-free beer (0.33L)',
-          beverageType: 'non_alcoholic_beer',
-          volumeMl: 330,
-          iconKey: 'beer_glass',
-          iconColor: '#b45309',
-          sortOrder: 10,
-          now: now,
-        ),
-      ];
+    _preset(
+      id: kWaterGlassPresetId,
+      name: 'Glass of water',
+      beverageType: 'water',
+      volumeMl: 200,
+      iconKey: 'glass',
+      iconColor: '#3b82f6',
+      sortOrder: 1,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d002',
+      name: 'Bottle of water (0.5L)',
+      beverageType: 'water',
+      volumeMl: 500,
+      iconKey: 'bottle',
+      iconColor: '#3b82f6',
+      sortOrder: 2,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d003',
+      name: 'Can of water (0.33L)',
+      beverageType: 'water',
+      volumeMl: 330,
+      iconKey: 'can',
+      iconColor: '#3b82f6',
+      sortOrder: 3,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d004',
+      name: 'Glass of tea',
+      beverageType: 'tea',
+      volumeMl: 250,
+      iconKey: 'mug',
+      iconColor: '#15803d',
+      sortOrder: 4,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d005',
+      name: 'Cup of coffee',
+      beverageType: 'coffee',
+      volumeMl: 200,
+      iconKey: 'mug',
+      iconColor: '#92400e',
+      sortOrder: 5,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d006',
+      name: 'Espresso',
+      beverageType: 'coffee',
+      volumeMl: 30,
+      iconKey: 'small_cup',
+      iconColor: '#92400e',
+      sortOrder: 6,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d007',
+      name: 'Glass of juice',
+      beverageType: 'juice',
+      volumeMl: 200,
+      iconKey: 'glass',
+      iconColor: '#ea580c',
+      sortOrder: 7,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d008',
+      name: 'Glass of lemonade',
+      beverageType: 'soft_drink',
+      volumeMl: 200,
+      iconKey: 'glass',
+      iconColor: '#7c3aed',
+      sortOrder: 8,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d009',
+      name: 'Glass of milk',
+      beverageType: 'milk',
+      volumeMl: 200,
+      iconKey: 'glass',
+      iconColor: '#d1d5db',
+      sortOrder: 9,
+      now: now,
+    ),
+    _preset(
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d010',
+      name: 'Alcohol-free beer (0.33L)',
+      beverageType: 'non_alcoholic_beer',
+      volumeMl: 330,
+      iconKey: 'beer_glass',
+      iconColor: '#b45309',
+      sortOrder: 10,
+      now: now,
+    ),
+  ];
 
   static DrinkPresetsCompanion _preset({
     required String id,
@@ -196,19 +196,18 @@ class AppDatabase extends _$AppDatabase {
     required String iconColor,
     required int sortOrder,
     required DateTime now,
-  }) =>
-      DrinkPresetsCompanion.insert(
-        id: id,
-        name: name,
-        beverageType: beverageType,
-        volumeMl: volumeMl,
-        iconKey: iconKey,
-        iconColor: iconColor,
-        isUserCreated: false,
-        sortOrder: sortOrder,
-        createdAt: now,
-        updatedAt: now,
-      );
+  }) => DrinkPresetsCompanion.insert(
+    id: id,
+    name: name,
+    beverageType: beverageType,
+    volumeMl: volumeMl,
+    iconKey: iconKey,
+    iconColor: iconColor,
+    isUserCreated: false,
+    sortOrder: sortOrder,
+    createdAt: now,
+    updatedAt: now,
+  );
 
   // ---------------------------------------------------------------------------
   // Seeding — UserPreferences singleton (issue #9)
@@ -252,10 +251,11 @@ class AppDatabase extends _$AppDatabase {
   // DrinkPreset queries
   // ---------------------------------------------------------------------------
 
-  Stream<List<DrinkPresetRow>> watchVisiblePresets() => (select(drinkPresets)
-        ..where((t) => t.isHidden.equals(false) & t.deletedAt.isNull())
-        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
-      .watch();
+  Stream<List<DrinkPresetRow>> watchVisiblePresets() =>
+      (select(drinkPresets)
+            ..where((t) => t.isHidden.equals(false) & t.deletedAt.isNull())
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .watch();
 
   Future<DrinkPresetRow?> getPresetById(String id) =>
       (select(drinkPresets)..where((t) => t.id.equals(id))).getSingleOrNull();
@@ -298,38 +298,37 @@ class AppDatabase extends _$AppDatabase {
 
   /// Reactive stream of the singleton [UserPreferencesRow].
   Stream<UserPreferencesRow> watchPreferences() => (select(
-        userPreferencesTable,
-      )..where((t) => t.id.equals(kUserPreferencesId)))
-          .watchSingle();
+    userPreferencesTable,
+  )..where((t) => t.id.equals(kUserPreferencesId))).watchSingle();
 
   /// One-shot read of the singleton [UserPreferencesRow].
   Future<UserPreferencesRow> getPreferences() => (select(
-        userPreferencesTable,
-      )..where((t) => t.id.equals(kUserPreferencesId)))
-          .getSingle();
+    userPreferencesTable,
+  )..where((t) => t.id.equals(kUserPreferencesId))).getSingle();
 
   /// Partial update of the singleton preferences row.
   Future<void> updatePreferences(UserPreferencesTableCompanion companion) =>
       (update(
         userPreferencesTable,
-      )..where((t) => t.id.equals(kUserPreferencesId)))
-          .write(companion);
+      )..where((t) => t.id.equals(kUserPreferencesId))).write(companion);
 
   // ---------------------------------------------------------------------------
   // UserProfile queries
   // ---------------------------------------------------------------------------
 
   /// Reactive stream of the first live [UserProfileRow] (null if none exists).
-  Stream<UserProfileRow?> watchProfile() => (select(userProfiles)
-        ..where((t) => t.deletedAt.isNull())
-        ..limit(1))
-      .watchSingleOrNull();
+  Stream<UserProfileRow?> watchProfile() =>
+      (select(userProfiles)
+            ..where((t) => t.deletedAt.isNull())
+            ..limit(1))
+          .watchSingleOrNull();
 
   /// One-shot read of the first live profile (null if none exists).
-  Future<UserProfileRow?> getProfile() => (select(userProfiles)
-        ..where((t) => t.deletedAt.isNull())
-        ..limit(1))
-      .getSingleOrNull();
+  Future<UserProfileRow?> getProfile() =>
+      (select(userProfiles)
+            ..where((t) => t.deletedAt.isNull())
+            ..limit(1))
+          .getSingleOrNull();
 
   /// Insert or replace the user profile by id.
   Future<void> upsertProfile(UserProfilesCompanion companion) =>

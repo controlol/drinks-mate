@@ -29,35 +29,35 @@ class PreferencesRepository {
 
   /// Update the daily hydration goal.
   Future<void> updateDailyGoal(int dailyGoalMl) => _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          dailyGoalMl: Value(dailyGoalMl),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+    UserPreferencesTableCompanion(
+      dailyGoalMl: Value(dailyGoalMl),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the day-boundary hour (0–23).
   Future<void> updateDayBoundaryHour(int hour) => _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          dayBoundaryHour: Value(hour),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+    UserPreferencesTableCompanion(
+      dayBoundaryHour: Value(hour),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the display units ('metric' | 'imperial').
   Future<void> updateUnits(String units) => _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          units: Value(units),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+    UserPreferencesTableCompanion(
+      units: Value(units),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the preferred currency ('EUR' | 'USD' | 'GBP').
   Future<void> updateCurrency(String currency) => _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          currency: Value(currency),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+    UserPreferencesTableCompanion(
+      currency: Value(currency),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the reminder schedule fields as a group.
   Future<void> updateReminderSchedule({
@@ -65,38 +65,37 @@ class PreferencesRepository {
     int? startHour,
     int? endHour,
     int? intervalMin,
-  }) =>
-      _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          reminderEnabled: reminderEnabled != null
-              ? Value(reminderEnabled)
-              : const Value.absent(),
-          reminderStartHour:
-              startHour != null ? Value(startHour) : const Value.absent(),
-          reminderEndHour:
-              endHour != null ? Value(endHour) : const Value.absent(),
-          reminderIntervalMin:
-              intervalMin != null ? Value(intervalMin) : const Value.absent(),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+  }) => _db.updatePreferences(
+    UserPreferencesTableCompanion(
+      reminderEnabled: reminderEnabled != null
+          ? Value(reminderEnabled)
+          : const Value.absent(),
+      reminderStartHour: startHour != null
+          ? Value(startHour)
+          : const Value.absent(),
+      reminderEndHour: endHour != null ? Value(endHour) : const Value.absent(),
+      reminderIntervalMin: intervalMin != null
+          ? Value(intervalMin)
+          : const Value.absent(),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the notification toggles (inactivity, weekly summary).
   Future<void> updateNotificationToggles({
     bool? inactivityReminderEnabled,
     bool? weeklySummaryEnabled,
-  }) =>
-      _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          inactivityReminderEnabled: inactivityReminderEnabled != null
-              ? Value(inactivityReminderEnabled)
-              : const Value.absent(),
-          weeklySummaryEnabled: weeklySummaryEnabled != null
-              ? Value(weeklySummaryEnabled)
-              : const Value.absent(),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+  }) => _db.updatePreferences(
+    UserPreferencesTableCompanion(
+      inactivityReminderEnabled: inactivityReminderEnabled != null
+          ? Value(inactivityReminderEnabled)
+          : const Value.absent(),
+      weeklySummaryEnabled: weeklySummaryEnabled != null
+          ? Value(weeklySummaryEnabled)
+          : const Value.absent(),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the default drink preset reference.
   Future<void> updateDefaultDrinkPreset(String? presetId) =>
@@ -109,32 +108,31 @@ class PreferencesRepository {
 
   /// Update the BAC cap (g/L canonical; null clears the cap).
   Future<void> updateBacCap(double? bacCapGramsPerL) => _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          bacCapGramsPerL: Value(bacCapGramsPerL),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+    UserPreferencesTableCompanion(
+      bacCapGramsPerL: Value(bacCapGramsPerL),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   /// Update the Party Mode notification and lock-screen settings.
   Future<void> updatePartyModeSettings({
     bool? bacOnLockScreenEnabled,
     bool? approachingCapNotifEnabled,
     bool? soberEstimateNotifEnabled,
-  }) =>
-      _db.updatePreferences(
-        UserPreferencesTableCompanion(
-          bacOnLockScreenEnabled: bacOnLockScreenEnabled != null
-              ? Value(bacOnLockScreenEnabled)
-              : const Value.absent(),
-          approachingCapNotifEnabled: approachingCapNotifEnabled != null
-              ? Value(approachingCapNotifEnabled)
-              : const Value.absent(),
-          soberEstimateNotifEnabled: soberEstimateNotifEnabled != null
-              ? Value(soberEstimateNotifEnabled)
-              : const Value.absent(),
-          updatedAt: Value(DateTime.now().toUtc()),
-        ),
-      );
+  }) => _db.updatePreferences(
+    UserPreferencesTableCompanion(
+      bacOnLockScreenEnabled: bacOnLockScreenEnabled != null
+          ? Value(bacOnLockScreenEnabled)
+          : const Value.absent(),
+      approachingCapNotifEnabled: approachingCapNotifEnabled != null
+          ? Value(approachingCapNotifEnabled)
+          : const Value.absent(),
+      soberEstimateNotifEnabled: soberEstimateNotifEnabled != null
+          ? Value(soberEstimateNotifEnabled)
+          : const Value.absent(),
+      updatedAt: Value(DateTime.now().toUtc()),
+    ),
+  );
 
   // ---------------------------------------------------------------------------
   // UserProfile — watch / upsert
@@ -228,13 +226,13 @@ class PreferencesRepository {
       );
 
   static UserProfile _rowToProfile(UserProfileRow row) => UserProfile(
-        id: row.id,
-        gender: row.gender,
-        weightKg: row.weightKg,
-        heightCm: row.heightCm,
-        birthDate: row.birthDate,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    gender: row.gender,
+    weightKg: row.weightKg,
+    heightCm: row.heightCm,
+    birthDate: row.birthDate,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 }

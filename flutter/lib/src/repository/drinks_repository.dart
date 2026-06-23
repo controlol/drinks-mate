@@ -81,17 +81,17 @@ class DrinksRepository {
   // ---------------------------------------------------------------------------
 
   static DrinkPreset _rowToPreset(DrinkPresetRow row) => DrinkPreset(
-        id: row.id,
-        name: row.name,
-        beverageType: BeverageType.fromStored(row.beverageType),
-        volumeMl: row.volumeMl,
-        abvPercent: row.abvPercent,
-        regularPriceMinor: row.regularPriceMinor,
-        regularCurrency: row.regularCurrency,
-        iconKey: row.iconKey,
-        iconColor: row.iconColor,
-        isUserCreated: row.isUserCreated,
-        isHidden: row.isHidden,
-        sortOrder: row.sortOrder,
-      );
+    id: row.id,
+    name: row.name,
+    beverageType: BeverageType.fromStored(row.beverageType),
+    volumeMl: row.volumeMl,
+    abvPercent: row.abvPercent,
+    regularPriceMinor: row.regularPriceMinor,
+    regularCurrency: row.regularCurrency,
+    iconKey: row.iconKey,
+    iconColor: row.iconColor,
+    isUserCreated: row.isUserCreated,
+    isHidden: row.isHidden,
+    sortOrder: row.sortOrder,
+  );
 }
