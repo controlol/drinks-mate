@@ -1,0 +1,63 @@
+// Shared accessibility-label key strings for every interactive element.
+//
+// Each label maps one-to-one to a Semantics widget's `label:` argument or a
+// widget's `semanticsLabel:` parameter, so the spoken VoiceOver/TalkBack
+// experience is defined in one place (design-system.md §Accessibility; C5).
+//
+// Non-colour state signals (Parity Rulebook §Non-colour-signal rules):
+// Drinks Mate never uses colour as the sole indicator of state. Every
+// colour-encoded state ships with a paired non-colour signal:
+//   - Status pill: text label ("On pace" / "Behind" / "Ahead") alongside colour.
+//   - Goal met: icon + "Goal reached" text alongside colour change.
+//   - History bars below daily goal: a non-colour pattern/marker in addition
+//     to the colour difference (C3, designer-brief §Colour).
+//   - Behind-pace amber vs honey CTA: must be distinguishable by label/icon
+//     since both are warm hues (designer-brief §Colour).
+//   - Pace tick on progress bar: non-fill-colour treatment, visible against
+//     both the on-pace fill and the behind-pace fill (designer-brief §Layout).
+// This comment intentionally appears here — the a11y module is the canonical
+// location for this design-system rule so contributors encounter it when
+// adding new colour-dependent states.
+abstract final class SemanticsLabels {
+  SemanticsLabels._();
+
+  // ---------------------------------------------------------------------------
+  // Today screen (S1)
+  // ---------------------------------------------------------------------------
+
+  static const String logDrinkButton = 'Log drink';
+  static const String progressCard =
+      "Today's hydration progress — tap to view drink log";
+  static const String statusPill = 'Hydration status';
+  static const String sevenDayAverage = '7-day daily average intake';
+  static const String daysOnGoal = 'Days on goal in the last 7 days';
+
+  // Prefix for quick-log preset tiles — append the preset display name.
+  // Example: '${SemanticsLabels.quickLogPrefix}Still water'
+  static const String quickLogPrefix = 'Quick log: ';
+
+  // ---------------------------------------------------------------------------
+  // Party screen (S7)
+  // ---------------------------------------------------------------------------
+
+  static const String bacValue =
+      'Estimated blood alcohol concentration — this is an estimate only';
+  static const String startPartySession = 'Start party session';
+  static const String endPartySession = 'End party session';
+
+  // ---------------------------------------------------------------------------
+  // Navigation & global chrome
+  // ---------------------------------------------------------------------------
+
+  static const String settingsButton = 'Open settings';
+  static const String todayTab = 'Today';
+  static const String partyTab = 'Party';
+  static const String historyTab = 'History';
+
+  // ---------------------------------------------------------------------------
+  // Drink icon
+  // ---------------------------------------------------------------------------
+
+  // TintedIcon uses this prefix + preset name when no explicit label is given.
+  static const String drinkIconPrefix = 'Drink icon: ';
+}
