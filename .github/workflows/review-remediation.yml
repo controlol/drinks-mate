@@ -1,7 +1,8 @@
 name: Review Remediation
 
-# When an AI review (code or security) fails on a claude/* PR, run the agent
+# When an AI review (code or security) fails on any trusted PR, run the agent
 # once to address the findings and push fixes to the same branch.
+# Trusted = opened by app/claude OR carries the agent-ok label (maintainer opt-in).
 #
 # The PR re-enters the normal CI + review cycle once the fixes are pushed.
 # Capped at one attempt per PR via the `agent-remediation` label — if the
@@ -19,8 +20,7 @@ jobs:
   remediate:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'claude/')
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,12 +46,14 @@ jobs:
           fi
           echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
 
-          # Only remediate PRs opened by the claude bot.
-          # gh uses GraphQL which returns the app slug as "app/claude".
+          # Only remediate trusted PRs: opened by the claude bot OR carrying agent-ok.
+          # gh uses GraphQL; app slug is "app/claude", label check covers maintainer opt-in.
           pr_author=$(gh pr view "$pr_number" --repo "$REPO" \
             --json author --jq '.author.login')
-          if [ "$pr_author" != "app/claude" ]; then
-            echo "PR #$pr_number not authored by app/claude (got: $pr_author) — skipping remediation."
+          has_ok=$(gh pr view "$pr_number" --repo "$REPO" --json labels \
+            --jq '[.labels[].name] | contains(["agent-ok"]) | if . then "true" else "false" end')
+          if [ "$pr_author" != "app/claude" ] && [ "$has_ok" != "true" ]; then
+            echo "PR #$pr_number not trusted (author: $pr_author, agent-ok: $has_ok) — skipping remediation."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
