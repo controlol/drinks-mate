@@ -46,6 +46,15 @@ jobs:
           fi
           echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
 
+          # Only remediate PRs opened by the claude bot.
+          pr_author=$(gh pr view "$pr_number" --repo "$REPO" \
+            --json author --jq '.author.login')
+          if [ "$pr_author" != "claude[bot]" ]; then
+            echo "PR #$pr_number not authored by claude[bot] (got: $pr_author) — skipping remediation."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Only attempt one automated remediation cycle per PR.
           already=$(gh pr view "$pr_number" --repo "$REPO" --json labels \
             --jq '[.labels[].name] | contains(["agent-remediation"]) | if . then 1 else 0 end')
