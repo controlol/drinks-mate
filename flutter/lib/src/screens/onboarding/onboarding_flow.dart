@@ -43,7 +43,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   String? _usernameError;
 
   // Step 3 — Personal Info
-  String? _gender;
+  String _gender = 'unspecified';
   final _weightController = TextEditingController(text: '70');
   final _heightController = TextEditingController();
   DateTime? _birthDate;
@@ -54,10 +54,20 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    _weightController.addListener(_onWeightChanged);
+  }
+
+  void _onWeightChanged() => setState(() {});
+
+  @override
   void dispose() {
     _pageController.dispose();
     _usernameController.dispose();
-    _weightController.dispose();
+    _weightController
+      ..removeListener(_onWeightChanged)
+      ..dispose();
     _heightController.dispose();
     _goalController.dispose();
     super.dispose();
@@ -65,6 +75,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   bool get _usernameIsValid =>
       validateUsername(normalizeNfc(_usernameController.text)).isValid;
+
+  bool get _weightIsValid {
+    final w = double.tryParse(_weightController.text.trim());
+    return w != null && w > 0;
+  }
 
   int get _parsedGoal {
     final n = int.tryParse(_goalController.text.trim());
@@ -83,8 +98,9 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   }
 
   Future<void> _animateTo(int page) async {
-    final duration =
-        ReduceMotion.isEnabled(context) ? Duration.zero : MotionTokens.standard;
+    final duration = ReduceMotion.isEnabled(context)
+        ? Duration.zero
+        : MotionTokens.standard;
     await _pageController.animateToPage(
       page,
       duration: duration,
@@ -115,12 +131,15 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     );
 
     try {
-      await ref.read(preferencesRepositoryProvider).completeOnboarding(
+      await ref
+          .read(preferencesRepositoryProvider)
+          .completeOnboarding(
             username: _usernameController.text,
             profile: profile,
             dailyGoalMl: _parsedGoal,
           );
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('completeOnboarding failed: $e\n$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -209,7 +228,10 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     return FilledButton(
       key: const Key('onboarding_cta_next'),
       style: _ctaStyle,
-      onPressed: (_page == 1 && !_usernameIsValid) ? null : _onNext,
+      onPressed:
+          (_page == 1 && !_usernameIsValid) || (_page == 2 && !_weightIsValid)
+          ? null
+          : _onNext,
       child: const Text('Next'),
     );
   }
@@ -312,8 +334,8 @@ class _PersonalInfoPage extends StatelessWidget {
     required this.onBirthDateChanged,
   });
 
-  final String? gender;
-  final ValueChanged<String?> onGenderChanged;
+  final String gender;
+  final ValueChanged<String> onGenderChanged;
   final TextEditingController weightController;
   final TextEditingController heightController;
   final DateTime? birthDate;
@@ -401,8 +423,8 @@ class _GenderChip extends StatelessWidget {
 
   final String label;
   final String value;
-  final String? groupValue;
-  final ValueChanged<String?> onChanged;
+  final String groupValue;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -410,7 +432,7 @@ class _GenderChip extends StatelessWidget {
     return FilterChip(
       label: Text(label),
       selected: selected,
-      onSelected: (_) => onChanged(selected ? null : value),
+      onSelected: (_) => onChanged(selected ? 'unspecified' : value),
       selectedColor: kColorAzure.withAlpha(51),
       checkmarkColor: kColorAzure,
     );
@@ -428,8 +450,8 @@ class _BirthDateButton extends StatelessWidget {
     final label = value == null
         ? 'Date of birth (optional)'
         : '${value!.year.toString().padLeft(4, '0')}-'
-            '${value!.month.toString().padLeft(2, '0')}-'
-            '${value!.day.toString().padLeft(2, '0')}';
+              '${value!.month.toString().padLeft(2, '0')}-'
+              '${value!.day.toString().padLeft(2, '0')}';
 
     return OutlinedButton.icon(
       key: const Key('onboarding_birth_date_button'),
@@ -573,8 +595,9 @@ class _ProgressDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration =
-        ReduceMotion.isEnabled(context) ? Duration.zero : MotionTokens.fast;
+    final duration = ReduceMotion.isEnabled(context)
+        ? Duration.zero
+        : MotionTokens.fast;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(

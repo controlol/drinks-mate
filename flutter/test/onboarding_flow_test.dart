@@ -28,11 +28,11 @@ Widget _wrap(Widget child, PreferencesRepository repo) {
 }
 
 UserProfile _profile(DateTime now) => UserProfile(
-      id: 'test-profile-id',
-      weightKg: 70.0,
-      createdAt: now,
-      updatedAt: now,
-    );
+  id: 'test-profile-id',
+  weightKg: 70.0,
+  createdAt: now,
+  updatedAt: now,
+);
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -115,6 +115,42 @@ void main() {
       );
       expect(button.onPressed, isNotNull);
     });
+
+    testWidgets(
+      'Next is disabled on personal-info step when weight is cleared',
+      (tester) async {
+        final db = _memDb();
+        addTearDown(db.close);
+
+        await tester.pumpWidget(
+          _wrap(const OnboardingFlow(), PreferencesRepository(db)),
+        );
+        await tester.pump();
+
+        // Advance to step 3 (personal info).
+        await tester.tap(find.text("Let's start"));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('onboarding_username_field')),
+          'Alice',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        // Clear the weight field — Next must be disabled.
+        await tester.enterText(
+          find.byKey(const Key('onboarding_weight_field')),
+          '',
+        );
+        await tester.pump();
+
+        final button = tester.widget<FilledButton>(
+          find.byKey(const Key('onboarding_cta_next')),
+        );
+        expect(button.onPressed, isNull);
+      },
+    );
 
     testWidgets('username with fewer than 3 chars keeps Next disabled', (
       tester,
@@ -432,6 +468,48 @@ void main() {
       expect(profile, isNotNull);
       expect(profile!.weightKg, 65.0);
     });
+  });
+
+  group('OnboardingFlow — gender default', () {
+    // §S5: "Defaults to Prefer not to say (= unspecified) if the user does not
+    // change it." and "a user who taps 'next' through the whole thing ends up
+    // with … gender unspecified".
+    testWidgets(
+      'tap-through without selecting gender stores unspecified (§S5)',
+      (tester) async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = PreferencesRepository(db);
+
+        await tester.pumpWidget(_wrap(const OnboardingFlow(), repo));
+        await tester.pump();
+
+        await tester.tap(find.text("Let's start"));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('onboarding_username_field')),
+          'GenderTest',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        // Skip gender selection — just tap Next.
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('onboarding_cta_next')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('onboarding_cta_done')));
+        await tester.pumpAndSettle();
+
+        final profile = await repo.getProfile();
+        expect(profile, isNotNull);
+        expect(profile!.gender, 'unspecified');
+      },
+    );
   });
 
   group('PreferencesRepository — completeOnboarding', () {
