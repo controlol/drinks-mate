@@ -54,8 +54,10 @@ double widmarkR(Gender gender) => gender == Gender.male ? 0.68 : 0.55;
 ///
 /// `Δt<0 → 1.00`; else `1.00 − (1.00 − peak) × exp(−Δt/τ)`.
 /// peak/τ: small 0.95/1.5h, medium 0.85/2.5h, large 0.75/3.5h.
-double mealModifierSingle(
-    {required MealSize size, required double deltaHours}) {
+double mealModifierSingle({
+  required MealSize size,
+  required double deltaHours,
+}) {
   if (deltaHours < 0) return 1.0;
   final (peak, tau) = switch (size) {
     MealSize.small => (0.95, 1.5),
