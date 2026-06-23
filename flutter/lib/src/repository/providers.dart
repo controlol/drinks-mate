@@ -61,3 +61,46 @@ final userPreferencesProvider = StreamProvider<UserPreferences>((ref) {
 final userProfileProvider = StreamProvider<UserProfile?>((ref) {
   return ref.watch(preferencesRepositoryProvider).watchProfile();
 });
+
+// ---------------------------------------------------------------------------
+// 7-day stat providers (issue #13)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of the 7-day daily average hydration intake in ml.
+///
+/// Excludes today — covers only the last 7 completed day windows.
+/// Zero-fills empty days (divides by 7 regardless of data coverage).
+///
+/// Re-subscribes at each day boundary so the 7-day window rolls forward
+/// without an app restart (mirrors [todayTotalMlProvider]).
+final sevenDayAverageMlProvider = StreamProvider<double>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return Stream.value(0.0);
+  final now = DateTime.now();
+  final nextBoundary =
+      dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$2;
+  final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref
+      .watch(drinksRepositoryProvider)
+      .watch7DayAverageMl(boundaryHour: prefs.dayBoundaryHour);
+});
+
+/// Reactive stream of how many of the last 7 completed days met the daily
+/// hydration goal. Returns an integer in [0, 7].
+///
+/// Re-subscribes at each day boundary so the 7-day window rolls forward
+/// without an app restart (mirrors [todayTotalMlProvider]).
+final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return Stream.value(0);
+  final now = DateTime.now();
+  final nextBoundary =
+      dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$2;
+  final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref.watch(drinksRepositoryProvider).watch7DayDaysOnGoal(
+        dailyGoalMl: prefs.dailyGoalMl,
+        boundaryHour: prefs.dayBoundaryHour,
+      );
+});

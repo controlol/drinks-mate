@@ -292,6 +292,29 @@ class AppDatabase extends _$AppDatabase {
     return query.watchSingle().map((row) => row.read(expr) ?? 0);
   }
 
+  /// Reactive stream of `(consumedAt, volumeMl)` pairs for live entries within
+  /// `[startUtc, endUtc)` whose [beverageType] is in [allowedTypes].
+  ///
+  /// Use this for multi-day aggregations (e.g. 7-day stats) where the caller
+  /// groups/bucketes the rows in Dart after loading.
+  Stream<List<(DateTime, int)>> watchEntriesInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) {
+    final query = select(drinkEntries)
+      ..where(
+        (t) =>
+            t.deletedAt.isNull() &
+            t.consumedAt.isBiggerOrEqualValue(startUtc) &
+            t.consumedAt.isSmallerThanValue(endUtc) &
+            t.beverageType.isIn(allowedTypes),
+      );
+    return query.watch().map(
+          (rows) => rows.map((r) => (r.consumedAt, r.volumeMl)).toList(),
+        );
+  }
+
   // ---------------------------------------------------------------------------
   // UserPreferences queries
   // ---------------------------------------------------------------------------
