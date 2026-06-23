@@ -26,6 +26,7 @@ dependencies:
   path_provider: ^2.1.0      # DB file location for Drift (D3)
   path: ^1.9.0               # File path joining for Drift (D3)
   uuid: ^4.4.0               # Locally-generated UUID primary keys (C1)
+  intl: ^0.20.0             # Locale-aware number/currency formatting (F6)
 
 dev_dependencies:
   flutter_test:
