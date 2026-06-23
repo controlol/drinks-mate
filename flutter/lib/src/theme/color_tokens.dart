@@ -31,8 +31,10 @@ const Color kColorHoneyDark = Color(0xFFFBBF24); // dark (pending designer)
 // on Today, History, or Settings. Exposed in [PartyColorTokens] to make
 // the namespace boundary explicit.
 //
-// Enforcement: the CI `emerald-quarantine` job in .github/workflows/ci.yml
-// greps all non-party source files and fails if any reference PartyColorTokens
+// Enforcement: a CI `emerald-quarantine` job should be added manually to
+// .github/workflows/ci.yml (the GitHub App lacks `workflows` write permission,
+// so it could not be added automatically). The job should grep all non-party
+// source files and fail if any reference PartyColorTokens
 // (design-system.md §Dark mode & emerald quarantine).
 //
 // Sanctioned exception — goal-met confetti: mint accents ARE permitted in the
@@ -65,8 +67,9 @@ const Color kColorSuccessDark = Color(0xFF4ADE80); // dark (pending designer)
 /// Dark-mode value is intentionally more orange than [kColorHoneyDark]
 /// (yellow-amber) to preserve the hue distinction (designer-brief §Colour).
 const Color kColorWarning = Color(0xFFD97706); // light — amber-600
-const Color kColorWarningDark =
-    Color(0xFFEA580C); // dark — orange-600, pending designer
+const Color kColorWarningDark = Color(
+  0xFFEA580C,
+); // dark — orange-600, pending designer
 
 /// Destructive / error state.
 const Color kColorError = Color(0xFFDC2626); // light
