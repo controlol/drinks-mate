@@ -94,6 +94,22 @@ jobs:
           gh pr edit "${{ steps.pr.outputs.pr }}" --repo "$REPO" \
             --add-label "agent-remediation" || true
 
+      - name: Post remediation started comment
+        if: steps.pr.outputs.skip != 'true'
+        id: start_comment
+        run: |
+          pr="${{ steps.pr.outputs.pr }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          cat > "$RUNNER_TEMP/start_body.txt" << 'BODY_EOF'
+          🤖 **Automated remediation started.** Addressing failing review findings — this comment will be updated with a summary when done.
+          BODY_EOF
+          printf '\n[View live progress →](%s)' "$run_url" >> "$RUNNER_TEMP/start_body.txt"
+          comment_id=$(gh api "repos/$REPO/issues/$pr/comments" \
+            --method POST \
+            --raw-field body=@"$RUNNER_TEMP/start_body.txt" \
+            --jq '.id' 2>/dev/null || echo "")
+          echo "comment_id=${comment_id}" >> "$GITHUB_OUTPUT"
+
       - name: Fix review findings
         if: steps.pr.outputs.skip != 'true'
         uses: anthropics/claude-code-action@v1
@@ -126,6 +142,52 @@ jobs:
 
             5. Push the fixes to the existing branch.
                Use commit message: "fix: address automated review findings"
+
+            6. For each blocking finding you fixed, resolve its inline PR review thread
+               (best-effort — a failure here must NOT stop your work; use `|| true`):
+
+               First, fetch all unresolved thread IDs:
+                 gh api graphql \
+                   -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:50){nodes{id isResolved comments(first:1){nodes{body path line}}}}}}}' \
+                   -f owner="${REPO%%/*}" -f repo="${REPO##*/}" \
+                   -F pr=${{ steps.pr.outputs.pr }}
+
+               Then resolve each thread whose finding you addressed:
+                 gh api graphql \
+                   -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+                   -f id="<THREAD_NODE_ID>" || true
+
+            7. Write a short markdown summary of the remediation to
+               $RUNNER_TEMP/remediation_summary.txt. Include:
+               - Each finding addressed (one bullet per finding)
+               - Any finding that could NOT be fixed and why (e.g. needs human input)
+               Keep it under 10 bullets. Example format:
+               - Fixed: `FormatService.formatVolume` returned wrong unit label in imperial mode (line 42)
+               - Fixed: Added unit test for 0 kg edge case in hydration goal calculation
+               - Skipped: Ambiguous spec requirement in §Units display — needs human decision
+
+      - name: Update remediation comment
+        if: always() && steps.pr.outputs.skip != 'true' && steps.start_comment.outputs.comment_id != ''
+        run: |
+          comment_id="${{ steps.start_comment.outputs.comment_id }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ -f "$RUNNER_TEMP/remediation_summary.txt" ]; then
+            summary=$(cat "$RUNNER_TEMP/remediation_summary.txt")
+            cat > "$RUNNER_TEMP/update_body.txt" << BODY_EOF
+          🤖 **Automated remediation complete.** [View run →]($run_url)
+
+          $summary
+          BODY_EOF
+          else
+            cat > "$RUNNER_TEMP/update_body.txt" << BODY_EOF
+          ⚠️ **Automated remediation failed.** The fix step did not complete successfully — manual intervention may be required. [View run →]($run_url)
+          BODY_EOF
+          fi
+
+          gh api "repos/$REPO/issues/comments/$comment_id" \
+            --method PATCH \
+            --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
 
       - name: Re-trigger CI via label bounce
         # pull_request.synchronize events from a GITHUB_TOKEN push inside a
