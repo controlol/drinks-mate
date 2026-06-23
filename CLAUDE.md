@@ -19,7 +19,7 @@ The specs are the source of truth; this file tells you how to work in the repo.
 
 ## Non-negotiables
 
-1. **The `core` package stays pure Dart.** No Flutter, Drift, or any other imports in `flutter/packages/core/`. Every C4 algorithm (BAC, hydration goal, pace/recommended-volume, username, day-boundary, icon HSL) lives there as pure functions.
+1. **The `core` package stays pure Dart.** No Flutter, Drift, native-plugin, or non-pure-Dart imports in `flutter/packages/core/`. Pure-Dart packages (no native code, no `flutter:` dependency) are permitted when a stdlib implementation is impractical. Every C4 algorithm (BAC, hydration goal, pace/recommended-volume, username, day-boundary, icon HSL) lives there as pure functions.
 2. **No ad-hoc math or rounding.** Numeric/rounding/unit/boundary behaviour must match the Parity Rulebook exactly. If a rule is ambiguous, stop and ask — do not guess.
 3. **Compute in metric/canonical units** (ml, kg, cm, g/L). Imperial and formatting happen only at the display boundary.
 4. **No Phase-2 scaffolding.** Accounts, sync, social, insights are out of scope. Do not add `Account`/`Friendship`/`ShareSetting` to any Phase-1 migration.
