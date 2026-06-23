@@ -88,7 +88,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: "--permission-mode bypassPermissions"
-          allowed_bots: "github-actions[bot]"
+          allowed_bots: "github-actions[bot],claude[bot]"
           prompt: |
             PR #${{ steps.pr.outputs.pr }} in ${{ github.repository }} failed an
             automated review. Your task: fix every blocking finding and push the
