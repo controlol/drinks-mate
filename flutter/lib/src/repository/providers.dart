@@ -9,6 +9,7 @@ import '../models/drink_preset.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/goal_celebration_guard.dart';
+import '../services/notification_service.dart';
 import 'drinks_repository.dart';
 import 'preferences_repository.dart';
 
@@ -117,6 +118,18 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
         dailyGoalMl: prefs.dailyGoalMl,
         boundaryHour: prefs.dayBoundaryHour,
       );
+});
+
+// ---------------------------------------------------------------------------
+// Notification service (issue #19)
+// ---------------------------------------------------------------------------
+
+/// Notification scheduling / cancellation service.
+///
+/// Override in widget tests with a [FakeNotificationService] to avoid native
+/// plugin calls.
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  return FlutterNotificationService();
 });
 
 // ---------------------------------------------------------------------------
