@@ -92,9 +92,17 @@ class FlutterNotificationService implements NotificationService {
   final FlutterLocalNotificationsPlugin _plugin;
   bool _initialised = false;
 
+  // Cached future prevents double-init when concurrent callers both see
+  // _initialised == false before either completes.
+  Future<void>? _initFuture;
+
   @override
-  Future<void> initialize() async {
-    if (_initialised) return;
+  Future<void> initialize() {
+    if (_initialised) return Future.value();
+    return _initFuture ??= _doInitialize();
+  }
+
+  Future<void> _doInitialize() async {
     try {
       tz.initializeTimeZones();
 
@@ -135,6 +143,8 @@ class FlutterNotificationService implements NotificationService {
 
       _initialised = true;
     } catch (e) {
+      // Allow retry on failure by clearing the cached future.
+      _initFuture = null;
       // Swallow MissingPluginException in test/headless environments. Log
       // anything else so real device misconfigurations are diagnosable.
       debugPrint('[NotificationService] initialize failed: $e');
@@ -189,11 +199,18 @@ class FlutterNotificationService implements NotificationService {
       );
 
       // Android notification IDs are int32; guard against overflow for
-      // monotonically-growing DB primary keys.
+      // monotonically-growing DB primary keys. Assert for debug, hard-return
+      // for release (assert is stripped in release/profile builds).
       assert(
         id < 2000000,
         'notification id $id too large: id*1000+47 overflows int32',
       );
+      if (id >= 2000000) {
+        debugPrint(
+          '[NotificationService] id $id too large — skipping schedule',
+        );
+        return;
+      }
       final details = _notificationDetails(channelId);
       for (var i = 0; i < slots.length; i++) {
         final slotId = id * 1000 + i;
@@ -349,13 +366,16 @@ class FakeNotificationService implements NotificationService {
   @override
   Future<void> cancelRepeating(int id, {int count = 48}) async {
     for (var i = 0; i < count; i++) {
-      cancelled.add(id * 1000 + i);
+      final slotId = id * 1000 + i;
+      cancelled.add(slotId);
+      scheduled.removeWhere((e) => e.id == slotId);
     }
   }
 
   @override
   Future<void> cancel(int id) async {
     cancelled.add(id);
+    scheduled.removeWhere((e) => e.id == id);
   }
 
   @override
