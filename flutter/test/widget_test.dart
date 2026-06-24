@@ -47,13 +47,17 @@ Widget _appWithFakeStreams() {
       drinksRepositoryProvider.overrideWithValue(DrinksRepository(db)),
       // Override the stream providers so Drift's QueryStream is never started,
       // and therefore its cleanup timer never fires mid-teardown.
-      visiblePresetsProvider
-          .overrideWith((_) => Stream.value(const <DrinkPreset>[])),
+      visiblePresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
+      sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
+      sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),
       // Simulate a completed onboarding (username != null) so _AppGate routes
       // to AppShell instead of OnboardingFlow.
-      userPreferencesProvider
-          .overrideWith((_) => Stream.value(preOnboardedPrefs)),
+      userPreferencesProvider.overrideWith(
+        (_) => Stream.value(preOnboardedPrefs),
+      ),
     ],
     child: const DrinksMateApp(),
   );
@@ -82,11 +86,12 @@ void main() {
     }
   });
 
-  testWidgets('Today screen shows intake card and Log drink button',
-      (tester) async {
+  testWidgets('Today screen shows progress card and Log drink button', (
+    tester,
+  ) async {
     await tester.pumpWidget(_appWithFakeStreams());
     await tester.pump(); // let StreamProvider emit the first value
-    expect(find.text("Today's intake"), findsOneWidget);
+    expect(find.text('Quick log'), findsOneWidget);
     expect(find.text('Log drink'), findsOneWidget);
   });
 
@@ -96,7 +101,7 @@ void main() {
         .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     // Today screen is initially visible.
-    expect(find.text("Today's intake"), findsOneWidget);
+    expect(find.text('Quick log'), findsOneWidget);
 
     // Tap the History tab.
     final navBar = find.byType(NavigationBar);
@@ -107,7 +112,7 @@ void main() {
 
     // History placeholder visible; Today content gone.
     expect(find.text('Past intake and sessions coming soon.'), findsOneWidget);
-    expect(find.text("Today's intake"), findsNothing);
+    expect(find.text('Quick log'), findsNothing);
   });
 
   testWidgets('tapping Party tab switches screen', (tester) async {

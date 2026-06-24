@@ -82,10 +82,7 @@ void main() {
         detail: parseIconColorTint(_kKnownHex)!,
       );
 
-      expect(
-        mapper.substitute(null, 'rect', 'stroke', arbitrary),
-        arbitrary,
-      );
+      expect(mapper.substitute(null, 'rect', 'stroke', arbitrary), arbitrary);
     });
   });
 

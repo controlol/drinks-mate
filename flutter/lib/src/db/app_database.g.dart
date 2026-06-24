@@ -12,98 +12,171 @@ class $DrinkPresetsTable extends DrinkPresets
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
-      'id', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
-      'name', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _beverageTypeMeta =
-      const VerificationMeta('beverageType');
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _beverageTypeMeta = const VerificationMeta(
+    'beverageType',
+  );
   @override
   late final GeneratedColumn<String> beverageType = GeneratedColumn<String>(
-      'beverage_type', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _volumeMlMeta =
-      const VerificationMeta('volumeMl');
+    'beverage_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _volumeMlMeta = const VerificationMeta(
+    'volumeMl',
+  );
   @override
   late final GeneratedColumn<int> volumeMl = GeneratedColumn<int>(
-      'volume_ml', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _abvPercentMeta =
-      const VerificationMeta('abvPercent');
+    'volume_ml',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _abvPercentMeta = const VerificationMeta(
+    'abvPercent',
+  );
   @override
   late final GeneratedColumn<double> abvPercent = GeneratedColumn<double>(
-      'abv_percent', aliasedName, true,
-      type: DriftSqlType.double, requiredDuringInsert: false);
-  static const VerificationMeta _regularPriceMinorMeta =
-      const VerificationMeta('regularPriceMinor');
+    'abv_percent',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _regularPriceMinorMeta = const VerificationMeta(
+    'regularPriceMinor',
+  );
   @override
   late final GeneratedColumn<int> regularPriceMinor = GeneratedColumn<int>(
-      'regular_price_minor', aliasedName, true,
-      type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _regularCurrencyMeta =
-      const VerificationMeta('regularCurrency');
+    'regular_price_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _regularCurrencyMeta = const VerificationMeta(
+    'regularCurrency',
+  );
   @override
   late final GeneratedColumn<String> regularCurrency = GeneratedColumn<String>(
-      'regular_currency', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _iconKeyMeta =
-      const VerificationMeta('iconKey');
+    'regular_currency',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _iconKeyMeta = const VerificationMeta(
+    'iconKey',
+  );
   @override
   late final GeneratedColumn<String> iconKey = GeneratedColumn<String>(
-      'icon_key', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _iconColorMeta =
-      const VerificationMeta('iconColor');
+    'icon_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _iconColorMeta = const VerificationMeta(
+    'iconColor',
+  );
   @override
   late final GeneratedColumn<String> iconColor = GeneratedColumn<String>(
-      'icon_color', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _isUserCreatedMeta =
-      const VerificationMeta('isUserCreated');
+    'icon_color',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isUserCreatedMeta = const VerificationMeta(
+    'isUserCreated',
+  );
   @override
   late final GeneratedColumn<bool> isUserCreated = GeneratedColumn<bool>(
-      'is_user_created', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("is_user_created" IN (0, 1))'));
-  static const VerificationMeta _isHiddenMeta =
-      const VerificationMeta('isHidden');
+    'is_user_created',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_user_created" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _isHiddenMeta = const VerificationMeta(
+    'isHidden',
+  );
   @override
   late final GeneratedColumn<bool> isHidden = GeneratedColumn<bool>(
-      'is_hidden', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("is_hidden" IN (0, 1))'),
-      defaultValue: const Constant(false));
-  static const VerificationMeta _sortOrderMeta =
-      const VerificationMeta('sortOrder');
+    'is_hidden',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_hidden" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
   @override
   late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
-      'sort_order', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
   @override
   late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _updatedAtMeta =
-      const VerificationMeta('updatedAt');
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-      'updated_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _deletedAtMeta =
-      const VerificationMeta('deletedAt');
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
-      'deleted_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -120,7 +193,7 @@ class $DrinkPresetsTable extends DrinkPresets
         sortOrder,
         createdAt,
         updatedAt,
-        deletedAt
+        deletedAt,
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -128,8 +201,10 @@ class $DrinkPresetsTable extends DrinkPresets
   String get actualTableName => $name;
   static const String $name = 'drink_presets';
   @override
-  VerificationContext validateIntegrity(Insertable<DrinkPresetRow> instance,
-      {bool isInserting = false}) {
+  VerificationContext validateIntegrity(
+    Insertable<DrinkPresetRow> instance, {
+    bool isInserting = false,
+  }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
@@ -139,87 +214,117 @@ class $DrinkPresetsTable extends DrinkPresets
     }
     if (data.containsKey('name')) {
       context.handle(
-          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
     } else if (isInserting) {
       context.missing(_nameMeta);
     }
     if (data.containsKey('beverage_type')) {
       context.handle(
+        _beverageTypeMeta,
+        beverageType.isAcceptableOrUnknown(
+          data['beverage_type']!,
           _beverageTypeMeta,
-          beverageType.isAcceptableOrUnknown(
-              data['beverage_type']!, _beverageTypeMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_beverageTypeMeta);
     }
     if (data.containsKey('volume_ml')) {
-      context.handle(_volumeMlMeta,
-          volumeMl.isAcceptableOrUnknown(data['volume_ml']!, _volumeMlMeta));
+      context.handle(
+        _volumeMlMeta,
+        volumeMl.isAcceptableOrUnknown(data['volume_ml']!, _volumeMlMeta),
+      );
     } else if (isInserting) {
       context.missing(_volumeMlMeta);
     }
     if (data.containsKey('abv_percent')) {
       context.handle(
-          _abvPercentMeta,
-          abvPercent.isAcceptableOrUnknown(
-              data['abv_percent']!, _abvPercentMeta));
+        _abvPercentMeta,
+        abvPercent.isAcceptableOrUnknown(data['abv_percent']!, _abvPercentMeta),
+      );
     }
     if (data.containsKey('regular_price_minor')) {
       context.handle(
+        _regularPriceMinorMeta,
+        regularPriceMinor.isAcceptableOrUnknown(
+          data['regular_price_minor']!,
           _regularPriceMinorMeta,
-          regularPriceMinor.isAcceptableOrUnknown(
-              data['regular_price_minor']!, _regularPriceMinorMeta));
+        ),
+      );
     }
     if (data.containsKey('regular_currency')) {
       context.handle(
+        _regularCurrencyMeta,
+        regularCurrency.isAcceptableOrUnknown(
+          data['regular_currency']!,
           _regularCurrencyMeta,
-          regularCurrency.isAcceptableOrUnknown(
-              data['regular_currency']!, _regularCurrencyMeta));
+        ),
+      );
     }
     if (data.containsKey('icon_key')) {
-      context.handle(_iconKeyMeta,
-          iconKey.isAcceptableOrUnknown(data['icon_key']!, _iconKeyMeta));
+      context.handle(
+        _iconKeyMeta,
+        iconKey.isAcceptableOrUnknown(data['icon_key']!, _iconKeyMeta),
+      );
     } else if (isInserting) {
       context.missing(_iconKeyMeta);
     }
     if (data.containsKey('icon_color')) {
-      context.handle(_iconColorMeta,
-          iconColor.isAcceptableOrUnknown(data['icon_color']!, _iconColorMeta));
+      context.handle(
+        _iconColorMeta,
+        iconColor.isAcceptableOrUnknown(data['icon_color']!, _iconColorMeta),
+      );
     } else if (isInserting) {
       context.missing(_iconColorMeta);
     }
     if (data.containsKey('is_user_created')) {
       context.handle(
+        _isUserCreatedMeta,
+        isUserCreated.isAcceptableOrUnknown(
+          data['is_user_created']!,
           _isUserCreatedMeta,
-          isUserCreated.isAcceptableOrUnknown(
-              data['is_user_created']!, _isUserCreatedMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_isUserCreatedMeta);
     }
     if (data.containsKey('is_hidden')) {
-      context.handle(_isHiddenMeta,
-          isHidden.isAcceptableOrUnknown(data['is_hidden']!, _isHiddenMeta));
+      context.handle(
+        _isHiddenMeta,
+        isHidden.isAcceptableOrUnknown(data['is_hidden']!, _isHiddenMeta),
+      );
     }
     if (data.containsKey('sort_order')) {
-      context.handle(_sortOrderMeta,
-          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
     } else if (isInserting) {
       context.missing(_sortOrderMeta);
     }
     if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
     if (data.containsKey('updated_at')) {
-      context.handle(_updatedAtMeta,
-          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
     if (data.containsKey('deleted_at')) {
-      context.handle(_deletedAtMeta,
-          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
     }
     return context;
   }
@@ -230,36 +335,66 @@ class $DrinkPresetsTable extends DrinkPresets
   DrinkPresetRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return DrinkPresetRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
-      name: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
-      beverageType: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}beverage_type'])!,
-      volumeMl: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}volume_ml'])!,
-      abvPercent: attachedDatabase.typeMapping
-          .read(DriftSqlType.double, data['${effectivePrefix}abv_percent']),
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      beverageType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}beverage_type'],
+      )!,
+      volumeMl: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}volume_ml'],
+      )!,
+      abvPercent: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}abv_percent'],
+      ),
       regularPriceMinor: attachedDatabase.typeMapping.read(
-          DriftSqlType.int, data['${effectivePrefix}regular_price_minor']),
+        DriftSqlType.int,
+        data['${effectivePrefix}regular_price_minor'],
+      ),
       regularCurrency: attachedDatabase.typeMapping.read(
-          DriftSqlType.string, data['${effectivePrefix}regular_currency']),
-      iconKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}icon_key'])!,
-      iconColor: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}icon_color'])!,
-      isUserCreated: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}is_user_created'])!,
-      isHidden: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}is_hidden'])!,
-      sortOrder: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
-      updatedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
-      deletedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at']),
+        DriftSqlType.string,
+        data['${effectivePrefix}regular_currency'],
+      ),
+      iconKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_key'],
+      )!,
+      iconColor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_color'],
+      )!,
+      isUserCreated: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_user_created'],
+      )!,
+      isHidden: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_hidden'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -287,22 +422,23 @@ class DrinkPresetRow extends DataClass implements Insertable<DrinkPresetRow> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
-  const DrinkPresetRow(
-      {required this.id,
-      required this.name,
-      required this.beverageType,
-      required this.volumeMl,
-      this.abvPercent,
-      this.regularPriceMinor,
-      this.regularCurrency,
-      required this.iconKey,
-      required this.iconColor,
-      required this.isUserCreated,
-      required this.isHidden,
-      required this.sortOrder,
-      required this.createdAt,
-      required this.updatedAt,
-      this.deletedAt});
+  const DrinkPresetRow({
+    required this.id,
+    required this.name,
+    required this.beverageType,
+    required this.volumeMl,
+    this.abvPercent,
+    this.regularPriceMinor,
+    this.regularCurrency,
+    required this.iconKey,
+    required this.iconColor,
+    required this.isUserCreated,
+    required this.isHidden,
+    required this.sortOrder,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -360,8 +496,10 @@ class DrinkPresetRow extends DataClass implements Insertable<DrinkPresetRow> {
     );
   }
 
-  factory DrinkPresetRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
+  factory DrinkPresetRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return DrinkPresetRow(
       id: serializer.fromJson<String>(json['id']),
@@ -403,22 +541,23 @@ class DrinkPresetRow extends DataClass implements Insertable<DrinkPresetRow> {
     };
   }
 
-  DrinkPresetRow copyWith(
-          {String? id,
-          String? name,
-          String? beverageType,
-          int? volumeMl,
-          Value<double?> abvPercent = const Value.absent(),
-          Value<int?> regularPriceMinor = const Value.absent(),
-          Value<String?> regularCurrency = const Value.absent(),
-          String? iconKey,
-          String? iconColor,
-          bool? isUserCreated,
-          bool? isHidden,
-          int? sortOrder,
-          DateTime? createdAt,
-          DateTime? updatedAt,
-          Value<DateTime?> deletedAt = const Value.absent()}) =>
+  DrinkPresetRow copyWith({
+    String? id,
+    String? name,
+    String? beverageType,
+    int? volumeMl,
+    Value<double?> abvPercent = const Value.absent(),
+    Value<int?> regularPriceMinor = const Value.absent(),
+    Value<String?> regularCurrency = const Value.absent(),
+    String? iconKey,
+    String? iconColor,
+    bool? isUserCreated,
+    bool? isHidden,
+    int? sortOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+  }) =>
       DrinkPresetRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -493,21 +632,22 @@ class DrinkPresetRow extends DataClass implements Insertable<DrinkPresetRow> {
 
   @override
   int get hashCode => Object.hash(
-      id,
-      name,
-      beverageType,
-      volumeMl,
-      abvPercent,
-      regularPriceMinor,
-      regularCurrency,
-      iconKey,
-      iconColor,
-      isUserCreated,
-      isHidden,
-      sortOrder,
-      createdAt,
-      updatedAt,
-      deletedAt);
+        id,
+        name,
+        beverageType,
+        volumeMl,
+        abvPercent,
+        regularPriceMinor,
+        regularCurrency,
+        iconKey,
+        iconColor,
+        isUserCreated,
+        isHidden,
+        sortOrder,
+        createdAt,
+        updatedAt,
+        deletedAt,
+      );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -629,23 +769,24 @@ class DrinkPresetsCompanion extends UpdateCompanion<DrinkPresetRow> {
     });
   }
 
-  DrinkPresetsCompanion copyWith(
-      {Value<String>? id,
-      Value<String>? name,
-      Value<String>? beverageType,
-      Value<int>? volumeMl,
-      Value<double?>? abvPercent,
-      Value<int?>? regularPriceMinor,
-      Value<String?>? regularCurrency,
-      Value<String>? iconKey,
-      Value<String>? iconColor,
-      Value<bool>? isUserCreated,
-      Value<bool>? isHidden,
-      Value<int>? sortOrder,
-      Value<DateTime>? createdAt,
-      Value<DateTime>? updatedAt,
-      Value<DateTime?>? deletedAt,
-      Value<int>? rowid}) {
+  DrinkPresetsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<String>? beverageType,
+    Value<int>? volumeMl,
+    Value<double?>? abvPercent,
+    Value<int?>? regularPriceMinor,
+    Value<String?>? regularCurrency,
+    Value<String>? iconKey,
+    Value<String>? iconColor,
+    Value<bool>? isUserCreated,
+    Value<bool>? isHidden,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? rowid,
+  }) {
     return DrinkPresetsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -753,79 +894,142 @@ class $DrinkEntriesTable extends DrinkEntries
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
-      'id', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
   late final GeneratedColumn<String> name = GeneratedColumn<String>(
-      'name', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _beverageTypeMeta =
-      const VerificationMeta('beverageType');
+    'name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _beverageTypeMeta = const VerificationMeta(
+    'beverageType',
+  );
   @override
   late final GeneratedColumn<String> beverageType = GeneratedColumn<String>(
-      'beverage_type', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _volumeMlMeta =
-      const VerificationMeta('volumeMl');
+    'beverage_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _volumeMlMeta = const VerificationMeta(
+    'volumeMl',
+  );
   @override
   late final GeneratedColumn<int> volumeMl = GeneratedColumn<int>(
-      'volume_ml', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _abvPercentMeta =
-      const VerificationMeta('abvPercent');
+    'volume_ml',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _abvPercentMeta = const VerificationMeta(
+    'abvPercent',
+  );
   @override
   late final GeneratedColumn<double> abvPercent = GeneratedColumn<double>(
-      'abv_percent', aliasedName, true,
-      type: DriftSqlType.double, requiredDuringInsert: false);
-  static const VerificationMeta _priceMinorMeta =
-      const VerificationMeta('priceMinor');
+    'abv_percent',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _priceMinorMeta = const VerificationMeta(
+    'priceMinor',
+  );
   @override
   late final GeneratedColumn<int> priceMinor = GeneratedColumn<int>(
-      'price_minor', aliasedName, true,
-      type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _currencyMeta =
-      const VerificationMeta('currency');
+    'price_minor',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _currencyMeta = const VerificationMeta(
+    'currency',
+  );
   @override
   late final GeneratedColumn<String> currency = GeneratedColumn<String>(
-      'currency', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _iconKeyMeta =
-      const VerificationMeta('iconKey');
+    'currency',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _iconKeyMeta = const VerificationMeta(
+    'iconKey',
+  );
   @override
   late final GeneratedColumn<String> iconKey = GeneratedColumn<String>(
-      'icon_key', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _iconColorMeta =
-      const VerificationMeta('iconColor');
+    'icon_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _iconColorMeta = const VerificationMeta(
+    'iconColor',
+  );
   @override
   late final GeneratedColumn<String> iconColor = GeneratedColumn<String>(
-      'icon_color', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _consumedAtMeta =
-      const VerificationMeta('consumedAt');
+    'icon_color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _consumedAtMeta = const VerificationMeta(
+    'consumedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> consumedAt = GeneratedColumn<DateTime>(
-      'consumed_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
+    'consumed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
   @override
   late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _updatedAtMeta =
-      const VerificationMeta('updatedAt');
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-      'updated_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _deletedAtMeta =
-      const VerificationMeta('deletedAt');
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
-      'deleted_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -840,7 +1044,7 @@ class $DrinkEntriesTable extends DrinkEntries
         consumedAt,
         createdAt,
         updatedAt,
-        deletedAt
+        deletedAt,
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -848,8 +1052,10 @@ class $DrinkEntriesTable extends DrinkEntries
   String get actualTableName => $name;
   static const String $name = 'drink_entries';
   @override
-  VerificationContext validateIntegrity(Insertable<DrinkEntryRow> instance,
-      {bool isInserting = false}) {
+  VerificationContext validateIntegrity(
+    Insertable<DrinkEntryRow> instance, {
+    bool isInserting = false,
+  }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
@@ -859,69 +1065,88 @@ class $DrinkEntriesTable extends DrinkEntries
     }
     if (data.containsKey('name')) {
       context.handle(
-          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
     }
     if (data.containsKey('beverage_type')) {
       context.handle(
+        _beverageTypeMeta,
+        beverageType.isAcceptableOrUnknown(
+          data['beverage_type']!,
           _beverageTypeMeta,
-          beverageType.isAcceptableOrUnknown(
-              data['beverage_type']!, _beverageTypeMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_beverageTypeMeta);
     }
     if (data.containsKey('volume_ml')) {
-      context.handle(_volumeMlMeta,
-          volumeMl.isAcceptableOrUnknown(data['volume_ml']!, _volumeMlMeta));
+      context.handle(
+        _volumeMlMeta,
+        volumeMl.isAcceptableOrUnknown(data['volume_ml']!, _volumeMlMeta),
+      );
     } else if (isInserting) {
       context.missing(_volumeMlMeta);
     }
     if (data.containsKey('abv_percent')) {
       context.handle(
-          _abvPercentMeta,
-          abvPercent.isAcceptableOrUnknown(
-              data['abv_percent']!, _abvPercentMeta));
+        _abvPercentMeta,
+        abvPercent.isAcceptableOrUnknown(data['abv_percent']!, _abvPercentMeta),
+      );
     }
     if (data.containsKey('price_minor')) {
       context.handle(
-          _priceMinorMeta,
-          priceMinor.isAcceptableOrUnknown(
-              data['price_minor']!, _priceMinorMeta));
+        _priceMinorMeta,
+        priceMinor.isAcceptableOrUnknown(data['price_minor']!, _priceMinorMeta),
+      );
     }
     if (data.containsKey('currency')) {
-      context.handle(_currencyMeta,
-          currency.isAcceptableOrUnknown(data['currency']!, _currencyMeta));
+      context.handle(
+        _currencyMeta,
+        currency.isAcceptableOrUnknown(data['currency']!, _currencyMeta),
+      );
     }
     if (data.containsKey('icon_key')) {
-      context.handle(_iconKeyMeta,
-          iconKey.isAcceptableOrUnknown(data['icon_key']!, _iconKeyMeta));
+      context.handle(
+        _iconKeyMeta,
+        iconKey.isAcceptableOrUnknown(data['icon_key']!, _iconKeyMeta),
+      );
     }
     if (data.containsKey('icon_color')) {
-      context.handle(_iconColorMeta,
-          iconColor.isAcceptableOrUnknown(data['icon_color']!, _iconColorMeta));
+      context.handle(
+        _iconColorMeta,
+        iconColor.isAcceptableOrUnknown(data['icon_color']!, _iconColorMeta),
+      );
     }
     if (data.containsKey('consumed_at')) {
       context.handle(
-          _consumedAtMeta,
-          consumedAt.isAcceptableOrUnknown(
-              data['consumed_at']!, _consumedAtMeta));
+        _consumedAtMeta,
+        consumedAt.isAcceptableOrUnknown(data['consumed_at']!, _consumedAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_consumedAtMeta);
     }
     if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
     if (data.containsKey('updated_at')) {
-      context.handle(_updatedAtMeta,
-          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
     if (data.containsKey('deleted_at')) {
-      context.handle(_deletedAtMeta,
-          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
     }
     return context;
   }
@@ -932,32 +1157,58 @@ class $DrinkEntriesTable extends DrinkEntries
   DrinkEntryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return DrinkEntryRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
-      name: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}name']),
-      beverageType: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}beverage_type'])!,
-      volumeMl: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}volume_ml'])!,
-      abvPercent: attachedDatabase.typeMapping
-          .read(DriftSqlType.double, data['${effectivePrefix}abv_percent']),
-      priceMinor: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}price_minor']),
-      currency: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}currency']),
-      iconKey: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}icon_key']),
-      iconColor: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}icon_color']),
-      consumedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}consumed_at'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
-      updatedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
-      deletedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at']),
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      ),
+      beverageType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}beverage_type'],
+      )!,
+      volumeMl: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}volume_ml'],
+      )!,
+      abvPercent: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}abv_percent'],
+      ),
+      priceMinor: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}price_minor'],
+      ),
+      currency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}currency'],
+      ),
+      iconKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_key'],
+      ),
+      iconColor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_color'],
+      ),
+      consumedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}consumed_at'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -987,20 +1238,21 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
-  const DrinkEntryRow(
-      {required this.id,
-      this.name,
-      required this.beverageType,
-      required this.volumeMl,
-      this.abvPercent,
-      this.priceMinor,
-      this.currency,
-      this.iconKey,
-      this.iconColor,
-      required this.consumedAt,
-      required this.createdAt,
-      required this.updatedAt,
-      this.deletedAt});
+  const DrinkEntryRow({
+    required this.id,
+    this.name,
+    required this.beverageType,
+    required this.volumeMl,
+    this.abvPercent,
+    this.priceMinor,
+    this.currency,
+    this.iconKey,
+    this.iconColor,
+    required this.consumedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1064,8 +1316,10 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
     );
   }
 
-  factory DrinkEntryRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
+  factory DrinkEntryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return DrinkEntryRow(
       id: serializer.fromJson<String>(json['id']),
@@ -1103,20 +1357,21 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
     };
   }
 
-  DrinkEntryRow copyWith(
-          {String? id,
-          Value<String?> name = const Value.absent(),
-          String? beverageType,
-          int? volumeMl,
-          Value<double?> abvPercent = const Value.absent(),
-          Value<int?> priceMinor = const Value.absent(),
-          Value<String?> currency = const Value.absent(),
-          Value<String?> iconKey = const Value.absent(),
-          Value<String?> iconColor = const Value.absent(),
-          DateTime? consumedAt,
-          DateTime? createdAt,
-          DateTime? updatedAt,
-          Value<DateTime?> deletedAt = const Value.absent()}) =>
+  DrinkEntryRow copyWith({
+    String? id,
+    Value<String?> name = const Value.absent(),
+    String? beverageType,
+    int? volumeMl,
+    Value<double?> abvPercent = const Value.absent(),
+    Value<int?> priceMinor = const Value.absent(),
+    Value<String?> currency = const Value.absent(),
+    Value<String?> iconKey = const Value.absent(),
+    Value<String?> iconColor = const Value.absent(),
+    DateTime? consumedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+  }) =>
       DrinkEntryRow(
         id: id ?? this.id,
         name: name.present ? name.value : this.name,
@@ -1177,19 +1432,20 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
 
   @override
   int get hashCode => Object.hash(
-      id,
-      name,
-      beverageType,
-      volumeMl,
-      abvPercent,
-      priceMinor,
-      currency,
-      iconKey,
-      iconColor,
-      consumedAt,
-      createdAt,
-      updatedAt,
-      deletedAt);
+        id,
+        name,
+        beverageType,
+        volumeMl,
+        abvPercent,
+        priceMinor,
+        currency,
+        iconKey,
+        iconColor,
+        consumedAt,
+        createdAt,
+        updatedAt,
+        deletedAt,
+      );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1295,21 +1551,22 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     });
   }
 
-  DrinkEntriesCompanion copyWith(
-      {Value<String>? id,
-      Value<String?>? name,
-      Value<String>? beverageType,
-      Value<int>? volumeMl,
-      Value<double?>? abvPercent,
-      Value<int?>? priceMinor,
-      Value<String?>? currency,
-      Value<String?>? iconKey,
-      Value<String?>? iconColor,
-      Value<DateTime>? consumedAt,
-      Value<DateTime>? createdAt,
-      Value<DateTime>? updatedAt,
-      Value<DateTime?>? deletedAt,
-      Value<int>? rowid}) {
+  DrinkEntriesCompanion copyWith({
+    Value<String>? id,
+    Value<String?>? name,
+    Value<String>? beverageType,
+    Value<int>? volumeMl,
+    Value<double?>? abvPercent,
+    Value<int?>? priceMinor,
+    Value<String?>? currency,
+    Value<String?>? iconKey,
+    Value<String?>? iconColor,
+    Value<DateTime>? consumedAt,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? rowid,
+  }) {
     return DrinkEntriesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -1407,49 +1664,87 @@ class $UserProfilesTable extends UserProfiles
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
-      'id', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _genderMeta = const VerificationMeta('gender');
   @override
   late final GeneratedColumn<String> gender = GeneratedColumn<String>(
-      'gender', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _weightKgMeta =
-      const VerificationMeta('weightKg');
+    'gender',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _weightKgMeta = const VerificationMeta(
+    'weightKg',
+  );
   @override
   late final GeneratedColumn<double> weightKg = GeneratedColumn<double>(
-      'weight_kg', aliasedName, true,
-      type: DriftSqlType.double, requiredDuringInsert: false);
-  static const VerificationMeta _heightCmMeta =
-      const VerificationMeta('heightCm');
+    'weight_kg',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _heightCmMeta = const VerificationMeta(
+    'heightCm',
+  );
   @override
   late final GeneratedColumn<double> heightCm = GeneratedColumn<double>(
-      'height_cm', aliasedName, true,
-      type: DriftSqlType.double, requiredDuringInsert: false);
-  static const VerificationMeta _birthDateMeta =
-      const VerificationMeta('birthDate');
+    'height_cm',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _birthDateMeta = const VerificationMeta(
+    'birthDate',
+  );
   @override
   late final GeneratedColumn<String> birthDate = GeneratedColumn<String>(
-      'birth_date', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
+    'birth_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
   @override
   late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _updatedAtMeta =
-      const VerificationMeta('updatedAt');
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-      'updated_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _deletedAtMeta =
-      const VerificationMeta('deletedAt');
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
-      'deleted_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -1459,7 +1754,7 @@ class $UserProfilesTable extends UserProfiles
         birthDate,
         createdAt,
         updatedAt,
-        deletedAt
+        deletedAt,
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1467,8 +1762,10 @@ class $UserProfilesTable extends UserProfiles
   String get actualTableName => $name;
   static const String $name = 'user_profiles';
   @override
-  VerificationContext validateIntegrity(Insertable<UserProfileRow> instance,
-      {bool isInserting = false}) {
+  VerificationContext validateIntegrity(
+    Insertable<UserProfileRow> instance, {
+    bool isInserting = false,
+  }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
@@ -1477,36 +1774,50 @@ class $UserProfilesTable extends UserProfiles
       context.missing(_idMeta);
     }
     if (data.containsKey('gender')) {
-      context.handle(_genderMeta,
-          gender.isAcceptableOrUnknown(data['gender']!, _genderMeta));
+      context.handle(
+        _genderMeta,
+        gender.isAcceptableOrUnknown(data['gender']!, _genderMeta),
+      );
     }
     if (data.containsKey('weight_kg')) {
-      context.handle(_weightKgMeta,
-          weightKg.isAcceptableOrUnknown(data['weight_kg']!, _weightKgMeta));
+      context.handle(
+        _weightKgMeta,
+        weightKg.isAcceptableOrUnknown(data['weight_kg']!, _weightKgMeta),
+      );
     }
     if (data.containsKey('height_cm')) {
-      context.handle(_heightCmMeta,
-          heightCm.isAcceptableOrUnknown(data['height_cm']!, _heightCmMeta));
+      context.handle(
+        _heightCmMeta,
+        heightCm.isAcceptableOrUnknown(data['height_cm']!, _heightCmMeta),
+      );
     }
     if (data.containsKey('birth_date')) {
-      context.handle(_birthDateMeta,
-          birthDate.isAcceptableOrUnknown(data['birth_date']!, _birthDateMeta));
+      context.handle(
+        _birthDateMeta,
+        birthDate.isAcceptableOrUnknown(data['birth_date']!, _birthDateMeta),
+      );
     }
     if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
     if (data.containsKey('updated_at')) {
-      context.handle(_updatedAtMeta,
-          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
     if (data.containsKey('deleted_at')) {
-      context.handle(_deletedAtMeta,
-          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
     }
     return context;
   }
@@ -1517,22 +1828,38 @@ class $UserProfilesTable extends UserProfiles
   UserProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return UserProfileRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
-      gender: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}gender']),
-      weightKg: attachedDatabase.typeMapping
-          .read(DriftSqlType.double, data['${effectivePrefix}weight_kg']),
-      heightCm: attachedDatabase.typeMapping
-          .read(DriftSqlType.double, data['${effectivePrefix}height_cm']),
-      birthDate: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}birth_date']),
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
-      updatedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
-      deletedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}deleted_at']),
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      gender: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}gender'],
+      ),
+      weightKg: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}weight_kg'],
+      ),
+      heightCm: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}height_cm'],
+      ),
+      birthDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}birth_date'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -1558,15 +1885,16 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
-  const UserProfileRow(
-      {required this.id,
-      this.gender,
-      this.weightKg,
-      this.heightCm,
-      this.birthDate,
-      required this.createdAt,
-      required this.updatedAt,
-      this.deletedAt});
+  const UserProfileRow({
+    required this.id,
+    this.gender,
+    this.weightKg,
+    this.heightCm,
+    this.birthDate,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1613,8 +1941,10 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
     );
   }
 
-  factory UserProfileRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
+  factory UserProfileRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserProfileRow(
       id: serializer.fromJson<String>(json['id']),
@@ -1642,15 +1972,16 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
     };
   }
 
-  UserProfileRow copyWith(
-          {String? id,
-          Value<String?> gender = const Value.absent(),
-          Value<double?> weightKg = const Value.absent(),
-          Value<double?> heightCm = const Value.absent(),
-          Value<String?> birthDate = const Value.absent(),
-          DateTime? createdAt,
-          DateTime? updatedAt,
-          Value<DateTime?> deletedAt = const Value.absent()}) =>
+  UserProfileRow copyWith({
+    String? id,
+    Value<String?> gender = const Value.absent(),
+    Value<double?> weightKg = const Value.absent(),
+    Value<double?> heightCm = const Value.absent(),
+    Value<String?> birthDate = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+  }) =>
       UserProfileRow(
         id: id ?? this.id,
         gender: gender.present ? gender.value : this.gender,
@@ -1690,8 +2021,16 @@ class UserProfileRow extends DataClass implements Insertable<UserProfileRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, gender, weightKg, heightCm, birthDate,
-      createdAt, updatedAt, deletedAt);
+  int get hashCode => Object.hash(
+        id,
+        gender,
+        weightKg,
+        heightCm,
+        birthDate,
+        createdAt,
+        updatedAt,
+        deletedAt,
+      );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1764,16 +2103,17 @@ class UserProfilesCompanion extends UpdateCompanion<UserProfileRow> {
     });
   }
 
-  UserProfilesCompanion copyWith(
-      {Value<String>? id,
-      Value<String?>? gender,
-      Value<double?>? weightKg,
-      Value<double?>? heightCm,
-      Value<String?>? birthDate,
-      Value<DateTime>? createdAt,
-      Value<DateTime>? updatedAt,
-      Value<DateTime?>? deletedAt,
-      Value<int>? rowid}) {
+  UserProfilesCompanion copyWith({
+    Value<String>? id,
+    Value<String?>? gender,
+    Value<double?>? weightKg,
+    Value<double?>? heightCm,
+    Value<String?>? birthDate,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? rowid,
+  }) {
     return UserProfilesCompanion(
       id: id ?? this.id,
       gender: gender ?? this.gender,
@@ -1846,151 +2186,241 @@ class $UserPreferencesTableTable extends UserPreferencesTable
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
-      'id', aliasedName, false,
-      type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _usernameMeta =
-      const VerificationMeta('username');
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _usernameMeta = const VerificationMeta(
+    'username',
+  );
   @override
   late final GeneratedColumn<String> username = GeneratedColumn<String>(
-      'username', aliasedName, true,
-      type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _dailyGoalMlMeta =
-      const VerificationMeta('dailyGoalMl');
+    'username',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dailyGoalMlMeta = const VerificationMeta(
+    'dailyGoalMl',
+  );
   @override
   late final GeneratedColumn<int> dailyGoalMl = GeneratedColumn<int>(
-      'daily_goal_ml', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _dayBoundaryHourMeta =
-      const VerificationMeta('dayBoundaryHour');
+    'daily_goal_ml',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dayBoundaryHourMeta = const VerificationMeta(
+    'dayBoundaryHour',
+  );
   @override
   late final GeneratedColumn<int> dayBoundaryHour = GeneratedColumn<int>(
-      'day_boundary_hour', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(5));
+    'day_boundary_hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(5),
+  );
   static const VerificationMeta _unitsMeta = const VerificationMeta('units');
   @override
   late final GeneratedColumn<String> units = GeneratedColumn<String>(
-      'units', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: false,
-      defaultValue: const Constant('metric'));
-  static const VerificationMeta _currencyMeta =
-      const VerificationMeta('currency');
+    'units',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('metric'),
+  );
+  static const VerificationMeta _currencyMeta = const VerificationMeta(
+    'currency',
+  );
   @override
   late final GeneratedColumn<String> currency = GeneratedColumn<String>(
-      'currency', aliasedName, false,
-      type: DriftSqlType.string,
-      requiredDuringInsert: false,
-      defaultValue: const Constant('EUR'));
-  static const VerificationMeta _reminderEnabledMeta =
-      const VerificationMeta('reminderEnabled');
+    'currency',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('EUR'),
+  );
+  static const VerificationMeta _reminderEnabledMeta = const VerificationMeta(
+    'reminderEnabled',
+  );
   @override
   late final GeneratedColumn<bool> reminderEnabled = GeneratedColumn<bool>(
-      'reminder_enabled', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("reminder_enabled" IN (0, 1))'));
-  static const VerificationMeta _reminderStartHourMeta =
-      const VerificationMeta('reminderStartHour');
+    'reminder_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("reminder_enabled" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _reminderStartHourMeta = const VerificationMeta(
+    'reminderStartHour',
+  );
   @override
   late final GeneratedColumn<int> reminderStartHour = GeneratedColumn<int>(
-      'reminder_start_hour', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(8));
-  static const VerificationMeta _reminderEndHourMeta =
-      const VerificationMeta('reminderEndHour');
+    'reminder_start_hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(8),
+  );
+  static const VerificationMeta _reminderEndHourMeta = const VerificationMeta(
+    'reminderEndHour',
+  );
   @override
   late final GeneratedColumn<int> reminderEndHour = GeneratedColumn<int>(
-      'reminder_end_hour', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(22));
+    'reminder_end_hour',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(22),
+  );
   static const VerificationMeta _reminderIntervalMinMeta =
       const VerificationMeta('reminderIntervalMin');
   @override
   late final GeneratedColumn<int> reminderIntervalMin = GeneratedColumn<int>(
-      'reminder_interval_min', aliasedName, false,
-      type: DriftSqlType.int,
-      requiredDuringInsert: false,
-      defaultValue: const Constant(90));
+    'reminder_interval_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(90),
+  );
   static const VerificationMeta _inactivityReminderEnabledMeta =
       const VerificationMeta('inactivityReminderEnabled');
   @override
   late final GeneratedColumn<bool> inactivityReminderEnabled =
-      GeneratedColumn<bool>('inactivity_reminder_enabled', aliasedName, false,
-          type: DriftSqlType.bool,
-          requiredDuringInsert: true,
-          defaultConstraints: GeneratedColumn.constraintIsAlways(
-              'CHECK ("inactivity_reminder_enabled" IN (0, 1))'));
+      GeneratedColumn<bool>(
+    'inactivity_reminder_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("inactivity_reminder_enabled" IN (0, 1))',
+    ),
+  );
   static const VerificationMeta _weeklySummaryEnabledMeta =
       const VerificationMeta('weeklySummaryEnabled');
   @override
   late final GeneratedColumn<bool> weeklySummaryEnabled = GeneratedColumn<bool>(
-      'weekly_summary_enabled', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: true,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("weekly_summary_enabled" IN (0, 1))'));
+    'weekly_summary_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("weekly_summary_enabled" IN (0, 1))',
+    ),
+  );
   static const VerificationMeta _defaultDrinkPresetIdMeta =
       const VerificationMeta('defaultDrinkPresetId');
   @override
   late final GeneratedColumn<String> defaultDrinkPresetId =
-      GeneratedColumn<String>('default_drink_preset_id', aliasedName, true,
-          type: DriftSqlType.string, requiredDuringInsert: false);
-  static const VerificationMeta _bacCapGramsPerLMeta =
-      const VerificationMeta('bacCapGramsPerL');
+      GeneratedColumn<String>(
+    'default_drink_preset_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _bacCapGramsPerLMeta = const VerificationMeta(
+    'bacCapGramsPerL',
+  );
   @override
   late final GeneratedColumn<double> bacCapGramsPerL = GeneratedColumn<double>(
-      'bac_cap_grams_per_l', aliasedName, true,
-      type: DriftSqlType.double, requiredDuringInsert: false);
+    'bac_cap_grams_per_l',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _bacOnLockScreenEnabledMeta =
       const VerificationMeta('bacOnLockScreenEnabled');
   @override
   late final GeneratedColumn<bool> bacOnLockScreenEnabled =
-      GeneratedColumn<bool>('bac_on_lock_screen_enabled', aliasedName, false,
-          type: DriftSqlType.bool,
-          requiredDuringInsert: true,
-          defaultConstraints: GeneratedColumn.constraintIsAlways(
-              'CHECK ("bac_on_lock_screen_enabled" IN (0, 1))'));
+      GeneratedColumn<bool>(
+    'bac_on_lock_screen_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("bac_on_lock_screen_enabled" IN (0, 1))',
+    ),
+  );
   static const VerificationMeta _approachingCapNotifEnabledMeta =
       const VerificationMeta('approachingCapNotifEnabled');
   @override
   late final GeneratedColumn<bool> approachingCapNotifEnabled =
-      GeneratedColumn<bool>('approaching_cap_notif_enabled', aliasedName, false,
-          type: DriftSqlType.bool,
-          requiredDuringInsert: true,
-          defaultConstraints: GeneratedColumn.constraintIsAlways(
-              'CHECK ("approaching_cap_notif_enabled" IN (0, 1))'));
+      GeneratedColumn<bool>(
+    'approaching_cap_notif_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("approaching_cap_notif_enabled" IN (0, 1))',
+    ),
+  );
   static const VerificationMeta _soberEstimateNotifEnabledMeta =
       const VerificationMeta('soberEstimateNotifEnabled');
   @override
   late final GeneratedColumn<bool> soberEstimateNotifEnabled =
-      GeneratedColumn<bool>('sober_estimate_notif_enabled', aliasedName, false,
-          type: DriftSqlType.bool,
-          requiredDuringInsert: true,
-          defaultConstraints: GeneratedColumn.constraintIsAlways(
-              'CHECK ("sober_estimate_notif_enabled" IN (0, 1))'));
-  static const VerificationMeta _installedAtMeta =
-      const VerificationMeta('installedAt');
+      GeneratedColumn<bool>(
+    'sober_estimate_notif_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("sober_estimate_notif_enabled" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _installedAtMeta = const VerificationMeta(
+    'installedAt',
+  );
   @override
   late final GeneratedColumn<int> installedAt = GeneratedColumn<int>(
-      'installed_at', aliasedName, false,
-      type: DriftSqlType.int, requiredDuringInsert: true);
-  static const VerificationMeta _createdAtMeta =
-      const VerificationMeta('createdAt');
+    'installed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
   @override
   late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-      'created_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
-  static const VerificationMeta _updatedAtMeta =
-      const VerificationMeta('updatedAt');
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
   @override
   late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-      'updated_at', aliasedName, false,
-      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -2012,7 +2442,7 @@ class $UserPreferencesTableTable extends UserPreferencesTable
         soberEstimateNotifEnabled,
         installedAt,
         createdAt,
-        updatedAt
+        updatedAt,
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2020,8 +2450,10 @@ class $UserPreferencesTableTable extends UserPreferencesTable
   String get actualTableName => $name;
   static const String $name = 'user_preferences';
   @override
-  VerificationContext validateIntegrity(Insertable<UserPreferencesRow> instance,
-      {bool isInserting = false}) {
+  VerificationContext validateIntegrity(
+    Insertable<UserPreferencesRow> instance, {
+    bool isInserting = false,
+  }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('id')) {
@@ -2030,130 +2462,178 @@ class $UserPreferencesTableTable extends UserPreferencesTable
       context.missing(_idMeta);
     }
     if (data.containsKey('username')) {
-      context.handle(_usernameMeta,
-          username.isAcceptableOrUnknown(data['username']!, _usernameMeta));
+      context.handle(
+        _usernameMeta,
+        username.isAcceptableOrUnknown(data['username']!, _usernameMeta),
+      );
     }
     if (data.containsKey('daily_goal_ml')) {
       context.handle(
+        _dailyGoalMlMeta,
+        dailyGoalMl.isAcceptableOrUnknown(
+          data['daily_goal_ml']!,
           _dailyGoalMlMeta,
-          dailyGoalMl.isAcceptableOrUnknown(
-              data['daily_goal_ml']!, _dailyGoalMlMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_dailyGoalMlMeta);
     }
     if (data.containsKey('day_boundary_hour')) {
       context.handle(
+        _dayBoundaryHourMeta,
+        dayBoundaryHour.isAcceptableOrUnknown(
+          data['day_boundary_hour']!,
           _dayBoundaryHourMeta,
-          dayBoundaryHour.isAcceptableOrUnknown(
-              data['day_boundary_hour']!, _dayBoundaryHourMeta));
+        ),
+      );
     }
     if (data.containsKey('units')) {
       context.handle(
-          _unitsMeta, units.isAcceptableOrUnknown(data['units']!, _unitsMeta));
+        _unitsMeta,
+        units.isAcceptableOrUnknown(data['units']!, _unitsMeta),
+      );
     }
     if (data.containsKey('currency')) {
-      context.handle(_currencyMeta,
-          currency.isAcceptableOrUnknown(data['currency']!, _currencyMeta));
+      context.handle(
+        _currencyMeta,
+        currency.isAcceptableOrUnknown(data['currency']!, _currencyMeta),
+      );
     }
     if (data.containsKey('reminder_enabled')) {
       context.handle(
+        _reminderEnabledMeta,
+        reminderEnabled.isAcceptableOrUnknown(
+          data['reminder_enabled']!,
           _reminderEnabledMeta,
-          reminderEnabled.isAcceptableOrUnknown(
-              data['reminder_enabled']!, _reminderEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_reminderEnabledMeta);
     }
     if (data.containsKey('reminder_start_hour')) {
       context.handle(
+        _reminderStartHourMeta,
+        reminderStartHour.isAcceptableOrUnknown(
+          data['reminder_start_hour']!,
           _reminderStartHourMeta,
-          reminderStartHour.isAcceptableOrUnknown(
-              data['reminder_start_hour']!, _reminderStartHourMeta));
+        ),
+      );
     }
     if (data.containsKey('reminder_end_hour')) {
       context.handle(
+        _reminderEndHourMeta,
+        reminderEndHour.isAcceptableOrUnknown(
+          data['reminder_end_hour']!,
           _reminderEndHourMeta,
-          reminderEndHour.isAcceptableOrUnknown(
-              data['reminder_end_hour']!, _reminderEndHourMeta));
+        ),
+      );
     }
     if (data.containsKey('reminder_interval_min')) {
       context.handle(
+        _reminderIntervalMinMeta,
+        reminderIntervalMin.isAcceptableOrUnknown(
+          data['reminder_interval_min']!,
           _reminderIntervalMinMeta,
-          reminderIntervalMin.isAcceptableOrUnknown(
-              data['reminder_interval_min']!, _reminderIntervalMinMeta));
+        ),
+      );
     }
     if (data.containsKey('inactivity_reminder_enabled')) {
       context.handle(
+        _inactivityReminderEnabledMeta,
+        inactivityReminderEnabled.isAcceptableOrUnknown(
+          data['inactivity_reminder_enabled']!,
           _inactivityReminderEnabledMeta,
-          inactivityReminderEnabled.isAcceptableOrUnknown(
-              data['inactivity_reminder_enabled']!,
-              _inactivityReminderEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_inactivityReminderEnabledMeta);
     }
     if (data.containsKey('weekly_summary_enabled')) {
       context.handle(
+        _weeklySummaryEnabledMeta,
+        weeklySummaryEnabled.isAcceptableOrUnknown(
+          data['weekly_summary_enabled']!,
           _weeklySummaryEnabledMeta,
-          weeklySummaryEnabled.isAcceptableOrUnknown(
-              data['weekly_summary_enabled']!, _weeklySummaryEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_weeklySummaryEnabledMeta);
     }
     if (data.containsKey('default_drink_preset_id')) {
       context.handle(
+        _defaultDrinkPresetIdMeta,
+        defaultDrinkPresetId.isAcceptableOrUnknown(
+          data['default_drink_preset_id']!,
           _defaultDrinkPresetIdMeta,
-          defaultDrinkPresetId.isAcceptableOrUnknown(
-              data['default_drink_preset_id']!, _defaultDrinkPresetIdMeta));
+        ),
+      );
     }
     if (data.containsKey('bac_cap_grams_per_l')) {
       context.handle(
+        _bacCapGramsPerLMeta,
+        bacCapGramsPerL.isAcceptableOrUnknown(
+          data['bac_cap_grams_per_l']!,
           _bacCapGramsPerLMeta,
-          bacCapGramsPerL.isAcceptableOrUnknown(
-              data['bac_cap_grams_per_l']!, _bacCapGramsPerLMeta));
+        ),
+      );
     }
     if (data.containsKey('bac_on_lock_screen_enabled')) {
       context.handle(
+        _bacOnLockScreenEnabledMeta,
+        bacOnLockScreenEnabled.isAcceptableOrUnknown(
+          data['bac_on_lock_screen_enabled']!,
           _bacOnLockScreenEnabledMeta,
-          bacOnLockScreenEnabled.isAcceptableOrUnknown(
-              data['bac_on_lock_screen_enabled']!,
-              _bacOnLockScreenEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_bacOnLockScreenEnabledMeta);
     }
     if (data.containsKey('approaching_cap_notif_enabled')) {
       context.handle(
+        _approachingCapNotifEnabledMeta,
+        approachingCapNotifEnabled.isAcceptableOrUnknown(
+          data['approaching_cap_notif_enabled']!,
           _approachingCapNotifEnabledMeta,
-          approachingCapNotifEnabled.isAcceptableOrUnknown(
-              data['approaching_cap_notif_enabled']!,
-              _approachingCapNotifEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_approachingCapNotifEnabledMeta);
     }
     if (data.containsKey('sober_estimate_notif_enabled')) {
       context.handle(
+        _soberEstimateNotifEnabledMeta,
+        soberEstimateNotifEnabled.isAcceptableOrUnknown(
+          data['sober_estimate_notif_enabled']!,
           _soberEstimateNotifEnabledMeta,
-          soberEstimateNotifEnabled.isAcceptableOrUnknown(
-              data['sober_estimate_notif_enabled']!,
-              _soberEstimateNotifEnabledMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_soberEstimateNotifEnabledMeta);
     }
     if (data.containsKey('installed_at')) {
       context.handle(
+        _installedAtMeta,
+        installedAt.isAcceptableOrUnknown(
+          data['installed_at']!,
           _installedAtMeta,
-          installedAt.isAcceptableOrUnknown(
-              data['installed_at']!, _installedAtMeta));
+        ),
+      );
     } else if (isInserting) {
       context.missing(_installedAtMeta);
     }
     if (data.containsKey('created_at')) {
-      context.handle(_createdAtMeta,
-          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
     if (data.containsKey('updated_at')) {
-      context.handle(_updatedAtMeta,
-          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
@@ -2166,51 +2646,86 @@ class $UserPreferencesTableTable extends UserPreferencesTable
   UserPreferencesRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return UserPreferencesRow(
-      id: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
-      username: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}username']),
-      dailyGoalMl: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}daily_goal_ml'])!,
-      dayBoundaryHour: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}day_boundary_hour'])!,
-      units: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}units'])!,
-      currency: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}currency'])!,
-      reminderEnabled: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}reminder_enabled'])!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      username: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}username'],
+      ),
+      dailyGoalMl: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}daily_goal_ml'],
+      )!,
+      dayBoundaryHour: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}day_boundary_hour'],
+      )!,
+      units: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}units'],
+      )!,
+      currency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}currency'],
+      )!,
+      reminderEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}reminder_enabled'],
+      )!,
       reminderStartHour: attachedDatabase.typeMapping.read(
-          DriftSqlType.int, data['${effectivePrefix}reminder_start_hour'])!,
-      reminderEndHour: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}reminder_end_hour'])!,
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_start_hour'],
+      )!,
+      reminderEndHour: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_end_hour'],
+      )!,
       reminderIntervalMin: attachedDatabase.typeMapping.read(
-          DriftSqlType.int, data['${effectivePrefix}reminder_interval_min'])!,
+        DriftSqlType.int,
+        data['${effectivePrefix}reminder_interval_min'],
+      )!,
       inactivityReminderEnabled: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool,
-          data['${effectivePrefix}inactivity_reminder_enabled'])!,
+        DriftSqlType.bool,
+        data['${effectivePrefix}inactivity_reminder_enabled'],
+      )!,
       weeklySummaryEnabled: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool, data['${effectivePrefix}weekly_summary_enabled'])!,
+        DriftSqlType.bool,
+        data['${effectivePrefix}weekly_summary_enabled'],
+      )!,
       defaultDrinkPresetId: attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}default_drink_preset_id']),
+        DriftSqlType.string,
+        data['${effectivePrefix}default_drink_preset_id'],
+      ),
       bacCapGramsPerL: attachedDatabase.typeMapping.read(
-          DriftSqlType.double, data['${effectivePrefix}bac_cap_grams_per_l']),
+        DriftSqlType.double,
+        data['${effectivePrefix}bac_cap_grams_per_l'],
+      ),
       bacOnLockScreenEnabled: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool,
-          data['${effectivePrefix}bac_on_lock_screen_enabled'])!,
+        DriftSqlType.bool,
+        data['${effectivePrefix}bac_on_lock_screen_enabled'],
+      )!,
       approachingCapNotifEnabled: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool,
-          data['${effectivePrefix}approaching_cap_notif_enabled'])!,
+        DriftSqlType.bool,
+        data['${effectivePrefix}approaching_cap_notif_enabled'],
+      )!,
       soberEstimateNotifEnabled: attachedDatabase.typeMapping.read(
-          DriftSqlType.bool,
-          data['${effectivePrefix}sober_estimate_notif_enabled'])!,
-      installedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}installed_at'])!,
-      createdAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
-      updatedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}updated_at'])!,
+        DriftSqlType.bool,
+        data['${effectivePrefix}sober_estimate_notif_enabled'],
+      )!,
+      installedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}installed_at'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
     );
   }
 
@@ -2269,27 +2784,28 @@ class UserPreferencesRow extends DataClass
   final int installedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
-  const UserPreferencesRow(
-      {required this.id,
-      this.username,
-      required this.dailyGoalMl,
-      required this.dayBoundaryHour,
-      required this.units,
-      required this.currency,
-      required this.reminderEnabled,
-      required this.reminderStartHour,
-      required this.reminderEndHour,
-      required this.reminderIntervalMin,
-      required this.inactivityReminderEnabled,
-      required this.weeklySummaryEnabled,
-      this.defaultDrinkPresetId,
-      this.bacCapGramsPerL,
-      required this.bacOnLockScreenEnabled,
-      required this.approachingCapNotifEnabled,
-      required this.soberEstimateNotifEnabled,
-      required this.installedAt,
-      required this.createdAt,
-      required this.updatedAt});
+  const UserPreferencesRow({
+    required this.id,
+    this.username,
+    required this.dailyGoalMl,
+    required this.dayBoundaryHour,
+    required this.units,
+    required this.currency,
+    required this.reminderEnabled,
+    required this.reminderStartHour,
+    required this.reminderEndHour,
+    required this.reminderIntervalMin,
+    required this.inactivityReminderEnabled,
+    required this.weeklySummaryEnabled,
+    this.defaultDrinkPresetId,
+    this.bacCapGramsPerL,
+    required this.bacOnLockScreenEnabled,
+    required this.approachingCapNotifEnabled,
+    required this.soberEstimateNotifEnabled,
+    required this.installedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -2305,8 +2821,9 @@ class UserPreferencesRow extends DataClass
     map['reminder_start_hour'] = Variable<int>(reminderStartHour);
     map['reminder_end_hour'] = Variable<int>(reminderEndHour);
     map['reminder_interval_min'] = Variable<int>(reminderIntervalMin);
-    map['inactivity_reminder_enabled'] =
-        Variable<bool>(inactivityReminderEnabled);
+    map['inactivity_reminder_enabled'] = Variable<bool>(
+      inactivityReminderEnabled,
+    );
     map['weekly_summary_enabled'] = Variable<bool>(weeklySummaryEnabled);
     if (!nullToAbsent || defaultDrinkPresetId != null) {
       map['default_drink_preset_id'] = Variable<String>(defaultDrinkPresetId);
@@ -2315,10 +2832,12 @@ class UserPreferencesRow extends DataClass
       map['bac_cap_grams_per_l'] = Variable<double>(bacCapGramsPerL);
     }
     map['bac_on_lock_screen_enabled'] = Variable<bool>(bacOnLockScreenEnabled);
-    map['approaching_cap_notif_enabled'] =
-        Variable<bool>(approachingCapNotifEnabled);
-    map['sober_estimate_notif_enabled'] =
-        Variable<bool>(soberEstimateNotifEnabled);
+    map['approaching_cap_notif_enabled'] = Variable<bool>(
+      approachingCapNotifEnabled,
+    );
+    map['sober_estimate_notif_enabled'] = Variable<bool>(
+      soberEstimateNotifEnabled,
+    );
     map['installed_at'] = Variable<int>(installedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -2356,8 +2875,10 @@ class UserPreferencesRow extends DataClass
     );
   }
 
-  factory UserPreferencesRow.fromJson(Map<String, dynamic> json,
-      {ValueSerializer? serializer}) {
+  factory UserPreferencesRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return UserPreferencesRow(
       id: serializer.fromJson<String>(json['id']),
@@ -2369,21 +2890,28 @@ class UserPreferencesRow extends DataClass
       reminderEnabled: serializer.fromJson<bool>(json['reminderEnabled']),
       reminderStartHour: serializer.fromJson<int>(json['reminderStartHour']),
       reminderEndHour: serializer.fromJson<int>(json['reminderEndHour']),
-      reminderIntervalMin:
-          serializer.fromJson<int>(json['reminderIntervalMin']),
-      inactivityReminderEnabled:
-          serializer.fromJson<bool>(json['inactivityReminderEnabled']),
-      weeklySummaryEnabled:
-          serializer.fromJson<bool>(json['weeklySummaryEnabled']),
-      defaultDrinkPresetId:
-          serializer.fromJson<String?>(json['defaultDrinkPresetId']),
+      reminderIntervalMin: serializer.fromJson<int>(
+        json['reminderIntervalMin'],
+      ),
+      inactivityReminderEnabled: serializer.fromJson<bool>(
+        json['inactivityReminderEnabled'],
+      ),
+      weeklySummaryEnabled: serializer.fromJson<bool>(
+        json['weeklySummaryEnabled'],
+      ),
+      defaultDrinkPresetId: serializer.fromJson<String?>(
+        json['defaultDrinkPresetId'],
+      ),
       bacCapGramsPerL: serializer.fromJson<double?>(json['bacCapGramsPerL']),
-      bacOnLockScreenEnabled:
-          serializer.fromJson<bool>(json['bacOnLockScreenEnabled']),
-      approachingCapNotifEnabled:
-          serializer.fromJson<bool>(json['approachingCapNotifEnabled']),
-      soberEstimateNotifEnabled:
-          serializer.fromJson<bool>(json['soberEstimateNotifEnabled']),
+      bacOnLockScreenEnabled: serializer.fromJson<bool>(
+        json['bacOnLockScreenEnabled'],
+      ),
+      approachingCapNotifEnabled: serializer.fromJson<bool>(
+        json['approachingCapNotifEnabled'],
+      ),
+      soberEstimateNotifEnabled: serializer.fromJson<bool>(
+        json['soberEstimateNotifEnabled'],
+      ),
       installedAt: serializer.fromJson<int>(json['installedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -2403,43 +2931,47 @@ class UserPreferencesRow extends DataClass
       'reminderStartHour': serializer.toJson<int>(reminderStartHour),
       'reminderEndHour': serializer.toJson<int>(reminderEndHour),
       'reminderIntervalMin': serializer.toJson<int>(reminderIntervalMin),
-      'inactivityReminderEnabled':
-          serializer.toJson<bool>(inactivityReminderEnabled),
+      'inactivityReminderEnabled': serializer.toJson<bool>(
+        inactivityReminderEnabled,
+      ),
       'weeklySummaryEnabled': serializer.toJson<bool>(weeklySummaryEnabled),
       'defaultDrinkPresetId': serializer.toJson<String?>(defaultDrinkPresetId),
       'bacCapGramsPerL': serializer.toJson<double?>(bacCapGramsPerL),
       'bacOnLockScreenEnabled': serializer.toJson<bool>(bacOnLockScreenEnabled),
-      'approachingCapNotifEnabled':
-          serializer.toJson<bool>(approachingCapNotifEnabled),
-      'soberEstimateNotifEnabled':
-          serializer.toJson<bool>(soberEstimateNotifEnabled),
+      'approachingCapNotifEnabled': serializer.toJson<bool>(
+        approachingCapNotifEnabled,
+      ),
+      'soberEstimateNotifEnabled': serializer.toJson<bool>(
+        soberEstimateNotifEnabled,
+      ),
       'installedAt': serializer.toJson<int>(installedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
 
-  UserPreferencesRow copyWith(
-          {String? id,
-          Value<String?> username = const Value.absent(),
-          int? dailyGoalMl,
-          int? dayBoundaryHour,
-          String? units,
-          String? currency,
-          bool? reminderEnabled,
-          int? reminderStartHour,
-          int? reminderEndHour,
-          int? reminderIntervalMin,
-          bool? inactivityReminderEnabled,
-          bool? weeklySummaryEnabled,
-          Value<String?> defaultDrinkPresetId = const Value.absent(),
-          Value<double?> bacCapGramsPerL = const Value.absent(),
-          bool? bacOnLockScreenEnabled,
-          bool? approachingCapNotifEnabled,
-          bool? soberEstimateNotifEnabled,
-          int? installedAt,
-          DateTime? createdAt,
-          DateTime? updatedAt}) =>
+  UserPreferencesRow copyWith({
+    String? id,
+    Value<String?> username = const Value.absent(),
+    int? dailyGoalMl,
+    int? dayBoundaryHour,
+    String? units,
+    String? currency,
+    bool? reminderEnabled,
+    int? reminderStartHour,
+    int? reminderEndHour,
+    int? reminderIntervalMin,
+    bool? inactivityReminderEnabled,
+    bool? weeklySummaryEnabled,
+    Value<String?> defaultDrinkPresetId = const Value.absent(),
+    Value<double?> bacCapGramsPerL = const Value.absent(),
+    bool? bacOnLockScreenEnabled,
+    bool? approachingCapNotifEnabled,
+    bool? soberEstimateNotifEnabled,
+    int? installedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) =>
       UserPreferencesRow(
         id: id ?? this.id,
         username: username.present ? username.value : this.username,
@@ -2550,26 +3082,27 @@ class UserPreferencesRow extends DataClass
 
   @override
   int get hashCode => Object.hash(
-      id,
-      username,
-      dailyGoalMl,
-      dayBoundaryHour,
-      units,
-      currency,
-      reminderEnabled,
-      reminderStartHour,
-      reminderEndHour,
-      reminderIntervalMin,
-      inactivityReminderEnabled,
-      weeklySummaryEnabled,
-      defaultDrinkPresetId,
-      bacCapGramsPerL,
-      bacOnLockScreenEnabled,
-      approachingCapNotifEnabled,
-      soberEstimateNotifEnabled,
-      installedAt,
-      createdAt,
-      updatedAt);
+        id,
+        username,
+        dailyGoalMl,
+        dayBoundaryHour,
+        units,
+        currency,
+        reminderEnabled,
+        reminderStartHour,
+        reminderEndHour,
+        reminderIntervalMin,
+        inactivityReminderEnabled,
+        weeklySummaryEnabled,
+        defaultDrinkPresetId,
+        bacCapGramsPerL,
+        bacOnLockScreenEnabled,
+        approachingCapNotifEnabled,
+        soberEstimateNotifEnabled,
+        installedAt,
+        createdAt,
+        updatedAt,
+      );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2730,28 +3263,29 @@ class UserPreferencesTableCompanion
     });
   }
 
-  UserPreferencesTableCompanion copyWith(
-      {Value<String>? id,
-      Value<String?>? username,
-      Value<int>? dailyGoalMl,
-      Value<int>? dayBoundaryHour,
-      Value<String>? units,
-      Value<String>? currency,
-      Value<bool>? reminderEnabled,
-      Value<int>? reminderStartHour,
-      Value<int>? reminderEndHour,
-      Value<int>? reminderIntervalMin,
-      Value<bool>? inactivityReminderEnabled,
-      Value<bool>? weeklySummaryEnabled,
-      Value<String?>? defaultDrinkPresetId,
-      Value<double?>? bacCapGramsPerL,
-      Value<bool>? bacOnLockScreenEnabled,
-      Value<bool>? approachingCapNotifEnabled,
-      Value<bool>? soberEstimateNotifEnabled,
-      Value<int>? installedAt,
-      Value<DateTime>? createdAt,
-      Value<DateTime>? updatedAt,
-      Value<int>? rowid}) {
+  UserPreferencesTableCompanion copyWith({
+    Value<String>? id,
+    Value<String?>? username,
+    Value<int>? dailyGoalMl,
+    Value<int>? dayBoundaryHour,
+    Value<String>? units,
+    Value<String>? currency,
+    Value<bool>? reminderEnabled,
+    Value<int>? reminderStartHour,
+    Value<int>? reminderEndHour,
+    Value<int>? reminderIntervalMin,
+    Value<bool>? inactivityReminderEnabled,
+    Value<bool>? weeklySummaryEnabled,
+    Value<String?>? defaultDrinkPresetId,
+    Value<double?>? bacCapGramsPerL,
+    Value<bool>? bacOnLockScreenEnabled,
+    Value<bool>? approachingCapNotifEnabled,
+    Value<bool>? soberEstimateNotifEnabled,
+    Value<int>? installedAt,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
     return UserPreferencesTableCompanion(
       id: id ?? this.id,
       username: username ?? this.username,
@@ -2815,31 +3349,37 @@ class UserPreferencesTableCompanion
       map['reminder_interval_min'] = Variable<int>(reminderIntervalMin.value);
     }
     if (inactivityReminderEnabled.present) {
-      map['inactivity_reminder_enabled'] =
-          Variable<bool>(inactivityReminderEnabled.value);
+      map['inactivity_reminder_enabled'] = Variable<bool>(
+        inactivityReminderEnabled.value,
+      );
     }
     if (weeklySummaryEnabled.present) {
-      map['weekly_summary_enabled'] =
-          Variable<bool>(weeklySummaryEnabled.value);
+      map['weekly_summary_enabled'] = Variable<bool>(
+        weeklySummaryEnabled.value,
+      );
     }
     if (defaultDrinkPresetId.present) {
-      map['default_drink_preset_id'] =
-          Variable<String>(defaultDrinkPresetId.value);
+      map['default_drink_preset_id'] = Variable<String>(
+        defaultDrinkPresetId.value,
+      );
     }
     if (bacCapGramsPerL.present) {
       map['bac_cap_grams_per_l'] = Variable<double>(bacCapGramsPerL.value);
     }
     if (bacOnLockScreenEnabled.present) {
-      map['bac_on_lock_screen_enabled'] =
-          Variable<bool>(bacOnLockScreenEnabled.value);
+      map['bac_on_lock_screen_enabled'] = Variable<bool>(
+        bacOnLockScreenEnabled.value,
+      );
     }
     if (approachingCapNotifEnabled.present) {
-      map['approaching_cap_notif_enabled'] =
-          Variable<bool>(approachingCapNotifEnabled.value);
+      map['approaching_cap_notif_enabled'] = Variable<bool>(
+        approachingCapNotifEnabled.value,
+      );
     }
     if (soberEstimateNotifEnabled.present) {
-      map['sober_estimate_notif_enabled'] =
-          Variable<bool>(soberEstimateNotifEnabled.value);
+      map['sober_estimate_notif_enabled'] = Variable<bool>(
+        soberEstimateNotifEnabled.value,
+      );
     }
     if (installedAt.present) {
       map['installed_at'] = Variable<int>(installedAt.value);
@@ -2897,8 +3437,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [drinkPresets, drinkEntries, userProfiles, userPreferencesTable];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+        drinkPresets,
+        drinkEntries,
+        userProfiles,
+        userPreferencesTable,
+      ];
 }
 
 typedef $$DrinkPresetsTableCreateCompanionBuilder = DrinkPresetsCompanion
@@ -2950,51 +3494,79 @@ class $$DrinkPresetsTableFilterComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+        column: $table.id,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnFilters(column));
+        column: $table.name,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get beverageType => $composableBuilder(
-      column: $table.beverageType, builder: (column) => ColumnFilters(column));
+        column: $table.beverageType,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get volumeMl => $composableBuilder(
-      column: $table.volumeMl, builder: (column) => ColumnFilters(column));
+        column: $table.volumeMl,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => ColumnFilters(column));
+        column: $table.abvPercent,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get regularPriceMinor => $composableBuilder(
-      column: $table.regularPriceMinor,
-      builder: (column) => ColumnFilters(column));
+        column: $table.regularPriceMinor,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get regularCurrency => $composableBuilder(
-      column: $table.regularCurrency,
-      builder: (column) => ColumnFilters(column));
+        column: $table.regularCurrency,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get iconKey => $composableBuilder(
-      column: $table.iconKey, builder: (column) => ColumnFilters(column));
+        column: $table.iconKey,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get iconColor => $composableBuilder(
-      column: $table.iconColor, builder: (column) => ColumnFilters(column));
+        column: $table.iconColor,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get isUserCreated => $composableBuilder(
-      column: $table.isUserCreated, builder: (column) => ColumnFilters(column));
+        column: $table.isUserCreated,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get isHidden => $composableBuilder(
-      column: $table.isHidden, builder: (column) => ColumnFilters(column));
+        column: $table.isHidden,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
-      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+        column: $table.sortOrder,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 }
 
 class $$DrinkPresetsTableOrderingComposer
@@ -3007,53 +3579,79 @@ class $$DrinkPresetsTableOrderingComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+        column: $table.id,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnOrderings(column));
+        column: $table.name,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get beverageType => $composableBuilder(
-      column: $table.beverageType,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.beverageType,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get volumeMl => $composableBuilder(
-      column: $table.volumeMl, builder: (column) => ColumnOrderings(column));
+        column: $table.volumeMl,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => ColumnOrderings(column));
+        column: $table.abvPercent,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get regularPriceMinor => $composableBuilder(
-      column: $table.regularPriceMinor,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.regularPriceMinor,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get regularCurrency => $composableBuilder(
-      column: $table.regularCurrency,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.regularCurrency,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get iconKey => $composableBuilder(
-      column: $table.iconKey, builder: (column) => ColumnOrderings(column));
+        column: $table.iconKey,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get iconColor => $composableBuilder(
-      column: $table.iconColor, builder: (column) => ColumnOrderings(column));
+        column: $table.iconColor,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get isUserCreated => $composableBuilder(
-      column: $table.isUserCreated,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.isUserCreated,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get isHidden => $composableBuilder(
-      column: $table.isHidden, builder: (column) => ColumnOrderings(column));
+        column: $table.isHidden,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get sortOrder => $composableBuilder(
-      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+        column: $table.sortOrder,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 }
 
 class $$DrinkPresetsTableAnnotationComposer
@@ -3072,19 +3670,27 @@ class $$DrinkPresetsTableAnnotationComposer
       $composableBuilder(column: $table.name, builder: (column) => column);
 
   GeneratedColumn<String> get beverageType => $composableBuilder(
-      column: $table.beverageType, builder: (column) => column);
+        column: $table.beverageType,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get volumeMl =>
       $composableBuilder(column: $table.volumeMl, builder: (column) => column);
 
   GeneratedColumn<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => column);
+        column: $table.abvPercent,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get regularPriceMinor => $composableBuilder(
-      column: $table.regularPriceMinor, builder: (column) => column);
+        column: $table.regularPriceMinor,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<String> get regularCurrency => $composableBuilder(
-      column: $table.regularCurrency, builder: (column) => column);
+        column: $table.regularCurrency,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<String> get iconKey =>
       $composableBuilder(column: $table.iconKey, builder: (column) => column);
@@ -3093,7 +3699,9 @@ class $$DrinkPresetsTableAnnotationComposer
       $composableBuilder(column: $table.iconColor, builder: (column) => column);
 
   GeneratedColumn<bool> get isUserCreated => $composableBuilder(
-      column: $table.isUserCreated, builder: (column) => column);
+        column: $table.isUserCreated,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get isHidden =>
       $composableBuilder(column: $table.isHidden, builder: (column) => column);
@@ -3122,97 +3730,99 @@ class $$DrinkPresetsTableTableManager extends RootTableManager<
     $$DrinkPresetsTableUpdateCompanionBuilder,
     (
       DrinkPresetRow,
-      BaseReferences<_$AppDatabase, $DrinkPresetsTable, DrinkPresetRow>
+      BaseReferences<_$AppDatabase, $DrinkPresetsTable, DrinkPresetRow>,
     ),
     DrinkPresetRow,
     PrefetchHooks Function()> {
   $$DrinkPresetsTableTableManager(_$AppDatabase db, $DrinkPresetsTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$DrinkPresetsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$DrinkPresetsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$DrinkPresetsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String> name = const Value.absent(),
-            Value<String> beverageType = const Value.absent(),
-            Value<int> volumeMl = const Value.absent(),
-            Value<double?> abvPercent = const Value.absent(),
-            Value<int?> regularPriceMinor = const Value.absent(),
-            Value<String?> regularCurrency = const Value.absent(),
-            Value<String> iconKey = const Value.absent(),
-            Value<String> iconColor = const Value.absent(),
-            Value<bool> isUserCreated = const Value.absent(),
-            Value<bool> isHidden = const Value.absent(),
-            Value<int> sortOrder = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
-            Value<DateTime> updatedAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              DrinkPresetsCompanion(
-            id: id,
-            name: name,
-            beverageType: beverageType,
-            volumeMl: volumeMl,
-            abvPercent: abvPercent,
-            regularPriceMinor: regularPriceMinor,
-            regularCurrency: regularCurrency,
-            iconKey: iconKey,
-            iconColor: iconColor,
-            isUserCreated: isUserCreated,
-            isHidden: isHidden,
-            sortOrder: sortOrder,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
+      : super(
+          TableManagerState(
+            db: db,
+            table: table,
+            createFilteringComposer: () =>
+                $$DrinkPresetsTableFilterComposer($db: db, $table: table),
+            createOrderingComposer: () =>
+                $$DrinkPresetsTableOrderingComposer($db: db, $table: table),
+            createComputedFieldComposer: () =>
+                $$DrinkPresetsTableAnnotationComposer($db: db, $table: table),
+            updateCompanionCallback: ({
+              Value<String> id = const Value.absent(),
+              Value<String> name = const Value.absent(),
+              Value<String> beverageType = const Value.absent(),
+              Value<int> volumeMl = const Value.absent(),
+              Value<double?> abvPercent = const Value.absent(),
+              Value<int?> regularPriceMinor = const Value.absent(),
+              Value<String?> regularCurrency = const Value.absent(),
+              Value<String> iconKey = const Value.absent(),
+              Value<String> iconColor = const Value.absent(),
+              Value<bool> isUserCreated = const Value.absent(),
+              Value<bool> isHidden = const Value.absent(),
+              Value<int> sortOrder = const Value.absent(),
+              Value<DateTime> createdAt = const Value.absent(),
+              Value<DateTime> updatedAt = const Value.absent(),
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                DrinkPresetsCompanion(
+              id: id,
+              name: name,
+              beverageType: beverageType,
+              volumeMl: volumeMl,
+              abvPercent: abvPercent,
+              regularPriceMinor: regularPriceMinor,
+              regularCurrency: regularCurrency,
+              iconKey: iconKey,
+              iconColor: iconColor,
+              isUserCreated: isUserCreated,
+              isHidden: isHidden,
+              sortOrder: sortOrder,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            createCompanionCallback: ({
+              required String id,
+              required String name,
+              required String beverageType,
+              required int volumeMl,
+              Value<double?> abvPercent = const Value.absent(),
+              Value<int?> regularPriceMinor = const Value.absent(),
+              Value<String?> regularCurrency = const Value.absent(),
+              required String iconKey,
+              required String iconColor,
+              required bool isUserCreated,
+              Value<bool> isHidden = const Value.absent(),
+              required int sortOrder,
+              required DateTime createdAt,
+              required DateTime updatedAt,
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                DrinkPresetsCompanion.insert(
+              id: id,
+              name: name,
+              beverageType: beverageType,
+              volumeMl: volumeMl,
+              abvPercent: abvPercent,
+              regularPriceMinor: regularPriceMinor,
+              regularCurrency: regularCurrency,
+              iconKey: iconKey,
+              iconColor: iconColor,
+              isUserCreated: isUserCreated,
+              isHidden: isHidden,
+              sortOrder: sortOrder,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            withReferenceMapper: (p0) => p0
+                .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+                .toList(),
+            prefetchHooksCallback: null,
           ),
-          createCompanionCallback: ({
-            required String id,
-            required String name,
-            required String beverageType,
-            required int volumeMl,
-            Value<double?> abvPercent = const Value.absent(),
-            Value<int?> regularPriceMinor = const Value.absent(),
-            Value<String?> regularCurrency = const Value.absent(),
-            required String iconKey,
-            required String iconColor,
-            required bool isUserCreated,
-            Value<bool> isHidden = const Value.absent(),
-            required int sortOrder,
-            required DateTime createdAt,
-            required DateTime updatedAt,
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              DrinkPresetsCompanion.insert(
-            id: id,
-            name: name,
-            beverageType: beverageType,
-            volumeMl: volumeMl,
-            abvPercent: abvPercent,
-            regularPriceMinor: regularPriceMinor,
-            regularCurrency: regularCurrency,
-            iconKey: iconKey,
-            iconColor: iconColor,
-            isUserCreated: isUserCreated,
-            isHidden: isHidden,
-            sortOrder: sortOrder,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
+        );
 }
 
 typedef $$DrinkPresetsTableProcessedTableManager = ProcessedTableManager<
@@ -3226,7 +3836,7 @@ typedef $$DrinkPresetsTableProcessedTableManager = ProcessedTableManager<
     $$DrinkPresetsTableUpdateCompanionBuilder,
     (
       DrinkPresetRow,
-      BaseReferences<_$AppDatabase, $DrinkPresetsTable, DrinkPresetRow>
+      BaseReferences<_$AppDatabase, $DrinkPresetsTable, DrinkPresetRow>,
     ),
     DrinkPresetRow,
     PrefetchHooks Function()>;
@@ -3275,43 +3885,69 @@ class $$DrinkEntriesTableFilterComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+        column: $table.id,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnFilters(column));
+        column: $table.name,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get beverageType => $composableBuilder(
-      column: $table.beverageType, builder: (column) => ColumnFilters(column));
+        column: $table.beverageType,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get volumeMl => $composableBuilder(
-      column: $table.volumeMl, builder: (column) => ColumnFilters(column));
+        column: $table.volumeMl,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => ColumnFilters(column));
+        column: $table.abvPercent,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get priceMinor => $composableBuilder(
-      column: $table.priceMinor, builder: (column) => ColumnFilters(column));
+        column: $table.priceMinor,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnFilters(column));
+        column: $table.currency,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get iconKey => $composableBuilder(
-      column: $table.iconKey, builder: (column) => ColumnFilters(column));
+        column: $table.iconKey,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get iconColor => $composableBuilder(
-      column: $table.iconColor, builder: (column) => ColumnFilters(column));
+        column: $table.iconColor,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get consumedAt => $composableBuilder(
-      column: $table.consumedAt, builder: (column) => ColumnFilters(column));
+        column: $table.consumedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 }
 
 class $$DrinkEntriesTableOrderingComposer
@@ -3324,44 +3960,69 @@ class $$DrinkEntriesTableOrderingComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+        column: $table.id,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get name => $composableBuilder(
-      column: $table.name, builder: (column) => ColumnOrderings(column));
+        column: $table.name,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get beverageType => $composableBuilder(
-      column: $table.beverageType,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.beverageType,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get volumeMl => $composableBuilder(
-      column: $table.volumeMl, builder: (column) => ColumnOrderings(column));
+        column: $table.volumeMl,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => ColumnOrderings(column));
+        column: $table.abvPercent,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get priceMinor => $composableBuilder(
-      column: $table.priceMinor, builder: (column) => ColumnOrderings(column));
+        column: $table.priceMinor,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnOrderings(column));
+        column: $table.currency,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get iconKey => $composableBuilder(
-      column: $table.iconKey, builder: (column) => ColumnOrderings(column));
+        column: $table.iconKey,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get iconColor => $composableBuilder(
-      column: $table.iconColor, builder: (column) => ColumnOrderings(column));
+        column: $table.iconColor,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get consumedAt => $composableBuilder(
-      column: $table.consumedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.consumedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 }
 
 class $$DrinkEntriesTableAnnotationComposer
@@ -3380,16 +4041,22 @@ class $$DrinkEntriesTableAnnotationComposer
       $composableBuilder(column: $table.name, builder: (column) => column);
 
   GeneratedColumn<String> get beverageType => $composableBuilder(
-      column: $table.beverageType, builder: (column) => column);
+        column: $table.beverageType,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get volumeMl =>
       $composableBuilder(column: $table.volumeMl, builder: (column) => column);
 
   GeneratedColumn<double> get abvPercent => $composableBuilder(
-      column: $table.abvPercent, builder: (column) => column);
+        column: $table.abvPercent,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get priceMinor => $composableBuilder(
-      column: $table.priceMinor, builder: (column) => column);
+        column: $table.priceMinor,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<String> get currency =>
       $composableBuilder(column: $table.currency, builder: (column) => column);
@@ -3401,7 +4068,9 @@ class $$DrinkEntriesTableAnnotationComposer
       $composableBuilder(column: $table.iconColor, builder: (column) => column);
 
   GeneratedColumn<DateTime> get consumedAt => $composableBuilder(
-      column: $table.consumedAt, builder: (column) => column);
+        column: $table.consumedAt,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -3424,89 +4093,91 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
     $$DrinkEntriesTableUpdateCompanionBuilder,
     (
       DrinkEntryRow,
-      BaseReferences<_$AppDatabase, $DrinkEntriesTable, DrinkEntryRow>
+      BaseReferences<_$AppDatabase, $DrinkEntriesTable, DrinkEntryRow>,
     ),
     DrinkEntryRow,
     PrefetchHooks Function()> {
   $$DrinkEntriesTableTableManager(_$AppDatabase db, $DrinkEntriesTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$DrinkEntriesTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$DrinkEntriesTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$DrinkEntriesTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String?> name = const Value.absent(),
-            Value<String> beverageType = const Value.absent(),
-            Value<int> volumeMl = const Value.absent(),
-            Value<double?> abvPercent = const Value.absent(),
-            Value<int?> priceMinor = const Value.absent(),
-            Value<String?> currency = const Value.absent(),
-            Value<String?> iconKey = const Value.absent(),
-            Value<String?> iconColor = const Value.absent(),
-            Value<DateTime> consumedAt = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
-            Value<DateTime> updatedAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              DrinkEntriesCompanion(
-            id: id,
-            name: name,
-            beverageType: beverageType,
-            volumeMl: volumeMl,
-            abvPercent: abvPercent,
-            priceMinor: priceMinor,
-            currency: currency,
-            iconKey: iconKey,
-            iconColor: iconColor,
-            consumedAt: consumedAt,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
+      : super(
+          TableManagerState(
+            db: db,
+            table: table,
+            createFilteringComposer: () =>
+                $$DrinkEntriesTableFilterComposer($db: db, $table: table),
+            createOrderingComposer: () =>
+                $$DrinkEntriesTableOrderingComposer($db: db, $table: table),
+            createComputedFieldComposer: () =>
+                $$DrinkEntriesTableAnnotationComposer($db: db, $table: table),
+            updateCompanionCallback: ({
+              Value<String> id = const Value.absent(),
+              Value<String?> name = const Value.absent(),
+              Value<String> beverageType = const Value.absent(),
+              Value<int> volumeMl = const Value.absent(),
+              Value<double?> abvPercent = const Value.absent(),
+              Value<int?> priceMinor = const Value.absent(),
+              Value<String?> currency = const Value.absent(),
+              Value<String?> iconKey = const Value.absent(),
+              Value<String?> iconColor = const Value.absent(),
+              Value<DateTime> consumedAt = const Value.absent(),
+              Value<DateTime> createdAt = const Value.absent(),
+              Value<DateTime> updatedAt = const Value.absent(),
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                DrinkEntriesCompanion(
+              id: id,
+              name: name,
+              beverageType: beverageType,
+              volumeMl: volumeMl,
+              abvPercent: abvPercent,
+              priceMinor: priceMinor,
+              currency: currency,
+              iconKey: iconKey,
+              iconColor: iconColor,
+              consumedAt: consumedAt,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            createCompanionCallback: ({
+              required String id,
+              Value<String?> name = const Value.absent(),
+              required String beverageType,
+              required int volumeMl,
+              Value<double?> abvPercent = const Value.absent(),
+              Value<int?> priceMinor = const Value.absent(),
+              Value<String?> currency = const Value.absent(),
+              Value<String?> iconKey = const Value.absent(),
+              Value<String?> iconColor = const Value.absent(),
+              required DateTime consumedAt,
+              required DateTime createdAt,
+              required DateTime updatedAt,
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                DrinkEntriesCompanion.insert(
+              id: id,
+              name: name,
+              beverageType: beverageType,
+              volumeMl: volumeMl,
+              abvPercent: abvPercent,
+              priceMinor: priceMinor,
+              currency: currency,
+              iconKey: iconKey,
+              iconColor: iconColor,
+              consumedAt: consumedAt,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            withReferenceMapper: (p0) => p0
+                .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+                .toList(),
+            prefetchHooksCallback: null,
           ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String?> name = const Value.absent(),
-            required String beverageType,
-            required int volumeMl,
-            Value<double?> abvPercent = const Value.absent(),
-            Value<int?> priceMinor = const Value.absent(),
-            Value<String?> currency = const Value.absent(),
-            Value<String?> iconKey = const Value.absent(),
-            Value<String?> iconColor = const Value.absent(),
-            required DateTime consumedAt,
-            required DateTime createdAt,
-            required DateTime updatedAt,
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              DrinkEntriesCompanion.insert(
-            id: id,
-            name: name,
-            beverageType: beverageType,
-            volumeMl: volumeMl,
-            abvPercent: abvPercent,
-            priceMinor: priceMinor,
-            currency: currency,
-            iconKey: iconKey,
-            iconColor: iconColor,
-            consumedAt: consumedAt,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
+        );
 }
 
 typedef $$DrinkEntriesTableProcessedTableManager = ProcessedTableManager<
@@ -3520,7 +4191,7 @@ typedef $$DrinkEntriesTableProcessedTableManager = ProcessedTableManager<
     $$DrinkEntriesTableUpdateCompanionBuilder,
     (
       DrinkEntryRow,
-      BaseReferences<_$AppDatabase, $DrinkEntriesTable, DrinkEntryRow>
+      BaseReferences<_$AppDatabase, $DrinkEntriesTable, DrinkEntryRow>,
     ),
     DrinkEntryRow,
     PrefetchHooks Function()>;
@@ -3559,28 +4230,44 @@ class $$UserProfilesTableFilterComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+        column: $table.id,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get gender => $composableBuilder(
-      column: $table.gender, builder: (column) => ColumnFilters(column));
+        column: $table.gender,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<double> get weightKg => $composableBuilder(
-      column: $table.weightKg, builder: (column) => ColumnFilters(column));
+        column: $table.weightKg,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<double> get heightCm => $composableBuilder(
-      column: $table.heightCm, builder: (column) => ColumnFilters(column));
+        column: $table.heightCm,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get birthDate => $composableBuilder(
-      column: $table.birthDate, builder: (column) => ColumnFilters(column));
+        column: $table.birthDate,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 }
 
 class $$UserProfilesTableOrderingComposer
@@ -3593,28 +4280,44 @@ class $$UserProfilesTableOrderingComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+        column: $table.id,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get gender => $composableBuilder(
-      column: $table.gender, builder: (column) => ColumnOrderings(column));
+        column: $table.gender,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<double> get weightKg => $composableBuilder(
-      column: $table.weightKg, builder: (column) => ColumnOrderings(column));
+        column: $table.weightKg,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<double> get heightCm => $composableBuilder(
-      column: $table.heightCm, builder: (column) => ColumnOrderings(column));
+        column: $table.heightCm,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get birthDate => $composableBuilder(
-      column: $table.birthDate, builder: (column) => ColumnOrderings(column));
+        column: $table.birthDate,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
-      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.deletedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 }
 
 class $$UserProfilesTableAnnotationComposer
@@ -3662,69 +4365,71 @@ class $$UserProfilesTableTableManager extends RootTableManager<
     $$UserProfilesTableUpdateCompanionBuilder,
     (
       UserProfileRow,
-      BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileRow>
+      BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileRow>,
     ),
     UserProfileRow,
     PrefetchHooks Function()> {
   $$UserProfilesTableTableManager(_$AppDatabase db, $UserProfilesTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$UserProfilesTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$UserProfilesTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$UserProfilesTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String?> gender = const Value.absent(),
-            Value<double?> weightKg = const Value.absent(),
-            Value<double?> heightCm = const Value.absent(),
-            Value<String?> birthDate = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
-            Value<DateTime> updatedAt = const Value.absent(),
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              UserProfilesCompanion(
-            id: id,
-            gender: gender,
-            weightKg: weightKg,
-            heightCm: heightCm,
-            birthDate: birthDate,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
+      : super(
+          TableManagerState(
+            db: db,
+            table: table,
+            createFilteringComposer: () =>
+                $$UserProfilesTableFilterComposer($db: db, $table: table),
+            createOrderingComposer: () =>
+                $$UserProfilesTableOrderingComposer($db: db, $table: table),
+            createComputedFieldComposer: () =>
+                $$UserProfilesTableAnnotationComposer($db: db, $table: table),
+            updateCompanionCallback: ({
+              Value<String> id = const Value.absent(),
+              Value<String?> gender = const Value.absent(),
+              Value<double?> weightKg = const Value.absent(),
+              Value<double?> heightCm = const Value.absent(),
+              Value<String?> birthDate = const Value.absent(),
+              Value<DateTime> createdAt = const Value.absent(),
+              Value<DateTime> updatedAt = const Value.absent(),
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                UserProfilesCompanion(
+              id: id,
+              gender: gender,
+              weightKg: weightKg,
+              heightCm: heightCm,
+              birthDate: birthDate,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            createCompanionCallback: ({
+              required String id,
+              Value<String?> gender = const Value.absent(),
+              Value<double?> weightKg = const Value.absent(),
+              Value<double?> heightCm = const Value.absent(),
+              Value<String?> birthDate = const Value.absent(),
+              required DateTime createdAt,
+              required DateTime updatedAt,
+              Value<DateTime?> deletedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                UserProfilesCompanion.insert(
+              id: id,
+              gender: gender,
+              weightKg: weightKg,
+              heightCm: heightCm,
+              birthDate: birthDate,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              deletedAt: deletedAt,
+              rowid: rowid,
+            ),
+            withReferenceMapper: (p0) => p0
+                .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+                .toList(),
+            prefetchHooksCallback: null,
           ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String?> gender = const Value.absent(),
-            Value<double?> weightKg = const Value.absent(),
-            Value<double?> heightCm = const Value.absent(),
-            Value<String?> birthDate = const Value.absent(),
-            required DateTime createdAt,
-            required DateTime updatedAt,
-            Value<DateTime?> deletedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              UserProfilesCompanion.insert(
-            id: id,
-            gender: gender,
-            weightKg: weightKg,
-            heightCm: heightCm,
-            birthDate: birthDate,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            deletedAt: deletedAt,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
+        );
 }
 
 typedef $$UserProfilesTableProcessedTableManager = ProcessedTableManager<
@@ -3738,7 +4443,7 @@ typedef $$UserProfilesTableProcessedTableManager = ProcessedTableManager<
     $$UserProfilesTableUpdateCompanionBuilder,
     (
       UserProfileRow,
-      BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileRow>
+      BaseReferences<_$AppDatabase, $UserProfilesTable, UserProfileRow>,
     ),
     UserProfileRow,
     PrefetchHooks Function()>;
@@ -3801,76 +4506,104 @@ class $$UserPreferencesTableTableFilterComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnFilters<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnFilters(column));
+        column: $table.id,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get username => $composableBuilder(
-      column: $table.username, builder: (column) => ColumnFilters(column));
+        column: $table.username,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get dailyGoalMl => $composableBuilder(
-      column: $table.dailyGoalMl, builder: (column) => ColumnFilters(column));
+        column: $table.dailyGoalMl,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get dayBoundaryHour => $composableBuilder(
-      column: $table.dayBoundaryHour,
-      builder: (column) => ColumnFilters(column));
+        column: $table.dayBoundaryHour,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get units => $composableBuilder(
-      column: $table.units, builder: (column) => ColumnFilters(column));
+        column: $table.units,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnFilters(column));
+        column: $table.currency,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get reminderEnabled => $composableBuilder(
-      column: $table.reminderEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.reminderEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get reminderStartHour => $composableBuilder(
-      column: $table.reminderStartHour,
-      builder: (column) => ColumnFilters(column));
+        column: $table.reminderStartHour,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get reminderEndHour => $composableBuilder(
-      column: $table.reminderEndHour,
-      builder: (column) => ColumnFilters(column));
+        column: $table.reminderEndHour,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get reminderIntervalMin => $composableBuilder(
-      column: $table.reminderIntervalMin,
-      builder: (column) => ColumnFilters(column));
+        column: $table.reminderIntervalMin,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get inactivityReminderEnabled => $composableBuilder(
-      column: $table.inactivityReminderEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.inactivityReminderEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get weeklySummaryEnabled => $composableBuilder(
-      column: $table.weeklySummaryEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.weeklySummaryEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<String> get defaultDrinkPresetId => $composableBuilder(
-      column: $table.defaultDrinkPresetId,
-      builder: (column) => ColumnFilters(column));
+        column: $table.defaultDrinkPresetId,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<double> get bacCapGramsPerL => $composableBuilder(
-      column: $table.bacCapGramsPerL,
-      builder: (column) => ColumnFilters(column));
+        column: $table.bacCapGramsPerL,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get bacOnLockScreenEnabled => $composableBuilder(
-      column: $table.bacOnLockScreenEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.bacOnLockScreenEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get approachingCapNotifEnabled => $composableBuilder(
-      column: $table.approachingCapNotifEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.approachingCapNotifEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<bool> get soberEstimateNotifEnabled => $composableBuilder(
-      column: $table.soberEstimateNotifEnabled,
-      builder: (column) => ColumnFilters(column));
+        column: $table.soberEstimateNotifEnabled,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<int> get installedAt => $composableBuilder(
-      column: $table.installedAt, builder: (column) => ColumnFilters(column));
+        column: $table.installedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnFilters(column),
+      );
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnFilters(column),
+      );
 }
 
 class $$UserPreferencesTableTableOrderingComposer
@@ -3883,76 +4616,104 @@ class $$UserPreferencesTableTableOrderingComposer
     super.$removeJoinBuilderFromRootComposer,
   });
   ColumnOrderings<String> get id => $composableBuilder(
-      column: $table.id, builder: (column) => ColumnOrderings(column));
+        column: $table.id,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get username => $composableBuilder(
-      column: $table.username, builder: (column) => ColumnOrderings(column));
+        column: $table.username,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get dailyGoalMl => $composableBuilder(
-      column: $table.dailyGoalMl, builder: (column) => ColumnOrderings(column));
+        column: $table.dailyGoalMl,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get dayBoundaryHour => $composableBuilder(
-      column: $table.dayBoundaryHour,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.dayBoundaryHour,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get units => $composableBuilder(
-      column: $table.units, builder: (column) => ColumnOrderings(column));
+        column: $table.units,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get currency => $composableBuilder(
-      column: $table.currency, builder: (column) => ColumnOrderings(column));
+        column: $table.currency,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get reminderEnabled => $composableBuilder(
-      column: $table.reminderEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.reminderEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get reminderStartHour => $composableBuilder(
-      column: $table.reminderStartHour,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.reminderStartHour,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get reminderEndHour => $composableBuilder(
-      column: $table.reminderEndHour,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.reminderEndHour,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get reminderIntervalMin => $composableBuilder(
-      column: $table.reminderIntervalMin,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.reminderIntervalMin,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get inactivityReminderEnabled => $composableBuilder(
-      column: $table.inactivityReminderEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.inactivityReminderEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get weeklySummaryEnabled => $composableBuilder(
-      column: $table.weeklySummaryEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.weeklySummaryEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<String> get defaultDrinkPresetId => $composableBuilder(
-      column: $table.defaultDrinkPresetId,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.defaultDrinkPresetId,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<double> get bacCapGramsPerL => $composableBuilder(
-      column: $table.bacCapGramsPerL,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.bacCapGramsPerL,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get bacOnLockScreenEnabled => $composableBuilder(
-      column: $table.bacOnLockScreenEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.bacOnLockScreenEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get approachingCapNotifEnabled => $composableBuilder(
-      column: $table.approachingCapNotifEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.approachingCapNotifEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get soberEstimateNotifEnabled => $composableBuilder(
-      column: $table.soberEstimateNotifEnabled,
-      builder: (column) => ColumnOrderings(column));
+        column: $table.soberEstimateNotifEnabled,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<int> get installedAt => $composableBuilder(
-      column: $table.installedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.installedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+        column: $table.createdAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+        column: $table.updatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 }
 
 class $$UserPreferencesTableTableAnnotationComposer
@@ -3971,10 +4732,14 @@ class $$UserPreferencesTableTableAnnotationComposer
       $composableBuilder(column: $table.username, builder: (column) => column);
 
   GeneratedColumn<int> get dailyGoalMl => $composableBuilder(
-      column: $table.dailyGoalMl, builder: (column) => column);
+        column: $table.dailyGoalMl,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get dayBoundaryHour => $composableBuilder(
-      column: $table.dayBoundaryHour, builder: (column) => column);
+        column: $table.dayBoundaryHour,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<String> get units =>
       $composableBuilder(column: $table.units, builder: (column) => column);
@@ -3983,40 +4748,64 @@ class $$UserPreferencesTableTableAnnotationComposer
       $composableBuilder(column: $table.currency, builder: (column) => column);
 
   GeneratedColumn<bool> get reminderEnabled => $composableBuilder(
-      column: $table.reminderEnabled, builder: (column) => column);
+        column: $table.reminderEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get reminderStartHour => $composableBuilder(
-      column: $table.reminderStartHour, builder: (column) => column);
+        column: $table.reminderStartHour,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get reminderEndHour => $composableBuilder(
-      column: $table.reminderEndHour, builder: (column) => column);
+        column: $table.reminderEndHour,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get reminderIntervalMin => $composableBuilder(
-      column: $table.reminderIntervalMin, builder: (column) => column);
+        column: $table.reminderIntervalMin,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get inactivityReminderEnabled => $composableBuilder(
-      column: $table.inactivityReminderEnabled, builder: (column) => column);
+        column: $table.inactivityReminderEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get weeklySummaryEnabled => $composableBuilder(
-      column: $table.weeklySummaryEnabled, builder: (column) => column);
+        column: $table.weeklySummaryEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<String> get defaultDrinkPresetId => $composableBuilder(
-      column: $table.defaultDrinkPresetId, builder: (column) => column);
+        column: $table.defaultDrinkPresetId,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<double> get bacCapGramsPerL => $composableBuilder(
-      column: $table.bacCapGramsPerL, builder: (column) => column);
+        column: $table.bacCapGramsPerL,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get bacOnLockScreenEnabled => $composableBuilder(
-      column: $table.bacOnLockScreenEnabled, builder: (column) => column);
+        column: $table.bacOnLockScreenEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get approachingCapNotifEnabled => $composableBuilder(
-      column: $table.approachingCapNotifEnabled, builder: (column) => column);
+        column: $table.approachingCapNotifEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get soberEstimateNotifEnabled => $composableBuilder(
-      column: $table.soberEstimateNotifEnabled, builder: (column) => column);
+        column: $table.soberEstimateNotifEnabled,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<int> get installedAt => $composableBuilder(
-      column: $table.installedAt, builder: (column) => column);
+        column: $table.installedAt,
+        builder: (column) => column,
+      );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4037,120 +4826,128 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
     (
       UserPreferencesRow,
       BaseReferences<_$AppDatabase, $UserPreferencesTableTable,
-          UserPreferencesRow>
+          UserPreferencesRow>,
     ),
     UserPreferencesRow,
     PrefetchHooks Function()> {
   $$UserPreferencesTableTableTableManager(
-      _$AppDatabase db, $UserPreferencesTableTable table)
-      : super(TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$UserPreferencesTableTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$UserPreferencesTableTableOrderingComposer(
-                  $db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$UserPreferencesTableTableAnnotationComposer(
-                  $db: db, $table: table),
-          updateCompanionCallback: ({
-            Value<String> id = const Value.absent(),
-            Value<String?> username = const Value.absent(),
-            Value<int> dailyGoalMl = const Value.absent(),
-            Value<int> dayBoundaryHour = const Value.absent(),
-            Value<String> units = const Value.absent(),
-            Value<String> currency = const Value.absent(),
-            Value<bool> reminderEnabled = const Value.absent(),
-            Value<int> reminderStartHour = const Value.absent(),
-            Value<int> reminderEndHour = const Value.absent(),
-            Value<int> reminderIntervalMin = const Value.absent(),
-            Value<bool> inactivityReminderEnabled = const Value.absent(),
-            Value<bool> weeklySummaryEnabled = const Value.absent(),
-            Value<String?> defaultDrinkPresetId = const Value.absent(),
-            Value<double?> bacCapGramsPerL = const Value.absent(),
-            Value<bool> bacOnLockScreenEnabled = const Value.absent(),
-            Value<bool> approachingCapNotifEnabled = const Value.absent(),
-            Value<bool> soberEstimateNotifEnabled = const Value.absent(),
-            Value<int> installedAt = const Value.absent(),
-            Value<DateTime> createdAt = const Value.absent(),
-            Value<DateTime> updatedAt = const Value.absent(),
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              UserPreferencesTableCompanion(
-            id: id,
-            username: username,
-            dailyGoalMl: dailyGoalMl,
-            dayBoundaryHour: dayBoundaryHour,
-            units: units,
-            currency: currency,
-            reminderEnabled: reminderEnabled,
-            reminderStartHour: reminderStartHour,
-            reminderEndHour: reminderEndHour,
-            reminderIntervalMin: reminderIntervalMin,
-            inactivityReminderEnabled: inactivityReminderEnabled,
-            weeklySummaryEnabled: weeklySummaryEnabled,
-            defaultDrinkPresetId: defaultDrinkPresetId,
-            bacCapGramsPerL: bacCapGramsPerL,
-            bacOnLockScreenEnabled: bacOnLockScreenEnabled,
-            approachingCapNotifEnabled: approachingCapNotifEnabled,
-            soberEstimateNotifEnabled: soberEstimateNotifEnabled,
-            installedAt: installedAt,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            rowid: rowid,
+    _$AppDatabase db,
+    $UserPreferencesTableTable table,
+  ) : super(
+          TableManagerState(
+            db: db,
+            table: table,
+            createFilteringComposer: () =>
+                $$UserPreferencesTableTableFilterComposer(
+                    $db: db, $table: table),
+            createOrderingComposer: () =>
+                $$UserPreferencesTableTableOrderingComposer(
+              $db: db,
+              $table: table,
+            ),
+            createComputedFieldComposer: () =>
+                $$UserPreferencesTableTableAnnotationComposer(
+              $db: db,
+              $table: table,
+            ),
+            updateCompanionCallback: ({
+              Value<String> id = const Value.absent(),
+              Value<String?> username = const Value.absent(),
+              Value<int> dailyGoalMl = const Value.absent(),
+              Value<int> dayBoundaryHour = const Value.absent(),
+              Value<String> units = const Value.absent(),
+              Value<String> currency = const Value.absent(),
+              Value<bool> reminderEnabled = const Value.absent(),
+              Value<int> reminderStartHour = const Value.absent(),
+              Value<int> reminderEndHour = const Value.absent(),
+              Value<int> reminderIntervalMin = const Value.absent(),
+              Value<bool> inactivityReminderEnabled = const Value.absent(),
+              Value<bool> weeklySummaryEnabled = const Value.absent(),
+              Value<String?> defaultDrinkPresetId = const Value.absent(),
+              Value<double?> bacCapGramsPerL = const Value.absent(),
+              Value<bool> bacOnLockScreenEnabled = const Value.absent(),
+              Value<bool> approachingCapNotifEnabled = const Value.absent(),
+              Value<bool> soberEstimateNotifEnabled = const Value.absent(),
+              Value<int> installedAt = const Value.absent(),
+              Value<DateTime> createdAt = const Value.absent(),
+              Value<DateTime> updatedAt = const Value.absent(),
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                UserPreferencesTableCompanion(
+              id: id,
+              username: username,
+              dailyGoalMl: dailyGoalMl,
+              dayBoundaryHour: dayBoundaryHour,
+              units: units,
+              currency: currency,
+              reminderEnabled: reminderEnabled,
+              reminderStartHour: reminderStartHour,
+              reminderEndHour: reminderEndHour,
+              reminderIntervalMin: reminderIntervalMin,
+              inactivityReminderEnabled: inactivityReminderEnabled,
+              weeklySummaryEnabled: weeklySummaryEnabled,
+              defaultDrinkPresetId: defaultDrinkPresetId,
+              bacCapGramsPerL: bacCapGramsPerL,
+              bacOnLockScreenEnabled: bacOnLockScreenEnabled,
+              approachingCapNotifEnabled: approachingCapNotifEnabled,
+              soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+              installedAt: installedAt,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              rowid: rowid,
+            ),
+            createCompanionCallback: ({
+              required String id,
+              Value<String?> username = const Value.absent(),
+              required int dailyGoalMl,
+              Value<int> dayBoundaryHour = const Value.absent(),
+              Value<String> units = const Value.absent(),
+              Value<String> currency = const Value.absent(),
+              required bool reminderEnabled,
+              Value<int> reminderStartHour = const Value.absent(),
+              Value<int> reminderEndHour = const Value.absent(),
+              Value<int> reminderIntervalMin = const Value.absent(),
+              required bool inactivityReminderEnabled,
+              required bool weeklySummaryEnabled,
+              Value<String?> defaultDrinkPresetId = const Value.absent(),
+              Value<double?> bacCapGramsPerL = const Value.absent(),
+              required bool bacOnLockScreenEnabled,
+              required bool approachingCapNotifEnabled,
+              required bool soberEstimateNotifEnabled,
+              required int installedAt,
+              required DateTime createdAt,
+              required DateTime updatedAt,
+              Value<int> rowid = const Value.absent(),
+            }) =>
+                UserPreferencesTableCompanion.insert(
+              id: id,
+              username: username,
+              dailyGoalMl: dailyGoalMl,
+              dayBoundaryHour: dayBoundaryHour,
+              units: units,
+              currency: currency,
+              reminderEnabled: reminderEnabled,
+              reminderStartHour: reminderStartHour,
+              reminderEndHour: reminderEndHour,
+              reminderIntervalMin: reminderIntervalMin,
+              inactivityReminderEnabled: inactivityReminderEnabled,
+              weeklySummaryEnabled: weeklySummaryEnabled,
+              defaultDrinkPresetId: defaultDrinkPresetId,
+              bacCapGramsPerL: bacCapGramsPerL,
+              bacOnLockScreenEnabled: bacOnLockScreenEnabled,
+              approachingCapNotifEnabled: approachingCapNotifEnabled,
+              soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+              installedAt: installedAt,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+              rowid: rowid,
+            ),
+            withReferenceMapper: (p0) => p0
+                .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+                .toList(),
+            prefetchHooksCallback: null,
           ),
-          createCompanionCallback: ({
-            required String id,
-            Value<String?> username = const Value.absent(),
-            required int dailyGoalMl,
-            Value<int> dayBoundaryHour = const Value.absent(),
-            Value<String> units = const Value.absent(),
-            Value<String> currency = const Value.absent(),
-            required bool reminderEnabled,
-            Value<int> reminderStartHour = const Value.absent(),
-            Value<int> reminderEndHour = const Value.absent(),
-            Value<int> reminderIntervalMin = const Value.absent(),
-            required bool inactivityReminderEnabled,
-            required bool weeklySummaryEnabled,
-            Value<String?> defaultDrinkPresetId = const Value.absent(),
-            Value<double?> bacCapGramsPerL = const Value.absent(),
-            required bool bacOnLockScreenEnabled,
-            required bool approachingCapNotifEnabled,
-            required bool soberEstimateNotifEnabled,
-            required int installedAt,
-            required DateTime createdAt,
-            required DateTime updatedAt,
-            Value<int> rowid = const Value.absent(),
-          }) =>
-              UserPreferencesTableCompanion.insert(
-            id: id,
-            username: username,
-            dailyGoalMl: dailyGoalMl,
-            dayBoundaryHour: dayBoundaryHour,
-            units: units,
-            currency: currency,
-            reminderEnabled: reminderEnabled,
-            reminderStartHour: reminderStartHour,
-            reminderEndHour: reminderEndHour,
-            reminderIntervalMin: reminderIntervalMin,
-            inactivityReminderEnabled: inactivityReminderEnabled,
-            weeklySummaryEnabled: weeklySummaryEnabled,
-            defaultDrinkPresetId: defaultDrinkPresetId,
-            bacCapGramsPerL: bacCapGramsPerL,
-            bacOnLockScreenEnabled: bacOnLockScreenEnabled,
-            approachingCapNotifEnabled: approachingCapNotifEnabled,
-            soberEstimateNotifEnabled: soberEstimateNotifEnabled,
-            installedAt: installedAt,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            rowid: rowid,
-          ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ));
+        );
 }
 
 typedef $$UserPreferencesTableTableProcessedTableManager
@@ -4166,7 +4963,7 @@ typedef $$UserPreferencesTableTableProcessedTableManager
         (
           UserPreferencesRow,
           BaseReferences<_$AppDatabase, $UserPreferencesTableTable,
-              UserPreferencesRow>
+              UserPreferencesRow>,
         ),
         UserPreferencesRow,
         PrefetchHooks Function()>;
