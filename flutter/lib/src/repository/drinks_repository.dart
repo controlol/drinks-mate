@@ -43,8 +43,10 @@ class DrinksRepository {
   /// Creates a new user-owned preset.
   ///
   /// Validates [name] via [validatePresetName]; throws [ArgumentError] on
-  /// failure. All other fields are passed through without additional validation
-  /// (scope: issue #16 AC — only name validation required here).
+  /// failure. Also enforces:
+  /// - [volumeMl] > 0 (data-model.md §DrinkPreset: "Required, must be > 0")
+  /// - [abvPercent] non-null for alcoholic [beverageType] (null → 0 g alcohol in BAC)
+  /// - [regularCurrency] non-null when [regularPriceMinor] is set
   Future<DrinkPreset> createPreset({
     required String name,
     required BeverageType beverageType,
@@ -57,6 +59,21 @@ class DrinksRepository {
     required int sortOrder,
   }) async {
     _assertValidPresetName(name);
+    if (volumeMl <= 0) {
+      throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
+    }
+    if (beverageType.isAlcoholic && abvPercent == null) {
+      throw ArgumentError.value(
+        abvPercent,
+        'abvPercent',
+        'Required for alcoholic beverageType $beverageType',
+      );
+    }
+    if (regularPriceMinor != null && regularCurrency == null) {
+      throw ArgumentError(
+        'regularCurrency is required when regularPriceMinor is set',
+      );
+    }
     final now = DateTime.now().toUtc();
     final id = _uuid.v4();
     await _db.insertPreset(
@@ -82,42 +99,42 @@ class DrinksRepository {
 
   /// Updates mutable fields of an existing preset.
   ///
-  /// Only the fields wrapped in a non-absent [Value] are written; omitted
-  /// fields retain their current values (no snapshot-immutability breach —
-  /// [DrinkEntry] rows are never touched).
+  /// Only fields with a non-absent [Value] are written; omitted fields retain
+  /// their current values (no snapshot-immutability breach — [DrinkEntry] rows
+  /// are never touched).
+  ///
+  /// For nullable fields ([abvPercent], [regularPriceMinor], [regularCurrency])
+  /// use [Value.absent] (the default) to leave the field unchanged,
+  /// [Value(someValue)] to set it, and [Value(null)] to clear it to null.
   ///
   /// Validates [name] via [validatePresetName] when provided; throws
-  /// [ArgumentError] on failure.
+  /// [ArgumentError] on failure. Throws [StateError] if [id] does not exist.
   Future<void> updatePreset({
     required String id,
     String? name,
     int? volumeMl,
-    double? abvPercent,
-    int? regularPriceMinor,
-    String? regularCurrency,
+    Value<double?> abvPercent = const Value.absent(),
+    Value<int?> regularPriceMinor = const Value.absent(),
+    Value<String?> regularCurrency = const Value.absent(),
     String? iconKey,
     String? iconColor,
   }) async {
     if (name != null) _assertValidPresetName(name);
     final now = DateTime.now().toUtc();
-    await _db.updatePresetFields(
+    final rows = await _db.updatePresetFields(
       id,
       DrinkPresetsCompanion(
         name: name != null ? Value(name) : const Value.absent(),
         volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-        abvPercent:
-            abvPercent != null ? Value(abvPercent) : const Value.absent(),
-        regularPriceMinor: regularPriceMinor != null
-            ? Value(regularPriceMinor)
-            : const Value.absent(),
-        regularCurrency: regularCurrency != null
-            ? Value(regularCurrency)
-            : const Value.absent(),
+        abvPercent: abvPercent,
+        regularPriceMinor: regularPriceMinor,
+        regularCurrency: regularCurrency,
         iconKey: iconKey != null ? Value(iconKey) : const Value.absent(),
         iconColor: iconColor != null ? Value(iconColor) : const Value.absent(),
         updatedAt: Value(now),
       ),
     );
+    if (rows == 0) throw StateError('Preset $id not found.');
   }
 
   /// Hides a preset so it no longer appears in quick-log or the log-drink
@@ -133,8 +150,12 @@ class DrinksRepository {
   ///
   /// Applies to any preset — user-created or seeded default. Per data-model.md
   /// §DrinkPreset: "The user can edit, hide, or delete them — there is no
-  /// special protection." A "Reset to defaults" action (future) re-seeds via
-  /// INSERT OR IGNORE on the stable preset UUIDs.
+  /// special protection."
+  ///
+  /// Note: a future "Reset to defaults" action must use INSERT OR REPLACE (or
+  /// an explicit UPDATE … SET deletedAt = NULL keyed on stable UUIDs) —
+  /// INSERT OR IGNORE is a no-op for rows that already exist, even if
+  /// soft-deleted.
   ///
   /// Throws [StateError] if the preset does not exist.
   Future<void> deletePreset(String id) async {

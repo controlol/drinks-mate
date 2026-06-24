@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -292,6 +292,7 @@ void main() {
         name: 'My Favourite IPA',
         beverageType: BeverageType.beer,
         volumeMl: 330,
+        abvPercent: 5.0,
         iconKey: 'beer_glass',
         iconColor: '#d97706',
         sortOrder: 99,
@@ -307,12 +308,64 @@ void main() {
         name: 'User Brew',
         beverageType: BeverageType.beer,
         volumeMl: 250,
+        abvPercent: 4.5,
         iconKey: 'glass',
         iconColor: '#d97706',
         sortOrder: 99,
       );
 
       expect(preset.isUserCreated, isTrue);
+    });
+
+    test('volumeMl <= 0 throws ArgumentError', () async {
+      // Source: data-model.md §DrinkPreset — "volumeMl: Required, must be > 0."
+      expect(
+        () => repo.createPreset(
+          name: 'Zero Vol',
+          beverageType: BeverageType.water,
+          volumeMl: 0,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('alcoholic type without abvPercent throws ArgumentError', () async {
+      // Source: data-model.md §DrinkPreset — "abvPercent: Required when
+      // beverageType is alcoholic; null otherwise." Null abv → 0 g alcohol in
+      // BAC formula (silent parity failure).
+      expect(
+        () => repo.createPreset(
+          name: 'Mystery Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('regularPriceMinor set without regularCurrency throws ArgumentError',
+        () async {
+      // Source: data-model.md §DrinkPreset — "regularCurrency: Required when
+      // regularPriceMinor is set; null otherwise."
+      expect(
+        () => repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 300,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
     });
   });
 
@@ -394,6 +447,49 @@ void main() {
       expect(updated.volumeMl, 500);
       expect(updated.name, 'Preserved Name');
     });
+
+    test('non-existent id throws StateError', () async {
+      // Source: DrinksRepository.updatePreset() — mirrors deletePreset()
+      // StateError contract; silently swallowing a missed update would hide
+      // stale-ID bugs (e.g. concurrent delete then update).
+      expect(
+        () => repo.updatePreset(
+          id: 'does-not-exist',
+          name: 'Ghost Update',
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('Value(null) clears abvPercent on a non-alcoholic preset', () async {
+      // Source: DrinksRepository.updatePreset() — Value(null) must clear a
+      // nullable field; Value.absent() must leave it unchanged.
+      // Use a non-alcoholic type so createPreset allows null abvPercent.
+      final id = await _createUserPreset(repo, name: 'Green Tea');
+
+      // Confirm abvPercent starts as null (water preset, non-alcoholic).
+      final before =
+          (await repo.watchAllPresets().first).firstWhere((p) => p.id == id);
+      expect(before.abvPercent, isNull);
+
+      // Setting via Value(0.5) should persist.
+      await repo.updatePreset(
+        id: id,
+        abvPercent: const Value(0.5),
+      );
+      final withAbv =
+          (await repo.watchAllPresets().first).firstWhere((p) => p.id == id);
+      expect(withAbv.abvPercent, 0.5);
+
+      // Clearing via Value(null) should reset to null.
+      await repo.updatePreset(
+        id: id,
+        abvPercent: const Value(null),
+      );
+      final cleared =
+          (await repo.watchAllPresets().first).firstWhere((p) => p.id == id);
+      expect(cleared.abvPercent, isNull);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -464,8 +560,9 @@ void main() {
     test('seeded default (isUserCreated == false) can be soft-deleted',
         () async {
       // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
-      // or delete them — there is no special protection." Seeded defaults
-      // re-seed via INSERT OR IGNORE on next open (reset-to-defaults mechanic).
+      // or delete them — there is no special protection." A future reset-to-
+      // defaults must use INSERT OR REPLACE (not INSERT OR IGNORE) because soft-
+      // deleted rows still exist in the table and OR IGNORE would skip them.
       final db = _memDb();
       addTearDown(db.close);
       final repo = DrinksRepository(db);

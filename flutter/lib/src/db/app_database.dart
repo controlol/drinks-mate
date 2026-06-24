@@ -446,7 +446,8 @@ class AppDatabase extends _$AppDatabase {
       into(drinkPresets).insert(companion);
 
   /// Partial update of a preset row. Only fields wrapped in [Value] are written.
-  Future<void> updatePresetFields(String id, DrinkPresetsCompanion companion) =>
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updatePresetFields(String id, DrinkPresetsCompanion companion) =>
       (update(drinkPresets)..where((t) => t.id.equals(id))).write(companion);
 
   /// Sets [isHidden] to [hidden] for the given preset id.
