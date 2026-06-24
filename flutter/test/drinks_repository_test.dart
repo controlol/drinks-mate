@@ -42,6 +42,21 @@ Future<String> _createUserPreset(
   return preset.id;
 }
 
+// A minimal non-alcoholic water preset for use with logDrink().
+// Water is non-alcoholic (BeverageType.water.isAlcoholic == false) so it
+// enters the hydration total, not BAC. Source: data-model.md §BeverageType.
+const _waterPreset = DrinkPreset(
+  id: 'test-water-preset',
+  name: 'Test Water',
+  beverageType: BeverageType.water,
+  volumeMl: 300,
+  iconKey: 'glass',
+  iconColor: '#3b82f6',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 99,
+);
+
 void main() {
   // -------------------------------------------------------------------------
   // Group 1: watchAllPresets — includes hidden, excludes deleted
@@ -205,23 +220,6 @@ void main() {
   // -------------------------------------------------------------------------
 
   group('DrinksRepository — createPreset', () {
-// A minimal non-alcoholic water preset for use with logDrink().
-// Water is non-alcoholic (BeverageType.water.isAlcoholic == false) so it
-// enters the hydration total, not BAC. Source: data-model.md §BeverageType.
-const _waterPreset = DrinkPreset(
-  id: 'test-water-preset',
-  name: 'Test Water',
-  beverageType: BeverageType.water,
-  volumeMl: 300,
-  iconKey: 'glass',
-  iconColor: '#3b82f6',
-  isUserCreated: false,
-  isHidden: false,
-  sortOrder: 99,
-);
-
-void main() {
-  group('DrinksRepository.watchTodayTotalMl — boundaryHour parameter', () {
     late AppDatabase db;
     late DrinksRepository repo;
 
@@ -586,6 +584,25 @@ void main() {
         expect(entry.name, 'Original Brew');
         // Snapshot volumeMl must equal the preset's volume at log time.
         expect(entry.volumeMl, 330);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Group 10: watchTodayTotalMl — boundary hour parameter
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository.watchTodayTotalMl — boundaryHour parameter', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
     // -----------------------------------------------------------------------
     // Core regression test: the boundary hour MUST change the counted window.
     // -----------------------------------------------------------------------
