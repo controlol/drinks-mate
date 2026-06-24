@@ -40,13 +40,15 @@ class FormatService {
   }
 
   /// Format a large volume (e.g. today's intake or daily goal) for the
-  /// progress-card headline display.
+  /// progress-card headline and history totals display.
   ///
-  /// Metric:   < 1 000 ml → "240 ml"; ≥ 1 000 ml → "1.4 L" (or "2 L").
-  /// Imperial: always fl oz with 1 decimal place ("47.3 fl oz").
+  /// Metric:   always in litres with 1 dp, trailing ".0" omitted
+  ///           (e.g. "0.5 L", "1.4 L", "2 L").
+  /// Imperial: always fl oz with 1 decimal place (e.g. "47.3 fl oz").
+  ///
+  /// Parity Rulebook: "Metric display precision — daily-progress headline".
   String formatLargeVolume(double ml) {
     if (_isImperial) return '${_fmt1dp(mlToFlOz(ml))} fl oz';
-    if (ml < 1000) return '${ml.round()} ml';
     final litres = ml / 1000;
     return litres == litres.truncateToDouble()
         ? '${litres.toInt()} L'

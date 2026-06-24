@@ -303,7 +303,8 @@ All rounding uses **half-away-from-zero** (round 0.5 up for positive values).
 
 | Value | Metric display | Imperial display |
 | ----- | -------------- | ---------------- |
-| Volume | nearest integer ml | 1 decimal place (fl oz) |
+| Volume — single drink / entry field | nearest integer ml (e.g. `"240 ml"`) | 1 decimal place fl oz (e.g. `"8.1 fl oz"`) |
+| Volume — daily-progress headline (today card, history totals) | always **1 dp in litres**, trailing `.0` omitted (e.g. `"0.5 L"`, `"1.4 L"`, `"2 L"`) | always 1 dp fl oz (e.g. `"47.3 fl oz"`) |
 | Mass | 1 decimal place (kg) | 1 decimal place (lb) |
 | Height | 1 decimal place (cm) | nearest inch, split into ft + in |
 

@@ -81,6 +81,58 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // formatLargeVolume
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatLargeVolume — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('500 ml → "0.5 L"', () {
+      expect(svc.formatLargeVolume(500), equals('0.5 L'));
+    });
+
+    test('240 ml → "0.2 L"', () {
+      // Daily-progress headline always shows litres — no ml threshold.
+      expect(svc.formatLargeVolume(240), equals('0.2 L'));
+    });
+
+    test('1000 ml → "1 L" (whole litre omits trailing .0)', () {
+      expect(svc.formatLargeVolume(1000), equals('1 L'));
+    });
+
+    test('1400 ml → "1.4 L"', () {
+      expect(svc.formatLargeVolume(1400), equals('1.4 L'));
+    });
+
+    test('2000 ml → "2 L"', () {
+      expect(svc.formatLargeVolume(2000), equals('2 L'));
+    });
+
+    test('2100 ml → "2.1 L"', () {
+      expect(svc.formatLargeVolume(2100), equals('2.1 L'));
+    });
+
+    test('0 ml → "0 L"', () {
+      expect(svc.formatLargeVolume(0), equals('0 L'));
+    });
+  });
+
+  group('FormatService.formatLargeVolume — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('always fl oz with 1 dp', () {
+      // 1400 / 29.5735295625 = 47.316..., rounds to 47.3
+      expect(svc.formatLargeVolume(1400), equals('47.3 fl oz'));
+    });
+
+    test('355 ml → 12.0 fl oz', () {
+      expect(svc.formatLargeVolume(355), equals('12.0 fl oz'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // formatMass
   // -------------------------------------------------------------------------
 
