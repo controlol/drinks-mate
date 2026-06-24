@@ -72,11 +72,28 @@ jobs:
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Generate App token
+        # Push the fix commit as a GitHub App (not GITHUB_TOKEN) so that the
+        # resulting pull_request.synchronize event is NOT gated by GitHub's
+        # loop-prevention rule (which only applies to GITHUB_TOKEN pushes from
+        # workflow_run-triggered jobs). This lets CI, Claude PR Review, and
+        # Security Review re-trigger automatically with no manual intervention.
+        # Requires APP_ID and APP_PRIVATE_KEY repo secrets (see docs/agentic-workflow.md).
+        if: steps.pr.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v7
         if: steps.pr.outputs.skip != 'true'
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
+          # Use the App token so git remote is configured with App credentials;
+          # the agent's git push then authenticates as the App (not GITHUB_TOKEN).
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: subosito/flutter-action@v2
         if: steps.pr.outputs.skip != 'true'
@@ -115,6 +132,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # App token so claude-code-action's internal git push is also App-authenticated.
+          github_token: ${{ steps.app-token.outputs.token }}
           claude_args: "--permission-mode bypassPermissions"
           allowed_bots: "github-actions[bot],claude[bot]"
           prompt: |
@@ -146,6 +165,9 @@ jobs:
 
             5. Push the fixes to the existing branch.
                Use commit message: "fix: address automated review findings"
+               Do NOT edit any file under `.github/workflows/` — workflow
+               changes require human review and are out of scope for automated
+               remediation.
 
             6. For each blocking finding you fixed, resolve its thread using the node
                ID from step 1 (best-effort — must NOT stop your work; use `|| true`):
@@ -189,21 +211,6 @@ jobs:
           gh api "repos/$REPO/issues/comments/$comment_id" \
             --method PATCH \
             --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
-
-      - name: Re-trigger CI via label bounce
-        # pull_request.synchronize events from a GITHUB_TOKEN push inside a
-        # workflow_run-triggered job are treated as action_required (same-repo
-        # loop-prevention). The approve API only works for fork PRs (403 here).
-        # Bouncing agent-ok fires pull_request.labeled instead, which bypasses
-        # the gate. ci.yml, claude-review.yml, and security-review.yml all
-        # handle the labeled event and run with full PR context.
-        if: steps.pr.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          pr="${{ steps.pr.outputs.pr }}"
-          gh pr edit "$pr" --repo "$REPO" --remove-label "agent-ok" 2>/dev/null || true
-          sleep 3
-          gh pr edit "$pr" --repo "$REPO" --add-label "agent-ok"
 
       - name: Remove remediation label on failure
         if: failure() && steps.pr.outputs.skip != 'true'
