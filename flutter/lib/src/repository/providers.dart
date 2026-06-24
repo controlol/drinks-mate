@@ -7,6 +7,7 @@ import '../db/app_database.dart';
 import '../models/drink_preset.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
+import '../services/goal_celebration_guard.dart';
 import 'drinks_repository.dart';
 import 'preferences_repository.dart';
 
@@ -115,4 +116,16 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
         dailyGoalMl: prefs.dailyGoalMl,
         boundaryHour: prefs.dayBoundaryHour,
       );
+});
+
+// ---------------------------------------------------------------------------
+// Goal celebration guard (issue #14)
+// ---------------------------------------------------------------------------
+
+/// Guards the once-per-day goal-met celebration overlay.
+///
+/// Override in tests with [InMemoryGoalCelebrationGuard] to avoid SharedPrefs
+/// I/O and to control the day-key deterministically.
+final goalCelebrationGuardProvider = Provider<GoalCelebrationGuard>((ref) {
+  return SharedPrefsGoalCelebrationGuard();
 });

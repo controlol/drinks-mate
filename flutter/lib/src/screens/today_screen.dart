@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import '../repository/providers.dart';
 import '../services/format_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/color_utils.dart';
+import '../widgets/goal_celebration_overlay.dart';
 import 'log_drink_sheet.dart';
 import 'settings_screen.dart';
 
@@ -18,11 +21,68 @@ import 'settings_screen.dart';
 ///   2. Stat card pair — 7-day daily average and days-on-goal n/7.
 ///   3. Quick-log row — horizontally scrollable preset shortcuts.
 ///   4. "Log drink" button — full-width, opens S2 sheet.
-class TodayScreen extends ConsumerWidget {
+///
+/// Also listens for the first intake-crosses-goal event each day and shows
+/// the full-screen [GoalCelebrationOverlay] (issue #14).
+class TodayScreen extends ConsumerStatefulWidget {
   const TodayScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TodayScreen> createState() => _TodayScreenState();
+}
+
+class _TodayScreenState extends ConsumerState<TodayScreen> {
+  @override
+  Widget build(BuildContext context) {
+    // Detect first upward crossing of the daily goal within the current day.
+    ref.listen<AsyncValue<int>>(todayTotalMlProvider, (prev, next) async {
+      // Skip the very first emission (prev == null = cold open, no crossing).
+      if (prev == null) return;
+
+      final prevMl = prev.valueOrNull ?? 0;
+      final currentMl = next.valueOrNull;
+      if (currentMl == null) return;
+
+      final prefs = ref.read(userPreferencesProvider).valueOrNull;
+      if (prefs == null) return;
+
+      // Only trigger on upward crossing (prev < goal AND current >= goal).
+      if (prevMl >= prefs.dailyGoalMl || currentMl < prefs.dailyGoalMl) return;
+
+      // Capture the navigator BEFORE any await so we hold a NavigatorState
+      // (not a BuildContext) across the async gap — satisfies
+      // use_build_context_synchronously without needing context after awaits.
+      if (!mounted) return;
+      final nav = Navigator.of(context);
+
+      final now = DateTime.now();
+      final dayStart =
+          dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$1;
+
+      final guard = ref.read(goalCelebrationGuardProvider);
+      final shouldShow = await guard.shouldShowForDay(dayStart);
+      if (!shouldShow) return;
+
+      await guard.markShownForDay(dayStart);
+      if (!mounted) return;
+
+      // Push onto the root navigator so the overlay covers the tab bar.
+      // NavigatorState (nav) — not BuildContext — is used after the awaits.
+      unawaited(
+        nav.push<void>(
+          RawDialogRoute<void>(
+            pageBuilder: (ctx, _, __) => GoalCelebrationOverlay(
+              onDismissed: () => nav.pop(),
+            ),
+            barrierDismissible: false,
+            barrierLabel: 'Goal celebration',
+            barrierColor: Colors.transparent,
+            transitionDuration: Duration.zero,
+          ),
+        ),
+      );
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today'),
