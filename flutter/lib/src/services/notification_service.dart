@@ -43,6 +43,10 @@ abstract interface class NotificationService {
   ///
   /// Each occurrence is assigned an id derived from [id] (id × 1000 + index),
   /// so the entire batch can be cancelled with [cancelRepeating].
+  ///
+  /// [payload] is forwarded verbatim to `zonedSchedule` so a registered
+  /// delivery-time callback can re-query the DB and re-evaluate the fire
+  /// predicate at delivery time.
   Future<void> scheduleRepeating({
     required int id,
     required String title,
@@ -53,15 +57,21 @@ abstract interface class NotificationService {
     required int activeStartHour,
     required int activeEndHour,
     int count = 48,
+    String? payload,
   });
 
   /// Schedules a single notification at [scheduledTime].
+  ///
+  /// [payload] is forwarded verbatim to `zonedSchedule` so a registered
+  /// delivery-time callback can re-query the DB and re-evaluate the fire
+  /// predicate at delivery time.
   Future<void> scheduleOnce({
     required int id,
     required String title,
     required String body,
     required String channelId,
     required DateTime scheduledTime,
+    String? payload,
   });
 
   /// Cancels the repeating batch previously scheduled with id [id].
@@ -121,8 +131,10 @@ class FlutterNotificationService implements NotificationService {
       await _plugin.initialize(initSettings);
 
       // Create Android notification channels.
-      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await androidPlugin?.createNotificationChannel(
         const AndroidNotificationChannel(
           kHydrationChannelId,
@@ -154,8 +166,10 @@ class FlutterNotificationService implements NotificationService {
   @override
   Future<bool> requestPermission() async {
     try {
-      final ios = _plugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
       if (ios != null) {
         return await ios.requestPermissions(
               alert: true,
@@ -165,8 +179,10 @@ class FlutterNotificationService implements NotificationService {
             false;
       }
 
-      final android = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       if (android != null) {
         return await android.requestNotificationsPermission() ?? false;
       }
@@ -188,6 +204,7 @@ class FlutterNotificationService implements NotificationService {
     required int activeStartHour,
     required int activeEndHour,
     int count = 48,
+    String? payload,
   }) async {
     try {
       final slots = buildScheduleSlots(
@@ -221,6 +238,7 @@ class FlutterNotificationService implements NotificationService {
           body,
           tzTime,
           details,
+          payload: payload,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
@@ -238,6 +256,7 @@ class FlutterNotificationService implements NotificationService {
     required String body,
     required String channelId,
     required DateTime scheduledTime,
+    String? payload,
   }) async {
     try {
       final details = _notificationDetails(channelId);
@@ -248,6 +267,7 @@ class FlutterNotificationService implements NotificationService {
         body,
         tzTime,
         details,
+        payload: payload,
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
@@ -282,8 +302,8 @@ class FlutterNotificationService implements NotificationService {
     final channelName = channelId == kHydrationChannelId
         ? kHydrationChannelName
         : channelId == kWeeklySummaryChannelId
-            ? kWeeklySummaryChannelName
-            : channelId;
+        ? kWeeklySummaryChannelName
+        : channelId;
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
@@ -307,8 +327,16 @@ class FakeNotificationService implements NotificationService {
   bool initialised = false;
   bool permissionGranted = true;
 
-  final List<({int id, DateTime scheduledTime, String title, String body})>
-      scheduled = [];
+  final List<
+    ({
+      int id,
+      DateTime scheduledTime,
+      String title,
+      String body,
+      String? payload,
+    })
+  >
+  scheduled = [];
   final List<int> cancelled = [];
   bool allCancelled = false;
 
@@ -329,6 +357,7 @@ class FakeNotificationService implements NotificationService {
     required int activeStartHour,
     required int activeEndHour,
     int count = 48,
+    String? payload,
   }) async {
     final slots = buildScheduleSlots(
       from: startTime,
@@ -343,6 +372,7 @@ class FakeNotificationService implements NotificationService {
         scheduledTime: slots[i],
         title: title,
         body: body,
+        payload: payload,
       ));
     }
   }
@@ -354,12 +384,14 @@ class FakeNotificationService implements NotificationService {
     required String body,
     required String channelId,
     required DateTime scheduledTime,
+    String? payload,
   }) async {
     scheduled.add((
       id: id,
       scheduledTime: scheduledTime,
       title: title,
       body: body,
+      payload: payload,
     ));
   }
 
