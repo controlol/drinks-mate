@@ -128,8 +128,6 @@ automatically.
    - **Contents: Read & write**
    - **Pull requests: Read & write**
    - **Issues: Read & write**
-   - **Workflows: Read & write** *(only if the agent may ever edit
-     `.github/workflows/**`; otherwise omit)*
 2. Install the App on this repository.
 3. Add two repo secrets:
    ```bash

@@ -164,6 +164,9 @@ jobs:
 
             5. Push the fixes to the existing branch.
                Use commit message: "fix: address automated review findings"
+               Do NOT edit any file under `.github/workflows/` — workflow
+               changes require human review and are out of scope for automated
+               remediation.
 
             6. For each blocking finding you fixed, resolve its thread using the node
                ID from step 1 (best-effort — must NOT stop your work; use `|| true`):
