@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../db/app_database.dart';
 import '../models/beverage_type.dart';
+import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 
 /// Repository seam — the only way widgets touch persisted drink data (D2).
@@ -155,6 +156,63 @@ class DrinksRepository {
     });
   }
 
+  /// Reactive stream of today's logged entries in reverse-chronological order.
+  ///
+  /// Only non-alcoholic entries are included — this screen is reached from the
+  /// hydration progress card (issue #15 scope: non-alcoholic only).
+  /// Soft-deleted entries are excluded.
+  Stream<List<DrinkEntry>> watchTodayEntries({
+    DateTime? now,
+    int boundaryHour = 5,
+  }) {
+    final window = dayWindow(
+      now: now ?? DateTime.now(),
+      boundaryHour: boundaryHour,
+    );
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchEntriesInWindowFull(
+          window.$1.toUtc(),
+          window.$2.toUtc(),
+          nonAlcoholicTypes,
+        )
+        .map((rows) => rows.map(_rowToEntry).toList());
+  }
+
+  /// Updates the [volumeMl] and/or [consumedAt] of an existing entry.
+  ///
+  /// Snapshot fields (name, icon, ABV, etc.) are never changed — log
+  /// immutability (data-model.md §Snapshot semantics).
+  /// [volumeMl] must be ≥ 1 ml if provided.
+  Future<void> updateDrinkEntry({
+    required String id,
+    int? volumeMl,
+    DateTime? consumedAt,
+  }) {
+    if (volumeMl != null && volumeMl < 1) {
+      throw ArgumentError.value(volumeMl, 'volumeMl', 'must be ≥ 1 ml');
+    }
+    final now = DateTime.now().toUtc();
+    return _db.updateDrinkEntryPartial(
+      id,
+      volumeMl: volumeMl,
+      consumedAtUtc: consumedAt?.toUtc(),
+      updatedAtUtc: now,
+    );
+  }
+
+  /// Soft-deletes an entry by setting [deletedAt] = now (F7).
+  ///
+  /// The row is never hard-deleted. The reactive streams automatically
+  /// exclude soft-deleted rows so the UI updates without a manual refresh.
+  Future<void> deleteDrinkEntry(String id) {
+    final now = DateTime.now().toUtc();
+    return _db.softDeleteDrinkEntry(id, now);
+  }
+
   // ---------------------------------------------------------------------------
   // Mapping helpers
   // ---------------------------------------------------------------------------
@@ -172,5 +230,21 @@ class DrinksRepository {
         isUserCreated: row.isUserCreated,
         isHidden: row.isHidden,
         sortOrder: row.sortOrder,
+      );
+
+  static DrinkEntry _rowToEntry(DrinkEntryRow row) => DrinkEntry(
+        id: row.id,
+        name: row.name,
+        beverageType: BeverageType.fromStored(row.beverageType),
+        volumeMl: row.volumeMl,
+        abvPercent: row.abvPercent,
+        priceMinor: row.priceMinor,
+        currency: row.currency,
+        iconKey: row.iconKey,
+        iconColor: row.iconColor,
+        consumedAt: row.consumedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
       );
 }

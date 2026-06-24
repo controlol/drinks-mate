@@ -13,6 +13,7 @@ import '../utils/color_utils.dart';
 import '../widgets/goal_celebration_overlay.dart';
 import 'log_drink_sheet.dart';
 import 'settings_screen.dart';
+import 'today_drinks_screen.dart';
 
 /// Today tab — F3 home screen (issue #13).
 ///
@@ -56,8 +57,10 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
       final nav = Navigator.of(context);
 
       final now = DateTime.now();
-      final dayStart =
-          dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$1;
+      final dayStart = dayWindow(
+        now: now,
+        boundaryHour: prefs.dayBoundaryHour,
+      ).$1;
 
       final guard = ref.read(goalCelebrationGuardProvider);
       final shouldShow = await guard.shouldShowForDay(dayStart);
@@ -71,9 +74,8 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
       unawaited(
         nav.push<void>(
           RawDialogRoute<void>(
-            pageBuilder: (ctx, _, __) => GoalCelebrationOverlay(
-              onDismissed: () => nav.pop(),
-            ),
+            pageBuilder: (ctx, _, __) =>
+                GoalCelebrationOverlay(onDismissed: () => nav.pop()),
             barrierDismissible: false,
             barrierLabel: 'Goal celebration',
             barrierColor: Colors.transparent,
@@ -175,9 +177,10 @@ class _ProgressCard extends ConsumerWidget {
         margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            /* TODO: navigate to S6 Today Drinks Log */
-          },
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const TodayDrinksScreen()),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
