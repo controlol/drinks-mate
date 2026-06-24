@@ -71,6 +71,13 @@ class DrinksRepository {
         'Required for alcoholic beverageType $beverageType',
       );
     }
+    if (!beverageType.isAlcoholic && abvPercent != null) {
+      throw ArgumentError.value(
+        abvPercent,
+        'abvPercent',
+        'Must be null for non-alcoholic beverageType $beverageType',
+      );
+    }
     if (regularPriceMinor != null && regularCurrency == null) {
       throw ArgumentError(
         'regularCurrency is required when regularPriceMinor is set',
@@ -128,13 +135,37 @@ class DrinksRepository {
     if (volumeMl != null && volumeMl <= 0) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
     }
-    if (abvPercent.present && abvPercent.value == null) {
-      final existing = await _db.getPresetById(id);
-      if (existing != null &&
-          BeverageType.fromStored(existing.beverageType).isAlcoholic) {
-        throw ArgumentError(
-          'abvPercent cannot be cleared on an alcoholic preset',
-        );
+    DrinkPresetRow? existing;
+    if (abvPercent.present) {
+      existing = await _db.getPresetById(id);
+      if (existing != null) {
+        final storedType = BeverageType.fromStored(existing.beverageType);
+        if (abvPercent.value == null && storedType.isAlcoholic) {
+          throw ArgumentError(
+            'abvPercent cannot be cleared on an alcoholic preset',
+          );
+        }
+        if (abvPercent.value != null && !storedType.isAlcoholic) {
+          throw ArgumentError(
+            'abvPercent must be null for non-alcoholic preset',
+          );
+        }
+      }
+    }
+    if (regularPriceMinor.present || regularCurrency.present) {
+      existing ??= await _db.getPresetById(id);
+      if (existing != null) {
+        final effectivePrice = regularPriceMinor.present
+            ? regularPriceMinor.value
+            : existing.regularPriceMinor;
+        final effectiveCurrency = regularCurrency.present
+            ? regularCurrency.value
+            : existing.regularCurrency;
+        if (effectivePrice != null && effectiveCurrency == null) {
+          throw ArgumentError(
+            'regularCurrency is required when regularPriceMinor is set',
+          );
+        }
       }
     }
     final now = DateTime.now().toUtc();
