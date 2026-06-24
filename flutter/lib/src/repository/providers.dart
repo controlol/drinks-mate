@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/app_database.dart';
+import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
@@ -128,4 +129,27 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
 /// I/O and to control the day-key deterministically.
 final goalCelebrationGuardProvider = Provider<GoalCelebrationGuard>((ref) {
   return SharedPrefsGoalCelebrationGuard();
+});
+
+// ---------------------------------------------------------------------------
+// Today entries provider (issue #15)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of today's non-alcoholic drink entries, newest-first.
+///
+/// Used by the S6 Today Drinks Log screen. Re-subscribes at each day boundary
+/// so the query window rolls over without requiring an app restart.
+final todayEntriesProvider = StreamProvider<List<DrinkEntry>>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return Stream.value([]);
+  final now = DateTime.now();
+  final nextBoundary = dayWindow(
+    now: now,
+    boundaryHour: prefs.dayBoundaryHour,
+  ).$2;
+  final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref
+      .watch(drinksRepositoryProvider)
+      .watchTodayEntries(now: now, boundaryHour: prefs.dayBoundaryHour);
 });

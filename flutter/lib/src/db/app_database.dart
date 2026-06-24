@@ -365,6 +365,64 @@ class AppDatabase extends _$AppDatabase {
         );
   }
 
+  /// Reactive stream of full [DrinkEntryRow]s within `[startUtc, endUtc)`
+  /// whose [beverageType] is in [allowedTypes], ordered newest-first.
+  ///
+  /// Used by the S6 Today Drinks Log screen to show entries the user can
+  /// edit or soft-delete.
+  Stream<List<DrinkEntryRow>> watchEntriesInWindowFull(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) {
+    return (select(drinkEntries)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.consumedAt.isBiggerOrEqualValue(startUtc) &
+                t.consumedAt.isSmallerThanValue(endUtc) &
+                t.beverageType.isIn(allowedTypes),
+          )
+          ..orderBy([(t) => OrderingTerm.desc(t.consumedAt)]))
+        .watch();
+  }
+
+  /// Partial update of a [DrinkEntryRow]: only [volumeMl] and/or [consumedAt]
+  /// may be changed (log immutability — snapshot fields are never rewritten).
+  ///
+  /// Always bumps [updatedAt] to [updatedAtUtc].
+  Future<void> updateDrinkEntryPartial(
+    String id, {
+    int? volumeMl,
+    DateTime? consumedAtUtc,
+    required DateTime updatedAtUtc,
+  }) {
+    final companion = DrinkEntriesCompanion(
+      volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
+      consumedAt:
+          consumedAtUtc != null ? Value(consumedAtUtc) : const Value.absent(),
+      updatedAt: Value(updatedAtUtc),
+    );
+    return (update(
+      drinkEntries,
+    )..where((t) => t.id.equals(id)))
+        .write(companion);
+  }
+
+  /// Soft-deletes a [DrinkEntryRow] by setting [deletedAt] = [deletedAtUtc].
+  ///
+  /// The row is never hard-deleted (F7 — soft-delete rule).
+  Future<void> softDeleteDrinkEntry(String id, DateTime deletedAtUtc) {
+    final companion = DrinkEntriesCompanion(
+      deletedAt: Value(deletedAtUtc),
+      updatedAt: Value(deletedAtUtc),
+    );
+    return (update(
+      drinkEntries,
+    )..where((t) => t.id.equals(id)))
+        .write(companion);
+  }
+
   // ---------------------------------------------------------------------------
   // UserPreferences queries
   // ---------------------------------------------------------------------------
