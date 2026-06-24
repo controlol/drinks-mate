@@ -131,10 +131,8 @@ class FlutterNotificationService implements NotificationService {
       await _plugin.initialize(initSettings);
 
       // Create Android notification channels.
-      final androidPlugin = _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.createNotificationChannel(
         const AndroidNotificationChannel(
           kHydrationChannelId,
@@ -166,10 +164,8 @@ class FlutterNotificationService implements NotificationService {
   @override
   Future<bool> requestPermission() async {
     try {
-      final ios = _plugin
-          .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin
-          >();
+      final ios = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
       if (ios != null) {
         return await ios.requestPermissions(
               alert: true,
@@ -179,10 +175,8 @@ class FlutterNotificationService implements NotificationService {
             false;
       }
 
-      final android = _plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
       if (android != null) {
         return await android.requestNotificationsPermission() ?? false;
       }
@@ -302,8 +296,8 @@ class FlutterNotificationService implements NotificationService {
     final channelName = channelId == kHydrationChannelId
         ? kHydrationChannelName
         : channelId == kWeeklySummaryChannelId
-        ? kWeeklySummaryChannelName
-        : channelId;
+            ? kWeeklySummaryChannelName
+            : channelId;
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
@@ -328,15 +322,13 @@ class FakeNotificationService implements NotificationService {
   bool permissionGranted = true;
 
   final List<
-    ({
-      int id,
-      DateTime scheduledTime,
-      String title,
-      String body,
-      String? payload,
-    })
-  >
-  scheduled = [];
+      ({
+        int id,
+        DateTime scheduledTime,
+        String title,
+        String body,
+        String? payload,
+      })> scheduled = [];
   final List<int> cancelled = [];
   bool allCancelled = false;
 
