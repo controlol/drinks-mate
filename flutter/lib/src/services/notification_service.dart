@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -65,8 +66,9 @@ abstract interface class NotificationService {
 
   /// Cancels the repeating batch previously scheduled with id [id].
   ///
-  /// Cancels all occurrences in the range [id × 1000, id × 1000 + 999].
-  Future<void> cancelRepeating(int id);
+  /// [count] must match the value used in the corresponding [scheduleRepeating]
+  /// call (default 48). Only that many slots are cancelled.
+  Future<void> cancelRepeating(int id, {int count = 48});
 
   /// Cancels the single notification with id [id].
   Future<void> cancel(int id);
@@ -132,8 +134,10 @@ class FlutterNotificationService implements NotificationService {
       );
 
       _initialised = true;
-    } catch (_) {
-      // Plugin unavailable (e.g. in test environments) — swallow silently.
+    } catch (e) {
+      // Swallow MissingPluginException in test/headless environments. Log
+      // anything else so real device misconfigurations are diagnosable.
+      debugPrint('[NotificationService] initialize failed: $e');
     }
   }
 
@@ -184,6 +188,12 @@ class FlutterNotificationService implements NotificationService {
         count: count,
       );
 
+      // Android notification IDs are int32; guard against overflow for
+      // monotonically-growing DB primary keys.
+      assert(
+        id < 2000000,
+        'notification id $id too large: id*1000+47 overflows int32',
+      );
       final details = _notificationDetails(channelId);
       for (var i = 0; i < slots.length; i++) {
         final slotId = id * 1000 + i;
@@ -229,9 +239,9 @@ class FlutterNotificationService implements NotificationService {
   }
 
   @override
-  Future<void> cancelRepeating(int id) async {
+  Future<void> cancelRepeating(int id, {int count = 48}) async {
     try {
-      for (var i = 0; i < 1000; i++) {
+      for (var i = 0; i < count; i++) {
         await _plugin.cancel(id * 1000 + i);
       }
     } catch (_) {}
@@ -252,10 +262,15 @@ class FlutterNotificationService implements NotificationService {
   }
 
   NotificationDetails _notificationDetails(String channelId) {
+    final channelName = channelId == kHydrationChannelId
+        ? kHydrationChannelName
+        : channelId == kWeeklySummaryChannelId
+            ? kWeeklySummaryChannelName
+            : channelId;
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
-        channelId,
+        channelName,
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
       ),
@@ -332,8 +347,8 @@ class FakeNotificationService implements NotificationService {
   }
 
   @override
-  Future<void> cancelRepeating(int id) async {
-    for (var i = 0; i < 1000; i++) {
+  Future<void> cancelRepeating(int id, {int count = 48}) async {
+    for (var i = 0; i < count; i++) {
       cancelled.add(id * 1000 + i);
     }
   }
