@@ -615,6 +615,32 @@ void main() {
       final restored = presets.firstWhere((p) => p.id == id);
       expect(restored.isHidden, isFalse);
     });
+
+    test('hidePreset non-existent id throws StateError', () async {
+      // Source: DrinksRepository.hidePreset() docstring — "Throws StateError if
+      // id does not exist." Consistent with deletePreset / updatePreset contract.
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
+
+      expect(
+        () => repo.hidePreset('unknown-id-that-does-not-exist'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('unhidePreset non-existent id throws StateError', () async {
+      // Source: DrinksRepository.unhidePreset() docstring — "Throws StateError if
+      // id does not exist." Consistent with deletePreset / updatePreset contract.
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
+
+      expect(
+        () => repo.unhidePreset('unknown-id-that-does-not-exist'),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -645,8 +671,7 @@ void main() {
       },
     );
 
-    test('seeded default (isUserCreated == false) can be soft-deleted',
-        () async {
+    test('seeded default (isUserCreated == false) can be soft-deleted', () async {
       // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
       // or delete them — there is no special protection." A future reset-to-
       // defaults must use INSERT OR REPLACE (not INSERT OR IGNORE) because soft-
@@ -791,8 +816,7 @@ void main() {
     // -----------------------------------------------------------------------
     // Core regression test: the boundary hour MUST change the counted window.
     // -----------------------------------------------------------------------
-    test(
-        'drink at 22:00 prev-evening is counted with boundary=6 but NOT with '
+    test('drink at 22:00 prev-evening is counted with boundary=6 but NOT with '
         'boundary=5 when now=05:30 next morning', () async {
       // Observation point (local time): 2026-06-23 05:30
       // dayWindow(boundary=6): now < 06:00 → [06-22 06:00, 06-23 06:00)
@@ -808,8 +832,9 @@ void main() {
       await repo.logDrink(preset: _waterPreset, consumedAt: consumedAt);
 
       // boundary=6: the drink falls inside the current day window.
-      final totalBoundary6 =
-          await repo.watchTodayTotalMl(now: now, boundaryHour: 6).first;
+      final totalBoundary6 = await repo
+          .watchTodayTotalMl(now: now, boundaryHour: 6)
+          .first;
       expect(
         totalBoundary6,
         equals(_waterPreset.volumeMl), // 300 ml — drink IS counted
@@ -820,8 +845,9 @@ void main() {
 
       // boundary=5 (the former default that caused the bug): the drink is
       // before the window start of 2026-06-23 05:00, so it must NOT appear.
-      final totalBoundary5 =
-          await repo.watchTodayTotalMl(now: now, boundaryHour: 5).first;
+      final totalBoundary5 = await repo
+          .watchTodayTotalMl(now: now, boundaryHour: 5)
+          .first;
       expect(
         totalBoundary5,
         equals(0), // drink is NOT counted
@@ -847,8 +873,9 @@ void main() {
 
         await repo.logDrink(preset: _waterPreset, consumedAt: consumedAt);
 
-        final total =
-            await repo.watchTodayTotalMl(now: now, boundaryHour: 5).first;
+        final total = await repo
+            .watchTodayTotalMl(now: now, boundaryHour: 5)
+            .first;
         expect(
           total,
           equals(_waterPreset.volumeMl),
@@ -861,8 +888,7 @@ void main() {
     // Alcoholic beverages must never contribute to the hydration total.
     // Source: data-model.md §BeverageType: "strictly disjoint flows."
     // -----------------------------------------------------------------------
-    test(
-        'alcoholic drink (beer) is excluded from watchTodayTotalMl even when '
+    test('alcoholic drink (beer) is excluded from watchTodayTotalMl even when '
         'consumed inside the time window', () async {
       const beerPreset = DrinkPreset(
         id: 'test-beer-preset',
@@ -881,8 +907,9 @@ void main() {
 
       await repo.logDrink(preset: beerPreset, consumedAt: consumedAt);
 
-      final total =
-          await repo.watchTodayTotalMl(now: now, boundaryHour: 5).first;
+      final total = await repo
+          .watchTodayTotalMl(now: now, boundaryHour: 5)
+          .first;
       expect(
         total,
         equals(0),
@@ -897,8 +924,9 @@ void main() {
     // -----------------------------------------------------------------------
     test('empty database emits 0 for watchTodayTotalMl', () async {
       final now = DateTime(2026, 6, 23, 12, 0);
-      final total =
-          await repo.watchTodayTotalMl(now: now, boundaryHour: 5).first;
+      final total = await repo
+          .watchTodayTotalMl(now: now, boundaryHour: 5)
+          .first;
       expect(total, equals(0));
     });
 
@@ -920,8 +948,9 @@ void main() {
           consumedAt: DateTime(2026, 6, 23, 10, 0),
         );
 
-        final total =
-            await repo.watchTodayTotalMl(now: now, boundaryHour: 5).first;
+        final total = await repo
+            .watchTodayTotalMl(now: now, boundaryHour: 5)
+            .first;
         expect(
           total,
           equals(600), // 300 + 300
@@ -963,15 +992,17 @@ void main() {
         await repo.logDrink(preset: _waterPreset, consumedAt: earlier);
         await repo.logDrink(preset: _waterPreset, consumedAt: later);
 
-        final entries =
-            await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+        final entries = await repo
+            .watchTodayEntries(now: now, boundaryHour: 5)
+            .first;
 
         expect(entries.length, equals(2));
         // Newest entry must appear first (index 0).
         expect(
           entries[0].consumedAt.isAfter(entries[1].consumedAt),
           isTrue,
-          reason: 'watchTodayEntries must return entries DESC by consumedAt '
+          reason:
+              'watchTodayEntries must return entries DESC by consumedAt '
               '(S6 spec: newest first)',
         );
       },
@@ -988,20 +1019,23 @@ void main() {
       );
 
       // Read the entry back to get its id (logDrink does not return id).
-      final before =
-          await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+      final before = await repo
+          .watchTodayEntries(now: now, boundaryHour: 5)
+          .first;
       expect(before.length, equals(1));
       final id = before.single.id;
 
       // Soft-delete it (F7 — sets deletedAt, row never hard-deleted).
       await repo.deleteDrinkEntry(id);
 
-      final after =
-          await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+      final after = await repo
+          .watchTodayEntries(now: now, boundaryHour: 5)
+          .first;
       expect(
         after,
         isEmpty,
-        reason: 'Soft-deleted entry must not appear in watchTodayEntries '
+        reason:
+            'Soft-deleted entry must not appear in watchTodayEntries '
             '(data-model.md §F7 soft-delete)',
       );
     });
@@ -1031,12 +1065,14 @@ void main() {
           consumedAt: DateTime(2026, 6, 23, 9, 0),
         );
 
-        final entries =
-            await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+        final entries = await repo
+            .watchTodayEntries(now: now, boundaryHour: 5)
+            .first;
         expect(
           entries,
           isEmpty,
-          reason: 'Alcoholic entries must never appear in watchTodayEntries — '
+          reason:
+              'Alcoholic entries must never appear in watchTodayEntries — '
               'the two flows are strictly disjoint (data-model.md §BeverageType)',
         );
       },
@@ -1048,16 +1084,16 @@ void main() {
     //   now = 2026-06-23 05:30, boundary=6 → [06-22 06:00, 06-23 06:00)
     //   consumedAt = 2026-06-22 22:00  → inside boundary=6, outside boundary=5
     // -----------------------------------------------------------------------
-    test(
-        'respects dayBoundaryHour: drink at 22:00 prev-evening counted with '
+    test('respects dayBoundaryHour: drink at 22:00 prev-evening counted with '
         'boundary=6 but not with boundary=5 when now=05:30', () async {
       final nowBoundary = DateTime(2026, 6, 23, 5, 30);
       final consumedAt = DateTime(2026, 6, 22, 22, 0);
 
       await repo.logDrink(preset: _waterPreset, consumedAt: consumedAt);
 
-      final withBoundary6 =
-          await repo.watchTodayEntries(now: nowBoundary, boundaryHour: 6).first;
+      final withBoundary6 = await repo
+          .watchTodayEntries(now: nowBoundary, boundaryHour: 6)
+          .first;
       expect(
         withBoundary6.length,
         equals(1),
@@ -1066,8 +1102,9 @@ void main() {
             'when boundaryHour=6',
       );
 
-      final withBoundary5 =
-          await repo.watchTodayEntries(now: nowBoundary, boundaryHour: 5).first;
+      final withBoundary5 = await repo
+          .watchTodayEntries(now: nowBoundary, boundaryHour: 5)
+          .first;
       expect(
         withBoundary5,
         isEmpty,
@@ -1196,7 +1233,8 @@ void main() {
       expect(
         () => repo.updateDrinkEntry(id: 'any-id', volumeMl: -10),
         throwsArgumentError,
-        reason: 'volumeMl must be ≥ 1 ml (S6 spec); negative value must throw '
+        reason:
+            'volumeMl must be ≥ 1 ml (S6 spec); negative value must throw '
             'ArgumentError',
       );
     });
@@ -1224,22 +1262,23 @@ void main() {
     // Source: data-model.md §F7 soft-delete; S6 spec: "sets deletedAt = now"
     // "Row never hard-deleted"
     // -----------------------------------------------------------------------
-    test(
-        'deleteDrinkEntry sets deletedAt and entry disappears from '
+    test('deleteDrinkEntry sets deletedAt and entry disappears from '
         'watchTodayEntries', () async {
       await repo.logDrink(
         preset: _waterPreset,
         consumedAt: DateTime(2026, 6, 23, 9, 0),
       );
 
-      final before =
-          await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+      final before = await repo
+          .watchTodayEntries(now: now, boundaryHour: 5)
+          .first;
       expect(before.length, equals(1));
 
       await repo.deleteDrinkEntry(before.single.id);
 
-      final after =
-          await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+      final after = await repo
+          .watchTodayEntries(now: now, boundaryHour: 5)
+          .first;
       expect(
         after,
         isEmpty,

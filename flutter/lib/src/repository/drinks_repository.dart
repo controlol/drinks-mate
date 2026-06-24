@@ -33,9 +33,15 @@ class DrinksRepository {
 
   /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
   /// Intended for the Party Mode preset picker.
-  Stream<List<DrinkPreset>> watchAlcoholicPresets() => _db
-      .watchAlcoholicPresets()
-      .map((rows) => rows.map(_rowToPreset).toList());
+  Stream<List<DrinkPreset>> watchAlcoholicPresets() {
+    final alcoholicTypes = BeverageType.values
+        .where((t) => t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchAlcoholicPresets(alcoholicTypes)
+        .map((rows) => rows.map(_rowToPreset).toList());
+  }
 
   // ---------------------------------------------------------------------------
   // Presets — write
@@ -187,12 +193,22 @@ class DrinksRepository {
 
   /// Hides a preset so it no longer appears in quick-log or the log-drink
   /// picker. Hidden presets remain in the database and can be restored.
-  Future<void> hidePreset(String id) =>
-      _db.setPresetHidden(id, true, DateTime.now().toUtc());
+  ///
+  /// Throws [StateError] if [id] does not exist.
+  Future<void> hidePreset(String id) async {
+    final row = await _db.getPresetById(id);
+    if (row == null) throw StateError('Preset $id not found.');
+    await _db.setPresetHidden(id, true, DateTime.now().toUtc());
+  }
 
   /// Restores a previously hidden preset to the visible list.
-  Future<void> unhidePreset(String id) =>
-      _db.setPresetHidden(id, false, DateTime.now().toUtc());
+  ///
+  /// Throws [StateError] if [id] does not exist.
+  Future<void> unhidePreset(String id) async {
+    final row = await _db.getPresetById(id);
+    if (row == null) throw StateError('Preset $id not found.');
+    await _db.setPresetHidden(id, false, DateTime.now().toUtc());
+  }
 
   /// Soft-deletes a preset (sets [deletedAt]).
   ///
@@ -293,17 +309,17 @@ class DrinksRepository {
         .toList();
     return _db
         .watchEntriesInWindow(
-      sevenDaysAgoStart.toUtc(),
-      todayStart.toUtc(),
-      nonAlcoholicTypes,
-    )
+          sevenDaysAgoStart.toUtc(),
+          todayStart.toUtc(),
+          nonAlcoholicTypes,
+        )
         .map((entries) {
-      var totalMl = 0;
-      for (final (_, volumeMl) in entries) {
-        totalMl += volumeMl;
-      }
-      return totalMl / 7.0;
-    });
+          var totalMl = 0;
+          for (final (_, volumeMl) in entries) {
+            totalMl += volumeMl;
+          }
+          return totalMl / 7.0;
+        });
   }
 
   /// Reactive stream of how many of the last 7 completed day windows met the
@@ -331,21 +347,21 @@ class DrinksRepository {
         .toList();
     return _db
         .watchEntriesInWindow(
-      sevenDaysAgoStart.toUtc(),
-      todayStart.toUtc(),
-      nonAlcoholicTypes,
-    )
+          sevenDaysAgoStart.toUtc(),
+          todayStart.toUtc(),
+          nonAlcoholicTypes,
+        )
         .map((entries) {
-      final byDay = <DateTime, int>{};
-      for (final (consumedAt, volumeMl) in entries) {
-        final dayStart = dayWindow(
-          now: consumedAt.toLocal(),
-          boundaryHour: boundaryHour,
-        ).$1;
-        byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
-      }
-      return byDay.values.where((total) => total >= dailyGoalMl).length;
-    });
+          final byDay = <DateTime, int>{};
+          for (final (consumedAt, volumeMl) in entries) {
+            final dayStart = dayWindow(
+              now: consumedAt.toLocal(),
+              boundaryHour: boundaryHour,
+            ).$1;
+            byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
+          }
+          return byDay.values.where((total) => total >= dailyGoalMl).length;
+        });
   }
 
   /// Reactive stream of today's logged entries in reverse-chronological order.
@@ -410,35 +426,35 @@ class DrinksRepository {
   // ---------------------------------------------------------------------------
 
   static DrinkPreset _rowToPreset(DrinkPresetRow row) => DrinkPreset(
-        id: row.id,
-        name: row.name,
-        beverageType: BeverageType.fromStored(row.beverageType),
-        volumeMl: row.volumeMl,
-        abvPercent: row.abvPercent,
-        regularPriceMinor: row.regularPriceMinor,
-        regularCurrency: row.regularCurrency,
-        iconKey: row.iconKey,
-        iconColor: row.iconColor,
-        isUserCreated: row.isUserCreated,
-        isHidden: row.isHidden,
-        sortOrder: row.sortOrder,
-      );
+    id: row.id,
+    name: row.name,
+    beverageType: BeverageType.fromStored(row.beverageType),
+    volumeMl: row.volumeMl,
+    abvPercent: row.abvPercent,
+    regularPriceMinor: row.regularPriceMinor,
+    regularCurrency: row.regularCurrency,
+    iconKey: row.iconKey,
+    iconColor: row.iconColor,
+    isUserCreated: row.isUserCreated,
+    isHidden: row.isHidden,
+    sortOrder: row.sortOrder,
+  );
 
   static DrinkEntry _rowToEntry(DrinkEntryRow row) => DrinkEntry(
-        id: row.id,
-        name: row.name,
-        beverageType: BeverageType.fromStored(row.beverageType),
-        volumeMl: row.volumeMl,
-        abvPercent: row.abvPercent,
-        priceMinor: row.priceMinor,
-        currency: row.currency,
-        iconKey: row.iconKey,
-        iconColor: row.iconColor,
-        consumedAt: row.consumedAt,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    name: row.name,
+    beverageType: BeverageType.fromStored(row.beverageType),
+    volumeMl: row.volumeMl,
+    abvPercent: row.abvPercent,
+    priceMinor: row.priceMinor,
+    currency: row.currency,
+    iconKey: row.iconKey,
+    iconColor: row.iconColor,
+    consumedAt: row.consumedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 
   // ---------------------------------------------------------------------------
   // Validation helpers
