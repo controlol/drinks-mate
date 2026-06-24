@@ -491,6 +491,57 @@ void main() {
           (await repo.watchAllPresets().first).firstWhere((p) => p.id == id);
       expect(cleared.abvPercent, isNull);
     });
+
+    test('updatePreset volumeMl <= 0 throws ArgumentError', () async {
+      // Source: data-model.md §DrinkPreset — "volumeMl: Required, must be > 0."
+      final id = await _createUserPreset(repo, name: 'My Water');
+
+      expect(
+        () => repo.updatePreset(id: id, volumeMl: 0),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => repo.updatePreset(id: id, volumeMl: -1),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('Value(null) abvPercent on an alcoholic preset throws ArgumentError',
+        () async {
+      // Source: data-model.md §DrinkPreset — "abvPercent: Required when
+      // beverageType is alcoholic." Clearing it via Value(null) must be
+      // rejected; the BAC formula would silently produce 0 g otherwise.
+      final id = await _createUserPreset(
+        repo,
+        name: 'My Beer',
+        beverageType: BeverageType.beer,
+        abvPercent: 5.0,
+      );
+
+      expect(
+        () => repo.updatePreset(
+          id: id,
+          abvPercent: const Value(null),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('NFC normalisation: NFD name is stored as NFC', () async {
+      // Source: username.dart §normalizeNfc — "Apply before persisting any
+      // value validated by validatePresetName, so visually identical inputs
+      // produce the same stored bytes."
+      // "Café" NFD = "Cafe" + combining acute (U+0301)
+      const nfdName = 'Café Water'; // 11 chars in NFD form
+      final id = await _createUserPreset(repo, name: nfdName);
+
+      final presets = await repo.watchAllPresets().first;
+      final stored = presets.firstWhere((p) => p.id == id).name;
+
+      // NFC form: é is a single code point (U+00E9)
+      expect(stored, equals('Café Water'));
+      expect(stored, isNot(equals(nfdName)));
+    });
   });
 
   // -------------------------------------------------------------------------

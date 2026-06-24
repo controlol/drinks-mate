@@ -60,6 +60,7 @@ class DrinksRepository {
     required int sortOrder,
   }) async {
     _assertValidPresetName(name);
+    name = normalizeNfc(name);
     if (volumeMl <= 0) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
     }
@@ -120,7 +121,22 @@ class DrinksRepository {
     String? iconKey,
     String? iconColor,
   }) async {
-    if (name != null) _assertValidPresetName(name);
+    if (name != null) {
+      _assertValidPresetName(name);
+      name = normalizeNfc(name);
+    }
+    if (volumeMl != null && volumeMl <= 0) {
+      throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
+    }
+    if (abvPercent.present && abvPercent.value == null) {
+      final existing = await _db.getPresetById(id);
+      if (existing != null &&
+          BeverageType.fromStored(existing.beverageType).isAlcoholic) {
+        throw ArgumentError(
+          'abvPercent cannot be cleared on an alcoholic preset',
+        );
+      }
+    }
     final now = DateTime.now().toUtc();
     final rows = await _db.updatePresetFields(
       id,
