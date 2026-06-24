@@ -116,6 +116,28 @@ Run `/install-github-app` from Claude Code, or install the app from the GitHub
 Marketplace and grant it this repo. This lets `anthropics/claude-code-action`
 post comments and open PRs.
 
+### 2a. Create a GitHub App for the remediation push
+
+`review-remediation.yml` pushes fix commits as a **GitHub App** (not
+`GITHUB_TOKEN`) so that the resulting `pull_request.synchronize` event is
+exempt from GitHub's loop-prevention gate and re-triggers CI + reviews
+automatically.
+
+1. [Create a GitHub App](https://github.com/settings/apps/new) that you control
+   (or use an existing one). Required repository permissions:
+   - **Contents: Read & write**
+   - **Pull requests: Read & write**
+   - **Issues: Read & write**
+2. Install the App on this repository.
+3. Add two repo secrets:
+   ```bash
+   gh secret set APP_ID          # the App's numeric ID (shown on the App's settings page)
+   gh secret set APP_PRIVATE_KEY # the PEM key generated under "Private keys"
+   ```
+
+Without these secrets the `Generate App token` step in `review-remediation.yml`
+will fail and the remediation job will not run.
+
 ### 3. Claude Code config (already committed — no action needed)
 `.claude/settings.json` is committed and shared: it pre-approves safe commands
 (fewer permission prompts) and turns on the `PostToolUse` auto-format hook
