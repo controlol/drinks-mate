@@ -188,8 +188,11 @@ class DrinksRepository {
   /// Emits a new value whenever a drink is logged or deleted.
   /// [now] is injected by the provider so the boundary timer and the query
   /// window share the exact same instant.
-  Stream<int> watchTodayTotalMl({DateTime? now}) {
-    final window = dayWindow(now: now ?? DateTime.now());
+  Stream<int> watchTodayTotalMl({DateTime? now, int boundaryHour = 5}) {
+    final window = dayWindow(
+      now: now ?? DateTime.now(),
+      boundaryHour: boundaryHour,
+    );
     final nonAlcoholicTypes = BeverageType.values
         .where((t) => !t.isAlcoholic)
         .map((t) => t.stored)
@@ -199,6 +202,82 @@ class DrinksRepository {
       window.$2.toUtc(),
       nonAlcoholicTypes,
     );
+  }
+
+  /// Reactive stream of the 7-day daily average hydration intake in ml.
+  ///
+  /// Covers the last 7 completed day windows before today (today is excluded).
+  /// Zero-fills missing days — divides by 7 regardless of how many days have
+  /// data, so the average is never inflated.
+  Stream<double> watch7DayAverageMl({int boundaryHour = 5, DateTime? now}) {
+    final nowLocal = now ?? DateTime.now();
+    final todayStart = dayWindow(now: nowLocal, boundaryHour: boundaryHour).$1;
+    final sevenDaysAgoStart = DateTime(
+      todayStart.year,
+      todayStart.month,
+      todayStart.day - 7,
+      todayStart.hour,
+      todayStart.minute,
+    );
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchEntriesInWindow(
+      sevenDaysAgoStart.toUtc(),
+      todayStart.toUtc(),
+      nonAlcoholicTypes,
+    )
+        .map((entries) {
+      var totalMl = 0;
+      for (final (_, volumeMl) in entries) {
+        totalMl += volumeMl;
+      }
+      return totalMl / 7.0;
+    });
+  }
+
+  /// Reactive stream of how many of the last 7 completed day windows met the
+  /// daily goal.
+  ///
+  /// "Met the goal" means the sum of non-alcoholic intake in a day window is
+  /// ≥ [dailyGoalMl]. Returns an integer in [0, 7].
+  Stream<int> watch7DayDaysOnGoal({
+    required int dailyGoalMl,
+    int boundaryHour = 5,
+    DateTime? now,
+  }) {
+    final nowLocal = now ?? DateTime.now();
+    final todayStart = dayWindow(now: nowLocal, boundaryHour: boundaryHour).$1;
+    final sevenDaysAgoStart = DateTime(
+      todayStart.year,
+      todayStart.month,
+      todayStart.day - 7,
+      todayStart.hour,
+      todayStart.minute,
+    );
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchEntriesInWindow(
+      sevenDaysAgoStart.toUtc(),
+      todayStart.toUtc(),
+      nonAlcoholicTypes,
+    )
+        .map((entries) {
+      final byDay = <DateTime, int>{};
+      for (final (consumedAt, volumeMl) in entries) {
+        final dayStart = dayWindow(
+          now: consumedAt.toLocal(),
+          boundaryHour: boundaryHour,
+        ).$1;
+        byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
+      }
+      return byDay.values.where((total) => total >= dailyGoalMl).length;
+    });
   }
 
   // ---------------------------------------------------------------------------
