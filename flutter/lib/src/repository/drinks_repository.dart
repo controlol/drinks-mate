@@ -30,7 +30,7 @@ class DrinksRepository {
   Stream<List<DrinkPreset>> watchAllPresets() =>
       _db.watchAllPresets().map((rows) => rows.map(_rowToPreset).toList());
 
-  /// All non-deleted alcoholic presets (including hidden) ordered by [sortOrder].
+  /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
   /// Intended for the Party Mode preset picker.
   Stream<List<DrinkPreset>> watchAlcoholicPresets() => _db
       .watchAlcoholicPresets()
@@ -105,8 +105,9 @@ class DrinksRepository {
       DrinkPresetsCompanion(
         name: name != null ? Value(name) : const Value.absent(),
         volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-        abvPercent:
-            abvPercent != null ? Value(abvPercent) : const Value.absent(),
+        abvPercent: abvPercent != null
+            ? Value(abvPercent)
+            : const Value.absent(),
         regularPriceMinor: regularPriceMinor != null
             ? Value(regularPriceMinor)
             : const Value.absent(),
@@ -205,19 +206,19 @@ class DrinksRepository {
   // ---------------------------------------------------------------------------
 
   static DrinkPreset _rowToPreset(DrinkPresetRow row) => DrinkPreset(
-        id: row.id,
-        name: row.name,
-        beverageType: BeverageType.fromStored(row.beverageType),
-        volumeMl: row.volumeMl,
-        abvPercent: row.abvPercent,
-        regularPriceMinor: row.regularPriceMinor,
-        regularCurrency: row.regularCurrency,
-        iconKey: row.iconKey,
-        iconColor: row.iconColor,
-        isUserCreated: row.isUserCreated,
-        isHidden: row.isHidden,
-        sortOrder: row.sortOrder,
-      );
+    id: row.id,
+    name: row.name,
+    beverageType: BeverageType.fromStored(row.beverageType),
+    volumeMl: row.volumeMl,
+    abvPercent: row.abvPercent,
+    regularPriceMinor: row.regularPriceMinor,
+    regularCurrency: row.regularCurrency,
+    iconKey: row.iconKey,
+    iconColor: row.iconColor,
+    isUserCreated: row.isUserCreated,
+    isHidden: row.isHidden,
+    sortOrder: row.sortOrder,
+  );
 
   // ---------------------------------------------------------------------------
   // Validation helpers
