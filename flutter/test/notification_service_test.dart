@@ -79,5 +79,11 @@ void main() {
       expect(svc.scheduled, isEmpty);
       expect(svc.cancelled, [42]);
     });
+
+    test('requestPermission reflects permissionGranted = false', () async {
+      final svc = FakeNotificationService()..permissionGranted = false;
+
+      expect(await svc.requestPermission(), isFalse);
+    });
   });
 }

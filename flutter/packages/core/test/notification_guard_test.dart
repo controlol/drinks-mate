@@ -275,23 +275,28 @@ void main() {
     final now = DateTime(2026, 6, 24, 10, 0);
     const intervalMin = 90;
 
-    test('lastNotifiedAt is null → false (never sent, never too soon)', () {
-      expect(
-        isNotificationTooSoon(
-          now: now,
-          lastNotifiedAt: null,
-          minIntervalMin: intervalMin,
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'lastDrinkLoggedAt is null → false (never logged, never too soon)',
+      () {
+        expect(
+          isNotificationTooSoon(
+            now: now,
+            lastDrinkLoggedAt: null,
+            minIntervalMin: intervalMin,
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('exactly minIntervalMin minutes elapsed → false (not too soon)', () {
-      final lastNotifiedAt = now.subtract(const Duration(minutes: intervalMin));
+      final lastDrinkLoggedAt = now.subtract(
+        const Duration(minutes: intervalMin),
+      );
       expect(
         isNotificationTooSoon(
           now: now,
-          lastNotifiedAt: lastNotifiedAt,
+          lastDrinkLoggedAt: lastDrinkLoggedAt,
           minIntervalMin: intervalMin,
         ),
         isFalse,
@@ -299,12 +304,13 @@ void main() {
     });
 
     test('1 minute less than minIntervalMin elapsed → true (too soon)', () {
-      final lastNotifiedAt =
-          now.subtract(const Duration(minutes: intervalMin - 1));
+      final lastDrinkLoggedAt = now.subtract(
+        const Duration(minutes: intervalMin - 1),
+      );
       expect(
         isNotificationTooSoon(
           now: now,
-          lastNotifiedAt: lastNotifiedAt,
+          lastDrinkLoggedAt: lastDrinkLoggedAt,
           minIntervalMin: intervalMin,
         ),
         isTrue,
@@ -312,12 +318,13 @@ void main() {
     });
 
     test('more than minIntervalMin elapsed → false', () {
-      final lastNotifiedAt =
-          now.subtract(const Duration(minutes: intervalMin + 30));
+      final lastDrinkLoggedAt = now.subtract(
+        const Duration(minutes: intervalMin + 30),
+      );
       expect(
         isNotificationTooSoon(
           now: now,
-          lastNotifiedAt: lastNotifiedAt,
+          lastDrinkLoggedAt: lastDrinkLoggedAt,
           minIntervalMin: intervalMin,
         ),
         isFalse,
@@ -325,13 +332,13 @@ void main() {
     });
 
     test('just 1 ms short of minIntervalMin → true (too soon)', () {
-      final lastNotifiedAt = now.subtract(
+      final lastDrinkLoggedAt = now.subtract(
         const Duration(milliseconds: intervalMin * 60000 - 1),
       );
       expect(
         isNotificationTooSoon(
           now: now,
-          lastNotifiedAt: lastNotifiedAt,
+          lastDrinkLoggedAt: lastDrinkLoggedAt,
           minIntervalMin: intervalMin,
         ),
         isTrue,
@@ -483,18 +490,20 @@ void main() {
 
     // Regression: from before activeStartHour on the same day must produce
     // a slot at activeStartHour on that SAME day, not the next day.
-    test('from before window start same day → first slot is same day at 08:00',
-        () {
-      final from = DateTime(2026, 6, 24, 6, 0); // 06:00, before 08:00 start
-      final slots = buildScheduleSlots(
-        from: from,
-        intervalMin: intervalMin,
-        activeStartHour: startHour,
-        activeEndHour: endHour,
-        count: 1,
-      );
-      expect(slots, isNotEmpty);
-      expect(slots.first, equals(DateTime(2026, 6, 24, startHour, 0)));
-    });
+    test(
+      'from before window start same day → first slot is same day at 08:00',
+      () {
+        final from = DateTime(2026, 6, 24, 6, 0); // 06:00, before 08:00 start
+        final slots = buildScheduleSlots(
+          from: from,
+          intervalMin: intervalMin,
+          activeStartHour: startHour,
+          activeEndHour: endHour,
+          count: 1,
+        );
+        expect(slots, isNotEmpty);
+        expect(slots.first, equals(DateTime(2026, 6, 24, startHour, 0)));
+      },
+    );
   });
 }

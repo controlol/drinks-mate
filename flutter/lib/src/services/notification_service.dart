@@ -156,8 +156,11 @@ class FlutterNotificationService implements NotificationService {
       // Allow retry on failure by clearing the cached future.
       _initFuture = null;
       // Swallow MissingPluginException in test/headless environments. Log
-      // anything else so real device misconfigurations are diagnosable.
-      debugPrint('[NotificationService] initialize failed: $e');
+      // anything else (debug/profile only) so real device misconfigurations
+      // are diagnosable without leaking exception detail in release builds.
+      if (kDebugMode) {
+        debugPrint('[NotificationService] initialize failed: $e');
+      }
     }
   }
 
@@ -217,9 +220,11 @@ class FlutterNotificationService implements NotificationService {
         'notification id $id too large: id*1000+47 overflows int32',
       );
       if (id >= 2000000) {
-        debugPrint(
-          '[NotificationService] id $id too large — skipping schedule',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '[NotificationService] id $id too large — skipping schedule',
+          );
+        }
         return;
       }
       final details = _notificationDetails(channelId);
@@ -238,8 +243,11 @@ class FlutterNotificationService implements NotificationService {
               UILocalNotificationDateInterpretation.absoluteTime,
         );
       }
-    } catch (_) {
+    } catch (e) {
       // Swallow; callers must not crash when the plugin is unavailable.
+      if (kDebugMode) {
+        debugPrint('[NotificationService] scheduleRepeating failed: $e');
+      }
     }
   }
 
@@ -266,7 +274,11 @@ class FlutterNotificationService implements NotificationService {
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[NotificationService] scheduleOnce failed: $e');
+      }
+    }
   }
 
   @override
@@ -275,35 +287,57 @@ class FlutterNotificationService implements NotificationService {
       for (var i = 0; i < count; i++) {
         await _plugin.cancel(id * 1000 + i);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[NotificationService] cancelRepeating failed: $e');
+      }
+    }
   }
 
   @override
   Future<void> cancel(int id) async {
     try {
       await _plugin.cancel(id);
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[NotificationService] cancel failed: $e');
+      }
+    }
   }
 
   @override
   Future<void> cancelAll() async {
     try {
       await _plugin.cancelAll();
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[NotificationService] cancelAll failed: $e');
+      }
+    }
   }
 
   NotificationDetails _notificationDetails(String channelId) {
-    final channelName = channelId == kHydrationChannelId
-        ? kHydrationChannelName
-        : channelId == kWeeklySummaryChannelId
-            ? kWeeklySummaryChannelName
-            : channelId;
+    final String channelName;
+    switch (channelId) {
+      case kHydrationChannelId:
+        channelName = kHydrationChannelName;
+      case kWeeklySummaryChannelId:
+        channelName = kWeeklySummaryChannelName;
+      default:
+        // Never surface an internal channel id as the user-visible name in
+        // Android Settings.
+        assert(false, 'unknown channelId: $channelId');
+        channelName = 'Notifications';
+    }
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
         channelName,
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
+        // Hide notification content (may include hydration/BAC data) on the
+        // lock screen; badge/existence still visible.
+        visibility: NotificationVisibility.private,
       ),
       iOS: const DarwinNotificationDetails(),
     );

@@ -53,17 +53,23 @@ bool isInactiveUserSilenced({
 }
 
 /// Returns true when less than [minIntervalMin] minutes have passed since the
-/// last notification was delivered — the flood-prevention guard.
+/// most recent drink log — the flood-prevention guard.
+///
+/// Logging a drink resets the reminder timer: the next reminder fires
+/// [minIntervalMin] after the most recent log, not after the
+/// previously-scheduled reminder.
 ///
 /// Callers supply [minIntervalMin] from the user's configured reminder interval
 /// so no constant is hardcoded here.
+///
+/// Source: notifications.md §Behaviour condition 5, §Scheduling.
 bool isNotificationTooSoon({
   required DateTime now,
-  required DateTime? lastNotifiedAt,
+  required DateTime? lastDrinkLoggedAt,
   required int minIntervalMin,
 }) {
-  if (lastNotifiedAt == null) return false;
-  final elapsedMin = now.difference(lastNotifiedAt).inMilliseconds /
+  if (lastDrinkLoggedAt == null) return false;
+  final elapsedMin = now.difference(lastDrinkLoggedAt).inMilliseconds /
       Duration.millisecondsPerMinute;
   return elapsedMin < minIntervalMin;
 }
