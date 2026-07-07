@@ -10,6 +10,12 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (set by automated remediation; enables the review and security jobs)"
+        required: true
+        type: string
 
 # Cancel superseded runs on the same ref to save minutes.
 concurrency:
@@ -73,18 +79,22 @@ jobs:
 
   review:
     needs: [core, app]
-    # Trust gate: only auto-run on PRs from the owner or the pipeline's own
-    # claude/* branches. Any other PR must be greenlit with the `agent-ok` label.
+    # Trust gate: only auto-run on trusted PRs or an explicit workflow_dispatch
+    # (dispatched by the automated remediation workflow, which is itself trusted).
     # Explicit needs-result guard ensures this never runs on a red CI.
     if: >
-      github.event_name == 'pull_request' &&
       needs.core.result == 'success' &&
-      needs.app.result == 'success' &&
-      github.event.pull_request.draft == false && (
-        github.event.pull_request.author_association == 'OWNER' ||
-        github.event.pull_request.user.login == 'claude[bot]' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
-        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      needs.app.result == 'success' && (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.draft == false && (
+            github.event.pull_request.author_association == 'OWNER' ||
+            github.event.pull_request.user.login == 'claude[bot]' ||
+            (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+            contains(github.event.pull_request.labels.*.name, 'agent-ok')
+          )
+        )
       )
     runs-on: ubuntu-latest
     permissions:
@@ -120,8 +130,8 @@ jobs:
 
             Context:
               Repository: ${{ github.repository }}
-              PR: #${{ github.event.pull_request.number }}
-              Event: ${{ github.event.action }}
+              PR: #${{ inputs.pr_number || github.event.pull_request.number }}
+              Event: ${{ inputs.pr_number && 'synchronize' || github.event.action }}
 
             Priorities, in order:
             1. Correctness bugs and missing edge cases.
@@ -183,16 +193,20 @@ jobs:
 
   security:
     needs: [core, app]
-    # Trust gate: same rule as review — only auto-run on trusted PRs.
+    # Trust gate: same rule as review — trusted PRs or an explicit workflow_dispatch.
     if: >
-      github.event_name == 'pull_request' &&
       needs.core.result == 'success' &&
-      needs.app.result == 'success' &&
-      github.event.pull_request.draft == false && (
-        github.event.pull_request.author_association == 'OWNER' ||
-        github.event.pull_request.user.login == 'claude[bot]' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
-        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      needs.app.result == 'success' && (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.draft == false && (
+            github.event.pull_request.author_association == 'OWNER' ||
+            github.event.pull_request.user.login == 'claude[bot]' ||
+            (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+            contains(github.event.pull_request.labels.*.name, 'agent-ok')
+          )
+        )
       )
     runs-on: ubuntu-latest
     permissions:
@@ -211,7 +225,7 @@ jobs:
           claude_args: "--permission-mode bypassPermissions"
           allowed_bots: "github-actions[bot],claude[bot]"
           prompt: |
-            Perform a security review of PR #${{ github.event.pull_request.number }}
+            Perform a security review of PR #${{ inputs.pr_number || github.event.pull_request.number }}
             in ${{ github.repository }}. This is a Flutter/Dart mobile app with a
             local-only SQLite database (Drift) — no server, no accounts, Phase 1.
 

@@ -226,3 +226,11 @@ jobs:
             --method PATCH \
             --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
 
+      - name: Dispatch CI
+        if: steps.pr.outputs.skip != 'true'
+        run: |
+          gh workflow run ci.yml \
+            --repo "$REPO" \
+            --ref "$HEAD_BRANCH" \
+            -f pr_number="${{ steps.pr.outputs.pr }}"
+
