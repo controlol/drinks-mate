@@ -1,12 +1,13 @@
 name: Review Remediation
 
 # When an AI review (code or security) fails on any trusted PR, run the agent
-# once to address the findings and push fixes to the same branch.
+# to address the findings and push fixes to the same branch.
 # Trusted = opened by app/claude OR carries the agent-ok label (maintainer opt-in).
 #
 # The PR re-enters the normal CI + review cycle once the fixes are pushed.
-# Capped at one attempt per PR via the `agent-remediation` label — if the
-# second review also fails, a human must intervene.
+# Capped at MAX_REMEDIATION_ATTEMPTS per PR (default 3), counted by commits
+# whose message starts with "fix: address automated review findings" — if the
+# review still fails after the cap, a human must intervene.
 #
 # NOTE: workflow_run only fires from the default branch, so this workflow takes
 # effect only after it is merged to main.
@@ -31,6 +32,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      MAX_REMEDIATION_ATTEMPTS: "3"
     steps:
       - name: Find PR and check remediation cap
         id: pr
@@ -67,18 +69,21 @@ jobs:
             exit 0
           fi
 
-          # Only attempt one automated remediation cycle per PR.
-          already=$(gh pr view "$pr_number" --repo "$REPO" --json labels \
-            --jq '[.labels[].name] | contains(["agent-remediation"]) | if . then 1 else 0 end')
-          if [ "${already:-0}" -eq 1 ]; then
-            echo "Remediation already attempted for PR #$pr_number — skipping."
+          # Allow up to 3 automated remediation attempts, counted by commits
+          # whose message starts with the fixed remediation prefix.
+          prior=$(gh api "repos/$REPO/commits?sha=$HEAD_BRANCH&per_page=100" \
+            --jq '[.[] | select(.commit.message | startswith("fix: address automated review findings"))] | length')
+          attempt=$((prior + 1))
+          if [ "$attempt" -gt "$MAX_REMEDIATION_ATTEMPTS" ]; then
+            echo "Remediation already attempted $MAX_REMEDIATION_ATTEMPTS times for PR #$pr_number — skipping."
             gh pr comment "$pr_number" --repo "$REPO" \
-              --body "⚠️ Automated remediation already ran and the review still fails. Manual intervention required." \
+              --body "⚠️ Automated remediation has run $MAX_REMEDIATION_ATTEMPTS times and the review still fails. Manual intervention required." \
               || true
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          echo "attempt=$attempt" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Generate App token
@@ -127,7 +132,7 @@ jobs:
           pr="${{ steps.pr.outputs.pr }}"
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           cat > "$RUNNER_TEMP/start_body.txt" << 'BODY_EOF'
-          🤖 **Automated remediation started.** Addressing failing review findings — this comment will be updated with a summary when done.
+          🤖 **Automated remediation started (attempt ${{ steps.pr.outputs.attempt }}/${{ env.MAX_REMEDIATION_ATTEMPTS }}).** Addressing failing review findings — this comment will be updated with a summary when done.
           BODY_EOF
           printf '\n[View live progress →](%s)' "$run_url" >> "$RUNNER_TEMP/start_body.txt"
           comment_id=$(gh api "repos/$REPO/issues/$pr/comments" \
@@ -221,8 +226,3 @@ jobs:
             --method PATCH \
             --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
 
-      - name: Remove remediation label on failure
-        if: failure() && steps.pr.outputs.skip != 'true'
-        run: |
-          gh pr edit "${{ steps.pr.outputs.pr }}" --repo "$REPO" \
-            --remove-label "agent-remediation" || true
