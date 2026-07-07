@@ -13,7 +13,7 @@ name: Review Remediation
 
 on:
   workflow_run:
-    workflows: ["Claude PR Review", "Security Review"]
+    workflows: ["CI"]
     types: [completed]
 
 jobs:
@@ -36,6 +36,15 @@ jobs:
         id: pr
         run: |
           set -euo pipefail
+
+          # Only remediate when the review or security job failed, not core/app CI.
+          review_failed=$(gh api "repos/$REPO/actions/runs/${{ github.event.workflow_run.id }}/jobs" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | map(select(. == "review" or . == "security")) | length')
+          if [ "${review_failed:-0}" -eq 0 ]; then
+            echo "CI failure is from core/app jobs, not review/security — skipping remediation."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           pr_number=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" \
             --json number --jq '.[0].number // ""')

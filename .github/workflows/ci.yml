@@ -1,7 +1,8 @@
 name: CI
 
-# Deterministic, non-AI quality gate. Runs first and fast on every push/PR.
-# This is the definition-of-done agents (and humans) must satisfy before merge.
+# Deterministic quality gate (core + app) followed by agentic review (review +
+# security). All four jobs are required status checks. review and security wait
+# for both CI jobs to succeed, then run in parallel.
 
 on:
   push:
@@ -69,3 +70,185 @@ jobs:
   # Integration tests (integration_test + Patrol) run on a nightly cron and on
   # PRs touching critical flows — wire this up once those tests exist.
   # See engineering/decisions/flutter-stack.md (D4) and docs/agentic-workflow.md.
+
+  review:
+    needs: [core, app]
+    # Trust gate: only auto-run on PRs from the owner or the pipeline's own
+    # claude/* branches. Any other PR must be greenlit with the `agent-ok` label.
+    # Explicit needs-result guard ensures this never runs on a red CI.
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.core.result == 'success' &&
+      needs.app.result == 'success' &&
+      github.event.pull_request.draft == false && (
+        github.event.pull_request.author_association == 'OWNER' ||
+        github.event.pull_request.user.login == 'claude[bot]' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Auth via a Claude Pro/Max subscription (CLAUDE_CODE_OAUTH_TOKEN).
+          # Note: inline-comment classification needs an API key, so on a
+          # subscription token unconfirmed comments are posted directly.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--permission-mode bypassPermissions"
+          # Allow the dispatch-agent (github-actions bot) to trigger reviews on
+          # its own PRs. The trust gate in the `if:` above already limits which
+          # PRs get reviewed; this just lifts the bot-actor block inside the action.
+          allowed_bots: "github-actions[bot],claude[bot]"
+          prompt: |
+            Review this pull request's diff.
+
+            Context:
+              Repository: ${{ github.repository }}
+              PR: #${{ github.event.pull_request.number }}
+              Event: ${{ github.event.action }}
+
+            Priorities, in order:
+            1. Correctness bugs and missing edge cases.
+            2. Parity Rulebook violations (engineering/decisions/design-system.md
+               → Appendix): rounding, units, boundaries, BAC chain, validation.
+            3. Phase-1 constraint breaches: `core` must stay pure Dart; no Phase-2
+               entities; no banned dependencies.
+            4. Test gaps — flag ONLY when a new pure-Dart function that computes a
+               numeric result was added with zero accompanying test coverage.
+
+            For priorities 2 and 3, delegate the deep check to the `spec-auditor`
+            subagent (.claude/agents/spec-auditor.md) and fold its findings into
+            your review.
+
+            Complete the P1–P3 structural pass (correctness, Parity Rulebook via
+            the spec-auditor, Phase-1 constraints). Once a confirmed blocking
+            finding exists, you may stop hunting for additional low-priority nits —
+            surface a representative set rather than an exhaustive list.
+
+            Post inline comments on the specific lines. Only read files that appear
+            in this PR's diff; open a file outside the diff only to verify a
+            specific candidate finding — do not browse. Skip pure formatting nits
+            (CI owns those). End with a one-line verdict.
+
+            Verification policy — route each question to the right source:
+            - Spec, Parity Rulebook, or Phase-1 constraint questions: consult LOCAL
+              files only (engineering/, design/). The repo is the source of truth —
+              do NOT web-search these.
+            - Broader technology questions (framework/library/API usage, idioms,
+              deprecations, migrations): verify with the context7 MCP tools or web
+              search before posting. ALWAYS validate against the exact versions this
+              project pins — read flutter/pubspec.yaml and flutter/pubspec.lock and
+              scope the check to those resolved versions, never assume the latest
+              release. A deprecation/migration only matters if it applies to the
+              pinned version.
+
+            For findings that cannot be resolved without human input, read
+            `.claude/commands/defer-to-issue.md` and follow its process. When
+            running `gh issue create`, substitute REPO with the Repository and
+            #N with the PR number from the Context block above. Apply the event
+            gate from the Context: only create issues on "opened" or "reopened",
+            never on "synchronize".
+
+            After posting all comments (and creating any deferred issues), write
+            exactly one line to $RUNNER_TEMP/review_verdict.txt:
+            - "FAIL" — if you found any finding in priorities 1–4 that is NOT deferred.
+            - "PASS" — if there are no blocking findings (deferred items are PASS).
+
+      - name: Enforce verdict
+        if: always()
+        run: |
+          verdict=$(cat "$RUNNER_TEMP/review_verdict.txt" 2>/dev/null \
+            | tr -d '[:space:]' || echo "PASS")
+          echo "Code review verdict: $verdict"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::error::Code review found blocking issues. See inline PR comments."
+            exit 1
+          fi
+
+  security:
+    needs: [core, app]
+    # Trust gate: same rule as review — only auto-run on trusted PRs.
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.core.result == 'success' &&
+      needs.app.result == 'success' &&
+      github.event.pull_request.draft == false && (
+        github.event.pull_request.author_association == 'OWNER' ||
+        github.event.pull_request.user.login == 'claude[bot]' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
+        contains(github.event.pull_request.labels.*.name, 'agent-ok')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Claude security review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--permission-mode bypassPermissions"
+          allowed_bots: "github-actions[bot],claude[bot]"
+          prompt: |
+            Perform a security review of PR #${{ github.event.pull_request.number }}
+            in ${{ github.repository }}. This is a Flutter/Dart mobile app with a
+            local-only SQLite database (Drift) — no server, no accounts, Phase 1.
+
+            Check the diff for:
+            1. Secret / credential leakage — hardcoded API keys, tokens, passwords,
+               or any value that looks like a secret committed to source.
+            2. Unsafe file-system access — path traversal, world-readable storage,
+               sensitive data written to unprotected locations.
+            3. Insecure persistence — sensitive data stored in plaintext (Drift
+               columns that should be encrypted), unprotected SharedPreferences.
+            4. Injection — any user-supplied value passed unsanitised to
+               Process.run, a shell command, or a dynamic query builder.
+            5. Cleartext network traffic — HTTP instead of HTTPS, missing cert
+               validation, insecure WebSocket.
+            6. Newly added pub.dev packages with known CVEs or that request
+               excessive platform permissions (check pubspec.yaml changes).
+
+            Rate every finding: CRITICAL, HIGH, MEDIUM, or LOW.
+            Post an inline comment on the specific diff line for each finding.
+            Skip findings that are clearly outside this diff.
+
+            After posting all comments, write exactly one line to
+            $RUNNER_TEMP/security_verdict.txt:
+            - "FAIL" — if there is at least one CRITICAL or HIGH finding.
+            - "PASS" — if all findings are MEDIUM / LOW, or there are none.
+
+            End with a one-line summary comment on the PR (e.g.
+            "Security review: PASS — no high-severity findings." or
+            "Security review: FAIL — 2 HIGH findings, see inline comments.").
+
+      - name: Enforce verdict
+        if: always()
+        run: |
+          verdict=$(cat "$RUNNER_TEMP/security_verdict.txt" 2>/dev/null \
+            | tr -d '[:space:]' || echo "PASS")
+          echo "Security verdict: $verdict"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::error::Security review found CRITICAL or HIGH severity issues. See inline PR comments."
+            exit 1
+          fi
