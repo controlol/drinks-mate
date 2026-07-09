@@ -748,6 +748,83 @@ void main() {
       expect(p2.sortOrder, 2);
       expect(p1.sortOrder, 3);
     });
+
+    test(
+      'reordering a partial list does not collide with untouched presets',
+      () async {
+        // Regression test: reorderPresets must renumber the *entire*
+        // non-deleted set (seeded defaults included), not just the ids
+        // passed in — otherwise reassigning 1..N to a subset collides with
+        // whichever seeded presets already occupy those sortOrder values.
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = DrinksRepository(db);
+
+        final id1 = await _createUserPreset(
+          repo,
+          name: 'Preset Alpha',
+          sortOrder: 100,
+        );
+        final id2 = await _createUserPreset(
+          repo,
+          name: 'Preset Beta',
+          sortOrder: 101,
+        );
+        final id3 = await _createUserPreset(
+          repo,
+          name: 'Preset Gamma',
+          sortOrder: 102,
+        );
+
+        // Only reorder the 3 user-created presets — the 14 seeded defaults
+        // are left out of orderedIds entirely.
+        await repo.reorderPresets([id3, id2, id1]);
+
+        final presets = await repo.watchAllPresets().first;
+        final sortOrders = presets.map((p) => p.sortOrder).toList();
+
+        expect(
+          sortOrders.toSet().length,
+          sortOrders.length,
+          reason: 'Every non-deleted preset must have a unique sortOrder',
+        );
+        expect(sortOrders..sort(), List.generate(17, (i) => i + 1));
+
+        final p1 = presets.firstWhere((p) => p.id == id1);
+        final p2 = presets.firstWhere((p) => p.id == id2);
+        final p3 = presets.firstWhere((p) => p.id == id3);
+        expect(p3.sortOrder, 1);
+        expect(p2.sortOrder, 2);
+        expect(p1.sortOrder, 3);
+      },
+    );
+
+    test('throws ArgumentError when orderedIds contains duplicates', () async {
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
+
+      final id1 = await _createUserPreset(repo, name: 'Preset Alpha');
+
+      await expectLater(
+        () => repo.reorderPresets([id1, id1]),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test(
+      'throws StateError when orderedIds contains an unknown id',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = DrinksRepository(db);
+
+        await expectLater(
+          () => repo.reorderPresets(['unknown-id-that-does-not-exist']),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

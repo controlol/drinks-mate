@@ -519,14 +519,46 @@ class AppDatabase extends _$AppDatabase {
         DrinkPresetsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
       );
 
-  /// Bulk-updates [sortOrder] (and [updatedAt]) for each id in [orderedIds]
-  /// in a single transaction. Index 0 → sortOrder 1.
+  /// Bulk-updates [sortOrder] (and [updatedAt]) for every non-deleted preset,
+  /// in a single transaction. Ids in [orderedIds] receive sortOrder 1..N (in
+  /// the order given); any other non-deleted preset not in [orderedIds] keeps
+  /// its relative order and is appended after, at N+1... This renumbers the
+  /// *entire* non-deleted set — including seeded defaults not passed in — so
+  /// a partial [orderedIds] can never collide with an untouched preset's
+  /// existing sortOrder.
+  ///
+  /// Throws [ArgumentError] if [orderedIds] contains duplicates, or
+  /// [StateError] if it contains an id that does not exist or is deleted.
   Future<void> reorderPresets(List<String> orderedIds, DateTime now) =>
       transaction(() async {
-        for (var i = 0; i < orderedIds.length; i++) {
+        if (orderedIds.toSet().length != orderedIds.length) {
+          throw ArgumentError.value(
+            orderedIds,
+            'orderedIds',
+            'Contains duplicate ids',
+          );
+        }
+
+        final all = await (select(drinkPresets)
+              ..where((t) => t.deletedAt.isNull())
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            .get();
+        final validIds = all.map((r) => r.id).toSet();
+        if (!orderedIds.every(validIds.contains)) {
+          throw StateError(
+            'orderedIds contains an id that does not exist or is deleted.',
+          );
+        }
+
+        final movedIds = orderedIds.toSet();
+        final remainingIds =
+            all.map((r) => r.id).where((id) => !movedIds.contains(id));
+        final finalOrder = [...orderedIds, ...remainingIds];
+
+        for (var i = 0; i < finalOrder.length; i++) {
           await (update(
             drinkPresets,
-          )..where((t) => t.id.equals(orderedIds[i])))
+          )..where((t) => t.id.equals(finalOrder[i])))
               .write(
             DrinkPresetsCompanion(
               sortOrder: Value(i + 1),

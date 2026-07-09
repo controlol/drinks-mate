@@ -228,8 +228,14 @@ class DrinksRepository {
     await _db.softDeletePreset(id, DateTime.now().toUtc());
   }
 
-  /// Bulk-updates [sortOrder] for each id in [orderedIds] in a single
-  /// transaction. Index 0 receives sortOrder 1.
+  /// Bulk-updates [sortOrder] for every non-deleted preset in a single
+  /// transaction. Ids in [orderedIds] receive sortOrder 1..N (in the order
+  /// given); any other non-deleted preset (e.g. a seeded default not passed
+  /// in) keeps its relative order and is appended after, so [orderedIds] may
+  /// be a partial list without creating duplicate sortOrder values.
+  ///
+  /// Throws [ArgumentError] if [orderedIds] contains duplicates, or
+  /// [StateError] if it contains an id that does not exist or is deleted.
   Future<void> reorderPresets(List<String> orderedIds) =>
       _db.reorderPresets(orderedIds, DateTime.now().toUtc());
 
