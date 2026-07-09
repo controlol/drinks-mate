@@ -252,6 +252,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Defense-in-depth: ISSUE ultimately traces back to the
+          # workflow_dispatch free-text `issue` input on the manual-dispatch
+          # path, unvalidated elsewhere. It's concatenated into a jq regex
+          # below, so a non-numeric value could widen that match unexpectedly
+          # (e.g. embedded regex metacharacters) rather than just failing to
+          # find a PR.
+          if ! [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::ISSUE '$ISSUE' is not a valid issue number; refusing to proceed."
+            exit 1
+          fi
+
           # Ensure labels exist (idempotent; ignore error if already present).
           gh label create "$PR_LABEL" --repo "$REPO" \
             --color "#0052cc" --description "Agent PR open, awaiting review" 2>/dev/null || true
@@ -274,16 +285,21 @@ jobs:
           # is the trust gate ci.yml's review/security jobs use to decide
           # whether to run the secret-bearing Claude Code Action against a
           # PR's (fully attacker-controlled, for a fork) diff/description.
+          #
+          # NOTE: `gh ... --jq` takes exactly one expression argument — it
+          # does NOT support a leading `--arg name value` pair the way the
+          # standalone `jq` binary does. Pipe to real `jq` instead so --arg
+          # actually works.
           pr_number=$(gh pr list --repo "$REPO" --state open \
-            --json number,headRefName,body,author \
-            --jq --arg issue "$ISSUE" \
-            '.[] | select(
-                (.author.login == "app/claude") and (
-                  (.headRefName == ("claude/issue-" + $issue)) or
-                  (.headRefName | startswith("claude/issue-" + $issue + "-")) or
-                  ((.body // "") | test("\\bcloses\\s+#" + $issue + "\\b"; "i"))
-                )
-              ) | .number' \
+              --json number,headRefName,body,author \
+            | jq -r --arg issue "$ISSUE" \
+              '.[] | select(
+                  (.author.login == "app/claude") and (
+                    (.headRefName == ("claude/issue-" + $issue)) or
+                    (.headRefName | startswith("claude/issue-" + $issue + "-")) or
+                    ((.body // "") | test("\\bcloses\\s+#" + $issue + "\\b"; "i"))
+                  )
+                ) | .number' \
             | head -1)
 
           if [ -n "$pr_number" ]; then
