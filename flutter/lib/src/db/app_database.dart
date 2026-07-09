@@ -99,7 +99,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d002',
-          name: 'Bottle of water 500ml',
+          name: 'Bottle of water (0.5L)',
           beverageType: 'water',
           volumeMl: 500,
           iconKey: 'bottle',
@@ -109,7 +109,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d003',
-          name: 'Can of water 330ml',
+          name: 'Can of water (0.33L)',
           beverageType: 'water',
           volumeMl: 330,
           iconKey: 'can',
@@ -179,7 +179,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d010',
-          name: 'Alcohol-free beer 330ml',
+          name: 'Alcohol-free beer (0.33L)',
           beverageType: 'non_alcoholic_beer',
           volumeMl: 330,
           iconKey: 'beer_glass',
@@ -191,7 +191,7 @@ class AppDatabase extends _$AppDatabase {
         // Colours from BeverageType.defaultIconColor.
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d011',
-          name: 'Small beer 200ml',
+          name: 'Small beer (0.2L)',
           beverageType: 'beer',
           volumeMl: 200,
           abvPercent: 5.0,
@@ -202,7 +202,7 @@ class AppDatabase extends _$AppDatabase {
         ),
         _preset(
           id: 'f47ac10b-58cc-4372-a567-0e02b2c3d012',
-          name: 'Beer 330ml',
+          name: 'Beer (0.33L)',
           beverageType: 'beer',
           volumeMl: 330,
           abvPercent: 5.0,
