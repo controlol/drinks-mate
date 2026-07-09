@@ -56,6 +56,7 @@ env:
   READY_LABEL: agent-ready       # "queued for the agent"
   WORKING_LABEL: agent-working   # "agent currently running" (claim; swapped to PR_LABEL on success)
   PR_LABEL: agent-pr-open        # "PR open, awaiting review" (counts toward the cap)
+  NO_PR_LABEL: agent-no-pr       # agent run finished but opened no PR; needs human triage before re-queuing
   MAX_IN_FLIGHT: "1"             # how many agent PRs may be open at once
 
 jobs:
@@ -108,10 +109,11 @@ jobs:
           fi
 
           # --- Candidate queue: open, agent-ready, not already claimed, lowest # first ---
-          # Excludes issues carrying either slot label (running or PR open).
+          # Excludes issues carrying a slot label (running or PR open) or flagged
+          # as needing human triage after a run that opened no PR.
           candidates=$(gh issue list --repo "$REPO" --state open --label "$READY_LABEL" \
             --limit 200 --json number,labels,body \
-            --jq '[ .[] | select( any(.labels[]; .name == env.WORKING_LABEL or .name == env.PR_LABEL) | not ) ] | sort_by(.number)')
+            --jq '[ .[] | select( any(.labels[]; .name == env.WORKING_LABEL or .name == env.PR_LABEL or .name == env.NO_PR_LABEL) | not ) ] | sort_by(.number)')
           echo "Candidate ready issues: $(echo "$candidates" | jq 'length')"
 
           picked=""
@@ -222,16 +224,31 @@ jobs:
 
             Do not open a PR with failing checks or unresolved spec-auditor findings.
 
-      # Agent succeeded and opened a PR. Swap the issue label from agent-working
-      # (agent running) to agent-pr-open (PR awaiting review), so both humans and
-      # the dispatcher can see the correct status. Also add agent-ok to the PR so
-      # the claude-review workflow triggers automatically.
+            Before you finish, leave exactly one comment on the issue
+            (`gh issue comment ${{ needs.select.outputs.issue }}`) reporting the
+            outcome:
+            - If you opened a PR: state the PR number/link and a one-line
+              summary of what it does.
+            - If you did NOT open a PR: say so explicitly and explain why in
+              concrete terms (e.g. already covered by a prior merged PR,
+              genuinely blocked on something the queue didn't catch, or
+              checks won't pass without a human decision) so a maintainer can
+              decide whether to close the issue, unblock it, or re-queue it.
+            Never end the run without opening a PR or leaving this comment —
+            a silent exit leaves the queue unable to tell success from a
+            no-op.
+
+      # The Claude Code step exiting 0 only means the SDK session didn't crash —
+      # it does NOT mean a PR was opened (the agent may have concluded no change
+      # was needed, hit a wall, or otherwise stopped short). Check for a matching
+      # PR before deciding which outcome this was.
       - name: Promote claim on success
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           ISSUE: ${{ needs.select.outputs.issue }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
 
@@ -240,19 +257,45 @@ jobs:
             --color "#0052cc" --description "Agent PR open, awaiting review" 2>/dev/null || true
           gh label create "agent-ok" --repo "$REPO" \
             --color "#e4e669" --description "Greenlit for automated review" 2>/dev/null || true
+          gh label create "$NO_PR_LABEL" --repo "$REPO" \
+            --color "#b60205" --description "Agent run finished without opening a PR; needs human triage" 2>/dev/null || true
 
-          # Swap issue label: agent-working → agent-pr-open.
-          gh issue edit "$ISSUE" --repo "$REPO" \
-            --add-label "$PR_LABEL" --remove-label "$WORKING_LABEL" || true
-
-          # Find the PR the agent opened for this issue and add agent-ok so the
-          # claude-review workflow runs on it automatically.
+          # Find the PR the agent opened for this issue, if any. Match on the
+          # branch naming convention (exact `claude/issue-N` or `claude/issue-N-*`
+          # — a bare startswith would also match issue-17 against issue-1) OR a
+          # "Closes #N" reference in the body, since the agent isn't guaranteed
+          # to have followed the branch-naming convention exactly.
           pr_number=$(gh pr list --repo "$REPO" --state open \
-            --json number,headRefName \
-            --jq ".[] | select(.headRefName | startswith(\"claude/issue-$ISSUE\")) | .number" \
+            --json number,headRefName,body \
+            --jq --arg issue "$ISSUE" \
+            '.[] | select(
+                (.headRefName == ("claude/issue-" + $issue)) or
+                (.headRefName | startswith("claude/issue-" + $issue + "-")) or
+                ((.body // "") | test("closes\\s+#" + $issue + "\\b"; "i"))
+              ) | .number' \
             | head -1)
+
           if [ -n "$pr_number" ]; then
+            # Swap issue label: agent-working → agent-pr-open, and greenlight
+            # the PR for the automated review workflow.
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --add-label "$PR_LABEL" --remove-label "$WORKING_LABEL" || true
             gh pr edit "$pr_number" --repo "$REPO" --add-label "agent-ok" || true
+            # Guaranteed mechanical note, independent of whether the agent
+            # followed the prompt's "leave a comment" instruction.
+            gh issue comment "$ISSUE" --repo "$REPO" --body \
+              "Agent opened #$pr_number for this issue (run $RUN_URL)." || true
+          else
+            # No matching PR: release the claim instead of leaving the issue
+            # falsely marked agent-pr-open (which would wedge the in-flight cap
+            # forever, since nothing will ever merge). Flag it for a human
+            # instead of silently re-queuing, since the agent may have reached
+            # this outcome deliberately (e.g. issue already covered by prior
+            # work) and would likely reach it again on retry.
+            gh issue edit "$ISSUE" --repo "$REPO" \
+              --add-label "$NO_PR_LABEL" --remove-label "$WORKING_LABEL" || true
+            gh issue comment "$ISSUE" --repo "$REPO" --body \
+              "Agent run finished (run $RUN_URL) without opening a pull request. Added \`$NO_PR_LABEL\` and released \`$WORKING_LABEL\` so this issue no longer silently occupies the in-flight slot. Check the agent's comment above for its reasoning — the run log won't show it (output is hidden by the action), so a missing comment here is itself worth flagging as a prompt-compliance gap. Then either close this issue, fix the blocker, or remove \`$NO_PR_LABEL\` to let the dispatcher retry it." || true
           fi
 
       # If the run failed before a PR was opened, release the claim so the issue
