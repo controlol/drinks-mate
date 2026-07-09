@@ -1,0 +1,321 @@
+name: Sync PR with Main
+
+# Triggered when main moves: scans all open trusted PRs and brings out-of-date
+# ones back in sync automatically.
+#
+# Two paths, chosen by GitHub's mergeable_state for each PR:
+#   "behind"  — clean merge, no conflicts: deterministic git merge, no LLM.
+#   "dirty"   — real conflicts: claude-code-action resolves them using the PR's
+#               stated intent plus the context of what changed on main.
+#
+# Trust gate: same-repo only; claude/* head branches OR agent-ok-labelled PRs.
+#
+# Push mechanism: GitHub App token (not GITHUB_TOKEN) so the resulting
+# pull_request.synchronize event is NOT blocked by GitHub's loop-prevention
+# rule — CI, Claude PR Review, and Security Review re-trigger automatically.
+# Same pattern as review-remediation.yml; requires APP_ID + APP_PRIVATE_KEY.
+#
+# Does NOT auto-merge. After syncing the PR re-enters the normal gate:
+# CI → Claude PR Review → Security Review → auto-approve.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Specific PR number to sync (leave blank to scan all trusted PRs)"
+        required: false
+        type: string
+
+jobs:
+  find-prs:
+    name: Find out-of-date trusted PRs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.find.outputs.matrix }}
+      has_prs: ${{ steps.find.outputs.has_prs }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MANUAL_PR: ${{ github.event.inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${MANUAL_PR:-}" ]; then
+            echo "Manual dispatch for PR #$MANUAL_PR"
+            echo "matrix={\"pr\":[$MANUAL_PR]}" >> "$GITHUB_OUTPUT"
+            echo "has_prs=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # List open PRs from the same repo that are either on a claude/* branch
+          # or carry the agent-ok label (maintainer-greenlit).
+          prs=$(gh pr list --repo "$REPO" --state open \
+            --json number,headRefName,labels \
+            --jq '[
+              .[] |
+              select(
+                (.headRefName | startswith("claude/")) or
+                ([.labels[].name] | contains(["agent-ok"]))
+              ) |
+              .number
+            ]')
+
+          count=$(echo "$prs" | jq 'length')
+          echo "Trusted open PRs: $count — $prs"
+
+          if [ "$count" -eq 0 ]; then
+            echo "has_prs=false" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"pr":[]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "has_prs=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"pr\":$(echo "$prs" | jq -c '.')}" >> "$GITHUB_OUTPUT"
+          fi
+
+  sync:
+    name: Sync PR #${{ matrix.pr }}
+    needs: find-prs
+    if: needs.find-prs.outputs.has_prs == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.find-prs.outputs.matrix) }}
+      fail-fast: false
+    # Per-PR concurrency: if main is pushed twice before this PR's sync
+    # finishes, the second run cancels the first for this PR.
+    concurrency:
+      group: sync-pr-${{ matrix.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Poll mergeable state
+        id: state
+        run: |
+          set -euo pipefail
+          pr=${{ matrix.pr }}
+
+          # GitHub computes mergeable_state asynchronously after each push.
+          # Poll up to ~30 s for it to settle before deciding.
+          for attempt in 1 2 3 4 5 6; do
+            payload=$(gh api "repos/$REPO/pulls/$pr" \
+              --jq '{mergeable_state: .mergeable_state, head_ref: .head.ref}')
+            mergeable_state=$(echo "$payload" | jq -r '.mergeable_state')
+            head_ref=$(echo "$payload" | jq -r '.head_ref')
+            echo "PR #$pr: mergeable_state=$mergeable_state (attempt $attempt/6)"
+            if [ "$mergeable_state" != "unknown" ] && [ -n "$mergeable_state" ]; then
+              break
+            fi
+            [ "$attempt" -lt 6 ] && sleep 5
+          done
+
+          echo "pr_state=$mergeable_state" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$head_ref" >> "$GITHUB_OUTPUT"
+
+          case "$mergeable_state" in
+            behind|dirty)
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "PR #$pr is $mergeable_state — nothing to do."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Generate App token
+        if: steps.state.outputs.skip != 'true'
+        id: app_token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        if: steps.state.outputs.skip != 'true'
+        with:
+          ref: ${{ steps.state.outputs.head_ref }}
+          fetch-depth: 0
+          # App token so git push later authenticates as the App, not GITHUB_TOKEN.
+          token: ${{ steps.app_token.outputs.token }}
+
+      - uses: subosito/flutter-action@v2
+        if: steps.state.outputs.skip != 'true'
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      # ── Path 1: behind — no conflicts, deterministic merge ─────────────────
+      - name: Merge main (no conflicts)
+        if: steps.state.outputs.skip != 'true' && steps.state.outputs.pr_state == 'behind'
+        id: clean_merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge origin/main --no-edit -m "chore: merge main into branch (automated sync)"
+          (cd flutter/packages/core && dart pub get \
+            && dart format --output=none --set-exit-if-changed . \
+            && dart analyze --fatal-infos && dart test)
+          (cd flutter && flutter pub get \
+            && dart format --output=none --set-exit-if-changed . \
+            && flutter analyze && flutter test)
+          git push
+
+      - name: Comment — clean-merge success
+        if: >
+          steps.state.outputs.skip != 'true' &&
+          steps.state.outputs.pr_state == 'behind' &&
+          steps.clean_merge.outcome == 'success'
+        run: |
+          gh pr comment ${{ matrix.pr }} --repo "$REPO" \
+            --body "🔄 **Automated sync:** merged latest \`main\` into this branch — no conflicts, all definition-of-done checks passed."
+
+      - name: Comment — clean-merge failure
+        if: >
+          steps.state.outputs.skip != 'true' &&
+          steps.state.outputs.pr_state == 'behind' &&
+          steps.clean_merge.outcome == 'failure'
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh pr comment ${{ matrix.pr }} --repo "$REPO" \
+            --body "$(printf '⚠️ **Automated sync failed.** The branch merged cleanly with \`main\` (no conflict markers) but the definition-of-done checks failed after merging — there may be a semantic incompatibility between the two branches. Manual intervention required.\n\n[View run →](%s)' "$run_url")"
+
+      # ── Path 2: dirty — real conflicts, resolved by Claude ─────────────────
+      - name: Comment — conflict resolution started
+        if: steps.state.outputs.skip != 'true' && steps.state.outputs.pr_state == 'dirty'
+        id: start_comment
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          comment_id=$(gh api "repos/$REPO/issues/${{ matrix.pr }}/comments" \
+            --method POST \
+            --raw-field body="$(printf '🤖 **Automated conflict resolution started.** Analysing PR intent vs. incoming \`main\` changes — this comment will be updated with a summary when done.\n\n[View live progress →](%s)' "$run_url")" \
+            --jq '.id' 2>/dev/null || echo "")
+          echo "comment_id=$comment_id" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve conflicts with Claude
+        if: steps.state.outputs.skip != 'true' && steps.state.outputs.pr_state == 'dirty'
+        id: claude_resolve
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # App token so the agent's git push authenticates as the App.
+          github_token: ${{ steps.app_token.outputs.token }}
+          claude_args: "--permission-mode bypassPermissions"
+          allowed_bots: "github-actions[bot],claude[bot]"
+          prompt: |
+            PR #${{ matrix.pr }} in ${{ github.repository }} has merge conflicts with
+            the current `main` branch. Resolve them intelligently, verify correctness,
+            and push to the **existing branch**. Do NOT open a new PR.
+
+            ## Step 1 — Understand this PR's intent
+
+            Read the PR title, description, and existing reviews:
+              gh pr view ${{ matrix.pr }}
+
+            Then read the actual diff so you know exactly what the branch changes:
+              gh pr diff ${{ matrix.pr }}
+
+            ## Step 2 — Understand what landed on main
+
+            Find the divergence point and log what arrived on main since then:
+              git fetch origin main
+              BASE=$(git merge-base HEAD origin/main)
+              git log "$BASE"..origin/main --oneline --no-merges
+
+            Then read those commits' combined diff so you understand *why* main
+            looks the way it does:
+              git diff "$BASE" origin/main
+
+            ## Step 3 — Attempt the merge
+
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git merge origin/main --no-edit || true
+
+            ## Step 4 — Resolve every conflict
+
+            Rules:
+            1. **Preserve the PR's intent.** This branch exists for a reason; main's
+               changes should be incorporated *around* the PR's goal, not replace it.
+               If main changed the same code the PR changed, decide which intent wins
+               and why — document that decision in your summary.
+            2. **Never touch `.github/workflows/`.** If conflict markers appear in
+               workflow files, keep the PR-branch side unchanged and note it in your
+               summary.
+            3. After editing, zero conflict markers must remain. Verify:
+                 grep -rn '<<<<<<<' . --include='*.dart' --include='*.yaml' \
+                   --include='*.json' --include='*.gradle' || echo "No markers found"
+
+            ## Step 5 — Definition-of-done checks
+
+            Run until all pass:
+              (cd flutter/packages/core && dart pub get \
+                && dart format --output=none --set-exit-if-changed . \
+                && dart analyze --fatal-infos && dart test)
+              (cd flutter && flutter pub get \
+                && dart format --output=none --set-exit-if-changed . \
+                && flutter analyze && flutter test)
+
+            If tests fail after resolving markers, the conflict introduced a semantic
+            incompatibility — investigate and fix before pushing.
+
+            ## Step 6 — Commit and push
+
+              git add -A
+              git commit -m "chore: merge main and resolve conflicts (automated sync)"
+              git push
+
+            ## Step 7 — Write a resolution summary
+
+            Write markdown to $RUNNER_TEMP/sync_summary.txt with two sections:
+
+            **Resolved conflicts**
+            - One bullet per file that had markers: what the PR side did, what the
+              main side did, and the decision you made.
+
+            **Left for human review** (omit section if empty)
+            - Any workflow-file conflicts you left untouched.
+            - Any semantic conflict where your resolution is a judgment call a human
+              should verify.
+
+            If the conflicts are too semantically ambiguous to resolve safely (e.g.
+            both sides changed the same algorithm in incompatible ways), do NOT push
+            broken or partially-resolved code. Write an explanation to
+            $RUNNER_TEMP/sync_summary.txt and stop — CI will not be triggered and a
+            human can resolve manually.
+
+      - name: Update conflict-resolution comment
+        if: >
+          always() &&
+          steps.state.outputs.skip != 'true' &&
+          steps.state.outputs.pr_state == 'dirty' &&
+          steps.start_comment.outputs.comment_id != ''
+        env:
+          COMMENT_ID: ${{ steps.start_comment.outputs.comment_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -f "$RUNNER_TEMP/sync_summary.txt" ]; then
+            {
+              printf '🤖 **Automated conflict resolution complete.** [View run →](%s)\n\n' "$RUN_URL"
+              cat "$RUNNER_TEMP/sync_summary.txt"
+            } > "$RUNNER_TEMP/update_body.txt"
+          else
+            printf '⚠️ **Automated conflict resolution failed.** The resolution step did not complete — manual intervention required. [View run →](%s)' \
+              "$RUN_URL" > "$RUNNER_TEMP/update_body.txt"
+          fi
+          gh api "repos/$REPO/issues/comments/$COMMENT_ID" \
+            --method PATCH \
+            --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
