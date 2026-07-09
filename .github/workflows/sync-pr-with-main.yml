@@ -235,9 +235,18 @@ jobs:
               BASE=$(git merge-base HEAD origin/main)
               git log "$BASE"..origin/main --oneline --no-merges
 
-            Then read those commits' combined diff so you understand *why* main
-            looks the way it does:
-              git diff "$BASE" origin/main
+            This workflow re-syncs the branch on every push to main, so anything
+            from an earlier push should already be incorporated — the tip commit is
+            usually the only genuinely new context. It's normally a squash-merge of
+            a PR, so pull that PR's description too; it states *why* far more
+            reliably than the diff alone:
+              tip_subject=$(git log -1 --pretty=%s origin/main)
+              echo "Latest commit on main: $tip_subject"
+              tip_pr=$(echo "$tip_subject" | grep -oP '(?<=\(#)\d+(?=\)$)' || true)
+              if [ -n "$tip_pr" ]; then
+                gh pr view "$tip_pr" --repo ${{ github.repository }} \
+                  --json title,body --jq '"# \(.title)\n\n\(.body)"'
+              fi
 
             ## Step 3 — Attempt the merge
 
@@ -246,6 +255,13 @@ jobs:
               git merge origin/main --no-edit || true
 
             ## Step 4 — Resolve every conflict
+
+            First scope your reading to just the files that actually conflict —
+            not the full diff on either side:
+              conflicted=$(git diff --name-only --diff-filter=U)
+              echo "$conflicted"
+              git diff "$BASE" HEAD -- $conflicted          # what the PR did to these files
+              git diff "$BASE" origin/main -- $conflicted   # what main did to these files
 
             Rules:
             1. **Preserve the PR's intent.** This branch exists for a reason; main's
