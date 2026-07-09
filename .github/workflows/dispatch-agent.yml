@@ -265,13 +265,24 @@ jobs:
           # — a bare startswith would also match issue-17 against issue-1) OR a
           # "Closes #N" reference in the body, since the agent isn't guaranteed
           # to have followed the branch-naming convention exactly.
+          #
+          # SECURITY: also require the PR be authored by the dispatcher's own
+          # bot (app/claude — the same actor review-remediation.yml already
+          # trusts). Without this, the body-text match alone would let ANY
+          # open PR — including an untrusted fork PR an attacker opens with
+          # "Closes #N" in the body — get `agent-ok` auto-applied below, which
+          # is the trust gate ci.yml's review/security jobs use to decide
+          # whether to run the secret-bearing Claude Code Action against a
+          # PR's (fully attacker-controlled, for a fork) diff/description.
           pr_number=$(gh pr list --repo "$REPO" --state open \
-            --json number,headRefName,body \
+            --json number,headRefName,body,author \
             --jq --arg issue "$ISSUE" \
             '.[] | select(
-                (.headRefName == ("claude/issue-" + $issue)) or
-                (.headRefName | startswith("claude/issue-" + $issue + "-")) or
-                ((.body // "") | test("closes\\s+#" + $issue + "\\b"; "i"))
+                (.author.login == "app/claude") and (
+                  (.headRefName == ("claude/issue-" + $issue)) or
+                  (.headRefName | startswith("claude/issue-" + $issue + "-")) or
+                  ((.body // "") | test("\\bcloses\\s+#" + $issue + "\\b"; "i"))
+                )
               ) | .number' \
             | head -1)
 
@@ -279,7 +290,8 @@ jobs:
             # Swap issue label: agent-working → agent-pr-open, and greenlight
             # the PR for the automated review workflow.
             gh issue edit "$ISSUE" --repo "$REPO" \
-              --add-label "$PR_LABEL" --remove-label "$WORKING_LABEL" || true
+              --add-label "$PR_LABEL" --remove-label "$WORKING_LABEL" \
+              --remove-label "$NO_PR_LABEL" || true
             gh pr edit "$pr_number" --repo "$REPO" --add-label "agent-ok" || true
             # Guaranteed mechanical note, independent of whether the agent
             # followed the prompt's "leave a comment" instruction.
