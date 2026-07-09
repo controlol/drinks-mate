@@ -8,6 +8,7 @@
 /// and imperial conversion happen only at the display boundary.
 library core;
 
+export 'src/age.dart';
 export 'src/bac.dart';
 export 'src/day_boundary.dart';
 export 'src/hydration.dart';

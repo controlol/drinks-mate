@@ -8,6 +8,7 @@ import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
+import '../services/app_info_service.dart';
 import '../services/goal_celebration_guard.dart';
 import '../services/notification_service.dart';
 import 'drinks_repository.dart';
@@ -29,6 +30,22 @@ final drinksRepositoryProvider = Provider<DrinksRepository>((ref) {
 /// Stream of visible (non-hidden, non-deleted) presets, sorted by sortOrder.
 final visiblePresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
   return ref.watch(drinksRepositoryProvider).watchVisiblePresets();
+});
+
+/// Stream of visible non-alcoholic presets — the default-drink picker only
+/// offers non-alcoholic presets (user-experience.md S4 / features.md F6).
+final visibleNonAlcoholicPresetsProvider = StreamProvider<List<DrinkPreset>>((
+  ref,
+) {
+  return ref.watch(drinksRepositoryProvider).watchVisiblePresets().map(
+        (presets) => presets.where((p) => !p.beverageType.isAlcoholic).toList(),
+      );
+});
+
+/// Stream of all non-deleted presets (including hidden), sorted by
+/// sortOrder — feeds the "Manage drinks" screen.
+final allPresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
+  return ref.watch(drinksRepositoryProvider).watchAllPresets();
 });
 
 /// Reactive stream of today's total intake in ml.
@@ -130,6 +147,18 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
 /// plugin calls.
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return FlutterNotificationService();
+});
+
+// ---------------------------------------------------------------------------
+// App info service (issue #18 — Settings → About)
+// ---------------------------------------------------------------------------
+
+/// App version lookup for Settings → About.
+///
+/// Override in widget tests with a [FakeAppInfoService] to avoid native
+/// plugin calls.
+final appInfoServiceProvider = Provider<AppInfoService>((ref) {
+  return const PackageInfoAppInfoService();
 });
 
 // ---------------------------------------------------------------------------
