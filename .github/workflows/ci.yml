@@ -3,6 +3,14 @@ name: CI
 # Deterministic quality gate (core + app) followed by agentic review (review +
 # security). All four jobs are required status checks. review and security wait
 # for both CI jobs to succeed, then run in parallel.
+#
+# The workflow itself always triggers (no top-level path filter): branch
+# protection requires all four job names to report a status, and a path
+# filter on `on:` would mean PRs that don't touch relevant paths never get a
+# status at all, leaving the required check stuck "Expected" forever. Instead
+# the `changes` job below decides whether the real work is relevant, and
+# core/app carry that as a job-level `if:` — a skipped required job still
+# satisfies branch protection, unlike one that never ran.
 
 on:
   push:
@@ -26,8 +34,72 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.decide.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: decide
+        # Deliberately no `set -e`: this step must always reach the bottom and
+        # write an output, even if the diff computation hits something
+        # unexpected. A required job that FAILS gets its dependents (core,
+        # app, then review, security) skipped by GitHub's default
+        # failed-dependency behavior regardless of their own `if:` — which
+        # would silently wave a real code change through with zero checks
+        # run. So on any doubt this defaults to relevant=true (run CI) rather
+        # than relevant=false (skip it) — failing open, not closed.
+        run: |
+          set -uo pipefail
+          relevant=true
+
+          # workflow_dispatch is always an explicit request (from the review-
+          # remediation workflow re-running CI on a specific PR after pushing
+          # fixes) — never path-filter it.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.event.after }}"
+          fi
+
+          # event.before is all-zeros on the first push of a new branch; fall
+          # back to the parent commit so the diff is still well-defined.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base=$(git rev-parse "$head^" 2>/dev/null || echo "")
+          fi
+
+          if [ -n "$base" ] && [ -n "$head" ] \
+              && changed=$(git diff --name-only "$base...$head" 2>/dev/null); then
+            echo "Changed files:"
+            echo "$changed"
+            # Relevant = application/package code, or the design/engineering
+            # specs that code must match, or this CI workflow's own definition.
+            if echo "$changed" | grep -qE '^(flutter/|design/|engineering/|\.github/workflows/ci\.yml)'; then
+              relevant=true
+            else
+              relevant=false
+            fi
+          else
+            echo "Could not compute a diff (base='$base' head='$head') — defaulting to relevant=true."
+            relevant=true
+          fi
+
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+
   core:
     name: core package (pure Dart)
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,6 +119,8 @@ jobs:
 
   app:
     name: flutter app
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
