@@ -56,7 +56,7 @@ env:
   READY_LABEL: agent-ready       # "queued for the agent"
   WORKING_LABEL: agent-working   # "agent currently running" (claim; swapped to PR_LABEL on success)
   PR_LABEL: agent-pr-open        # "PR open, awaiting review" (counts toward the cap)
-  MAX_IN_FLIGHT: "2"             # how many agent PRs may be open at once
+  MAX_IN_FLIGHT: "1"             # how many agent PRs may be open at once
 
 jobs:
   select:
