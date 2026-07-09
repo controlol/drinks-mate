@@ -290,14 +290,14 @@ jobs:
           # does NOT support a leading `--arg name value` pair the way the
           # standalone `jq` binary does. Pipe to real `jq` instead so --arg
           # actually works.
-          pr_number=$(gh pr list --repo "$REPO" --state open \
+          pr_number=$(gh pr list --repo "$REPO" --state open --limit 100 \
               --json number,headRefName,body,author \
             | jq -r --arg issue "$ISSUE" \
               '.[] | select(
                   (.author.login == "app/claude") and (
                     (.headRefName == ("claude/issue-" + $issue)) or
                     (.headRefName | startswith("claude/issue-" + $issue + "-")) or
-                    ((.body // "") | test("\\bcloses\\s+#" + $issue + "\\b"; "i"))
+                    ((.body // "") | test("\\b(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\\s+#" + $issue + "\\b"; "i"))
                   )
                 ) | .number' \
             | head -1)
