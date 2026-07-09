@@ -38,6 +38,12 @@ void main() {
       expect(ok('luc\$money'), isFalse);
     });
 
+    test('rejects parentheses (preset-name-only relaxation)', () {
+      // Parentheses are allowed in validatePresetName but not
+      // validateUsername — the relaxation is scoped to DrinkPreset names.
+      expect(ok('luc(appelman)'), isFalse);
+    });
+
     test('custom bounds support tokenName (1–30)', () {
       expect(validateUsername('x', minLength: 1).isValid, isTrue);
     });
@@ -114,6 +120,15 @@ void main() {
       expect(ok('my_drink'), isTrue);
       expect(ok('my-drink'), isTrue);
       expect(ok('my.drink'), isTrue);
+    });
+
+    test('parentheses allowed, including as the trailing character', () {
+      // Source: Parity Rulebook §DrinkPreset name — parentheses support
+      // volume-suffixed F14 default names like "Beer (0.33L)".
+      expect(ok('Beer (0.33L)'), isTrue);
+      expect(ok('Small beer (0.2L)'), isTrue);
+      expect(ok('Bottle of water (0.5L)'), isTrue);
+      expect(ok('(Diet) Coke'), isTrue);
     });
 
     test('Unicode letters allowed', () {

@@ -1,8 +1,9 @@
 name: Auto-Approve Agent PRs
 
-# Automatically approves a claude/* PR once CI, code review, and security review
-# all pass. Each of those workflows fires this on completion; whichever finishes
-# last with all three checks green triggers the actual approval.
+# Automatically approves a claude/* PR once the CI workflow's four required
+# jobs (core, app, review, security) all pass. CI runs review/security as
+# jobs within itself (not separate workflows), so a single workflow_run
+# completion of "CI" already reflects the outcome of all four.
 #
 # Prerequisites (one-time setup):
 #   Settings → Actions → General → "Allow GitHub Actions to create and approve
@@ -14,7 +15,7 @@ name: Auto-Approve Agent PRs
 
 on:
   workflow_run:
-    workflows: ["CI", "Claude PR Review", "Security Review"]
+    workflows: ["CI"]
     types: [completed]
 
 jobs:
@@ -32,7 +33,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
     steps:
       - name: Find PR
         id: pr
@@ -69,39 +70,32 @@ jobs:
           echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for runs to stabilise
-        if: steps.pr.outputs.skip != 'true'
-        run: sleep 45
-
-      - name: Check all three required workflows passed
+      - name: Check all required CI jobs passed
         if: steps.pr.outputs.skip != 'true'
         id: checks
         run: |
           set -euo pipefail
 
-          # Fetch the latest run of each required workflow at this commit SHA.
-          # group_by(.name) + sort_by(.created_at) | last picks the most recent
-          # run per workflow, so retries don't block the approval.
-          results=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA" \
+          # This run (RUN_ID) is the exact CI run that just completed, so its
+          # jobs already reflect the final state of core, app, review, and
+          # security — no need to search across other runs at this SHA.
+          results=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
             --jq '
-              .workflow_runs
-              | map(select(.name | IN("CI", "Claude PR Review", "Security Review")))
-              | group_by(.name)
-              | map(sort_by(.created_at) | last)
+              [.jobs[] | select(.name | IN("core package (pure Dart)", "flutter app", "review", "security"))]
               | map({name: .name, status: .status, conclusion: .conclusion})')
 
           found=$(echo "$results" | jq 'length')
           not_green=$(echo "$results" | jq \
             '[.[] | select(.status != "completed" or .conclusion != "success")] | length')
 
-          echo "Required workflows at $HEAD_SHA: found=$found/3, not-green=$not_green"
+          echo "Required jobs in CI run $RUN_ID: found=$found/4, not-green=$not_green"
           echo "$results" | jq .
 
-          if [ "$found" -lt 3 ] || [ "$not_green" -gt 0 ]; then
-            echo "Not all required workflows completed successfully — not approving yet."
+          if [ "$found" -lt 4 ] || [ "$not_green" -gt 0 ]; then
+            echo "Not all required jobs completed successfully — not approving yet."
             echo "approve=false" >> "$GITHUB_OUTPUT"
           else
-            echo "All three workflows passed — will approve."
+            echo "All four jobs passed — will approve."
             echo "approve=true" >> "$GITHUB_OUTPUT"
           fi
 
