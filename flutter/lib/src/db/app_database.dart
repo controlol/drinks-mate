@@ -27,6 +27,8 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
 /// v3 (issue #9): UserProfiles + UserPreferences tables + preferences seeding.
+/// (issue #16): added 4 default alcoholic presets to beforeOpen seeding;
+///   no DDL change → schema stays at v3.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -185,6 +187,52 @@ class AppDatabase extends _$AppDatabase {
           sortOrder: 10,
           now: now,
         ),
+        // Alcoholic defaults — visible only when Party Mode is active (F14).
+        // Colours from BeverageType.defaultIconColor.
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d011',
+          name: 'Small beer (0.2L)',
+          beverageType: 'beer',
+          volumeMl: 200,
+          abvPercent: 5.0,
+          iconKey: 'plastic_cup',
+          iconColor: '#d97706',
+          sortOrder: 11,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d012',
+          name: 'Beer (0.33L)',
+          beverageType: 'beer',
+          volumeMl: 330,
+          abvPercent: 5.0,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 12,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d013',
+          name: 'Glass of wine',
+          beverageType: 'wine',
+          volumeMl: 175,
+          abvPercent: 12.0,
+          iconKey: 'wine_glass',
+          iconColor: '#be185d',
+          sortOrder: 13,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d014',
+          name: 'Shot of spirit',
+          beverageType: 'spirit',
+          volumeMl: 30,
+          abvPercent: 40.0,
+          iconKey: 'shot_glass',
+          iconColor: '#0369a1',
+          sortOrder: 14,
+          now: now,
+        ),
       ];
 
   static DrinkPresetsCompanion _preset({
@@ -192,6 +240,7 @@ class AppDatabase extends _$AppDatabase {
     required String name,
     required String beverageType,
     required int volumeMl,
+    double? abvPercent,
     required String iconKey,
     required String iconColor,
     required int sortOrder,
@@ -202,6 +251,7 @@ class AppDatabase extends _$AppDatabase {
         name: name,
         beverageType: beverageType,
         volumeMl: volumeMl,
+        abvPercent: Value(abvPercent),
         iconKey: iconKey,
         iconColor: iconColor,
         isUserCreated: false,
@@ -415,6 +465,108 @@ class AppDatabase extends _$AppDatabase {
   /// Insert or replace the user profile by id.
   Future<void> upsertProfile(UserProfilesCompanion companion) =>
       into(userProfiles).insertOnConflictUpdate(companion);
+
+  // ---------------------------------------------------------------------------
+  // DrinkPreset CRUD (issue #16)
+  // ---------------------------------------------------------------------------
+
+  /// All non-deleted presets (including hidden) ordered by [sortOrder].
+  /// Used by the "Manage drinks" settings UI.
+  Stream<List<DrinkPresetRow>> watchAllPresets() => (select(drinkPresets)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+      .watch();
+
+  /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
+  /// Used by Party Mode (log-drink picker — party-session.md §Price overrides
+  /// explicitly excludes hidden presets).
+  ///
+  /// [alcoholicTypes] is the list of stored beverage-type strings to include
+  /// (derived from [BeverageType] at the repository layer so this method stays
+  /// free of domain-model imports).
+  Stream<List<DrinkPresetRow>> watchAlcoholicPresets(
+    List<String> alcoholicTypes,
+  ) {
+    return (select(drinkPresets)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.isHidden.equals(false) &
+                t.beverageType.isIn(alcoholicTypes),
+          )
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .watch();
+  }
+
+  /// Insert a new user-created preset.
+  Future<void> insertPreset(DrinkPresetsCompanion companion) =>
+      into(drinkPresets).insert(companion);
+
+  /// Partial update of a preset row. Only fields wrapped in [Value] are written.
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updatePresetFields(String id, DrinkPresetsCompanion companion) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(companion);
+
+  /// Sets [isHidden] to [hidden] for the given preset id.
+  Future<void> setPresetHidden(String id, bool hidden, DateTime now) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(
+        DrinkPresetsCompanion(isHidden: Value(hidden), updatedAt: Value(now)),
+      );
+
+  /// Soft-deletes a preset by setting [deletedAt].
+  Future<void> softDeletePreset(String id, DateTime now) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(
+        DrinkPresetsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+      );
+
+  /// Bulk-updates [sortOrder] (and [updatedAt]) for every non-deleted preset,
+  /// in a single transaction. Ids in [orderedIds] receive sortOrder 1..N (in
+  /// the order given); any other non-deleted preset not in [orderedIds] keeps
+  /// its relative order and is appended after, at N+1... This renumbers the
+  /// *entire* non-deleted set — including seeded defaults not passed in — so
+  /// a partial [orderedIds] can never collide with an untouched preset's
+  /// existing sortOrder.
+  ///
+  /// Throws [ArgumentError] if [orderedIds] contains duplicates, or
+  /// [StateError] if it contains an id that does not exist or is deleted.
+  Future<void> reorderPresets(List<String> orderedIds, DateTime now) =>
+      transaction(() async {
+        if (orderedIds.toSet().length != orderedIds.length) {
+          throw ArgumentError.value(
+            orderedIds,
+            'orderedIds',
+            'Contains duplicate ids',
+          );
+        }
+
+        final all = await (select(drinkPresets)
+              ..where((t) => t.deletedAt.isNull())
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            .get();
+        final validIds = all.map((r) => r.id).toSet();
+        if (!orderedIds.every(validIds.contains)) {
+          throw StateError(
+            'orderedIds contains an id that does not exist or is deleted.',
+          );
+        }
+
+        final movedIds = orderedIds.toSet();
+        final remainingIds =
+            all.map((r) => r.id).where((id) => !movedIds.contains(id));
+        final finalOrder = [...orderedIds, ...remainingIds];
+
+        for (var i = 0; i < finalOrder.length; i++) {
+          await (update(
+            drinkPresets,
+          )..where((t) => t.id.equals(finalOrder[i])))
+              .write(
+            DrinkPresetsCompanion(
+              sortOrder: Value(i + 1),
+              updatedAt: Value(now),
+            ),
+          );
+        }
+      });
 }
 
 LazyDatabase _openConnection() {

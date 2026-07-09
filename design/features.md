@@ -131,27 +131,27 @@ Seeded into the local database on first launch. The user can edit, hide, or dele
 
 Non-alcoholic:
 
-| Name                   | Beverage type | Volume | Icon       |
-| ---------------------- | ------------- | ------ | ---------- |
-| Glass of water         | water         | 200 ml | glass      |
-| Bottle of water (0.5L) | water         | 500 ml | bottle     |
-| Can of water (0.33L)   | water         | 330 ml | can        |
-| Glass of tea           | tea           | 250 ml | mug        |
-| Cup of coffee          | coffee        | 200 ml | mug        |
-| Espresso               | coffee        | 30 ml  | small_cup  |
-| Glass of juice         | juice         | 200 ml | glass      |
-| Glass of lemonade      | soft_drink    | 200 ml | glass      |
-| Glass of milk          | milk          | 200 ml | glass      |
+| Name                      | Beverage type | Volume | Icon       |
+| ------------------------- | ------------- | ------ | ---------- |
+| Glass of water            | water         | 200 ml | glass      |
+| Bottle of water (0.5L)    | water         | 500 ml | bottle     |
+| Can of water (0.33L)      | water         | 330 ml | can        |
+| Glass of tea              | tea           | 250 ml | mug        |
+| Cup of coffee             | coffee        | 200 ml | mug        |
+| Espresso                  | coffee        | 30 ml  | small_cup  |
+| Glass of juice            | juice         | 200 ml | glass      |
+| Glass of lemonade         | soft_drink    | 200 ml | glass      |
+| Glass of milk             | milk          | 200 ml | glass      |
 | Alcohol-free beer (0.33L) | non_alcoholic_beer | 330 ml | beer_glass |
 
 Alcoholic (visible only when Party Mode is active — see [party-session.md](./party-session.md)):
 
-| Name                   | Beverage type | Volume | ABV | Icon       |
-| ---------------------- | ------------- | ------ | --- | ---------- |
+| Name                   | Beverage type | Volume | ABV | Icon        |
+| ---------------------- | ------------- | ------ | --- | ----------- |
 | Small beer (0.2L)      | beer          | 200 ml | 5%  | plastic_cup |
-| Beer (0.33L)           | beer          | 330 ml | 5%  | beer_glass |
-| Glass of wine          | wine          | 175 ml | 12% | wine_glass |
-| Shot of spirit         | spirit        | 30 ml  | 40% | shot_glass |
+| Beer (0.33L)           | beer          | 330 ml | 5%  | beer_glass  |
+| Glass of wine          | wine          | 175 ml | 12% | wine_glass  |
+| Shot of spirit         | spirit        | 30 ml  | 40% | shot_glass  |
 
 The 200 ml beer reflects the typical festival pour, which is smaller than the standard café glass.
 
