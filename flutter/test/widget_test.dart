@@ -5,6 +5,7 @@ import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
+import 'package:drinks_mate/src/services/app_info_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +59,16 @@ Widget _appWithFakeStreams() {
       userPreferencesProvider.overrideWith(
         (_) => Stream.value(preOnboardedPrefs),
       ),
+      // Settings (S4) reads these too — override so its Drift/plugin-backed
+      // providers never touch the real file system or a platform channel.
+      userProfileProvider.overrideWith((_) => Stream.value(null)),
+      visibleNonAlcoholicPresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
+      allPresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
+      appInfoServiceProvider.overrideWithValue(const FakeAppInfoService()),
     ],
     child: const DrinksMateApp(),
   );
@@ -135,7 +146,7 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.text('App settings coming soon.'), findsOneWidget);
+    expect(find.text('Hydration'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
 }
