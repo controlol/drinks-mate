@@ -291,6 +291,34 @@ void main() {
   );
 
   group(
+    'hoursToZero (bac.dart doc comment: t_zero = consumedAt + BAC_initial / '
+    'β; party-session.md §Absorbing orphan drinks / notifications.md §Party '
+    'Mode notifications sober-estimate trigger)',
+    () {
+      test('known-value vector: 0.3 g/L at β=0.15 → 2.0 hours', () {
+        // 0.3 / 0.15 = 2.0 exactly on paper, but 0.15 has no exact binary
+        // representation, so use closeTo rather than exact equality.
+        expect(hoursToZero(0.3), closeTo(2.0, 1e-9));
+      });
+
+      test(
+          'inverse of bacAtTime: decaying for hoursToZero(x) hours from x '
+          'lands back at 0', () {
+        const bacInitial = 0.360; // worked-example initial BAC.
+        final hours = hoursToZero(bacInitial);
+        expect(
+          bacAtTime(bacInitial: bacInitial, hoursSince: hours),
+          closeTo(0.0, 1e-9),
+        );
+      });
+
+      test('BAC 0 → 0 hours to zero', () {
+        expect(hoursToZero(0.0), 0.0);
+      });
+    },
+  );
+
+  group(
     'isApproachingCap (party-session.md §BAC goal (cap): '
     '"...pushes the estimated BAC past 80% of the cap")',
     () {

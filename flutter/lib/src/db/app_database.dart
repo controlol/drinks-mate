@@ -309,7 +309,10 @@ class AppDatabase extends _$AppDatabase {
       inactivityReminderEnabled: true,
       weeklySummaryEnabled: true,
       defaultDrinkPresetId: const Value(kWaterGlassPresetId),
-      bacOnLockScreenEnabled: false,
+      // data-model.md §UserPreferences / notifications.md §Lock-screen
+      // visibility: default ON — we surface the choice without recommending
+      // either side, but the seed itself defaults to showing BAC.
+      bacOnLockScreenEnabled: true,
       // Party Mode notifications are OFF by default (notifications.md §4).
       approachingCapNotifEnabled: false,
       soberEstimateNotifEnabled: false,

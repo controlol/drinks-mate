@@ -406,10 +406,10 @@ class PartySessionRepository {
         );
       }
 
-      final hoursToZero = bacInitial / eliminationBetaGPerLPerHour;
       final tZero = orphan.consumedAt.add(
         Duration(
-          microseconds: (hoursToZero * Duration.microsecondsPerHour).round(),
+          microseconds:
+              (hoursToZero(bacInitial) * Duration.microsecondsPerHour).round(),
         ),
       );
 

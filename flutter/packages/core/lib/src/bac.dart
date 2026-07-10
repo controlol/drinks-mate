@@ -107,6 +107,14 @@ double bacAtTime({required double bacInitial, required double hoursSince}) =>
 /// Step 6 — g/L → mmol/L (display-only).
 double gPerLToMmol(double gPerL) => gPerL * gPerLToMmolPerL;
 
+/// Hours for a single drink's contribution to decay from [bacInitial] to
+/// zero under zero-order elimination at β (party-session.md §Absorbing
+/// orphan drinks: `t_zero = consumedAt + BAC_initial / β`; also the
+/// sober-estimate notification's projected-zero time, notifications.md
+/// §Party Mode notifications).
+double hoursToZero(double bacInitial) =>
+    bacInitial / eliminationBetaGPerLPerHour;
+
 /// Step 2/3 combined — picks Watson (height available) or Widmark (height
 /// missing) and returns that drink's initial BAC, g/L. Model choice is
 /// data-driven, never user-selectable (party-session.md §BAC estimation
