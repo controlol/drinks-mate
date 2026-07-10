@@ -138,7 +138,7 @@ jobs:
           printf '\n[View live progress →](%s)' "$run_url" >> "$RUNNER_TEMP/start_body.txt"
           comment_id=$(gh api "repos/$REPO/issues/$pr/comments" \
             --method POST \
-            --raw-field body=@"$RUNNER_TEMP/start_body.txt" \
+            --field body=@"$RUNNER_TEMP/start_body.txt" \
             --jq '.id' 2>/dev/null || echo "")
           echo "comment_id=${comment_id}" >> "$GITHUB_OUTPUT"
 
@@ -225,7 +225,7 @@ jobs:
 
           gh api "repos/$REPO/issues/comments/$comment_id" \
             --method PATCH \
-            --raw-field body=@"$RUNNER_TEMP/update_body.txt" || true
+            --field body=@"$RUNNER_TEMP/update_body.txt" || true
 
       - name: Dispatch CI
         if: steps.pr.outputs.skip != 'true'
