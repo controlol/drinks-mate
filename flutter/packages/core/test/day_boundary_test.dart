@@ -370,4 +370,221 @@ void main() {
       },
     );
   });
+
+  // Source: Parity Rulebook → "Day boundary" (the general day-window rule —
+  // monthWindow has no dedicated Rulebook row of its own); design/features.md
+  // F4 — History monthly range. Built the same way as isoWeekWindow: the 1st
+  // of the month's day-window start through the 1st of next month's
+  // day-window start.
+  group('monthWindow (Day boundary + F4 — History monthly range)', () {
+    test(
+      'mid-month, well after boundary: now = June 15 12:00 2026 → window is '
+      '[June 1 05:00, July 1 05:00)',
+      () {
+        final now = DateTime(2026, 6, 15, 12, 0);
+        final (start, end) = monthWindow(now: now);
+
+        expect(start, DateTime(2026, 6, 1, 5, 0));
+        expect(end, DateTime(2026, 7, 1, 5, 0));
+      },
+    );
+
+    test(
+      'pre-boundary on the 1st: now = June 1 02:00 2026 (before 05:00) '
+      'resolves into the PREVIOUS month\'s window',
+      () {
+        // dayWindow(June 1 02:00, boundary 5) shifts back to May 31's
+        // day-window (02:00 < 05:00 boundary) — see day_boundary.dart. May 31
+        // belongs to the May month-window, so the pre-boundary instant on the
+        // 1st is still "last month", mirroring isoWeekWindow's Monday
+        // pre-boundary crossing case.
+        final now = DateTime(2026, 6, 1, 2, 0);
+        final (start, end) = monthWindow(now: now);
+
+        expect(start, DateTime(2026, 5, 1, 5, 0));
+        expect(end, DateTime(2026, 6, 1, 5, 0));
+      },
+    );
+
+    test(
+      'custom boundary hour (0 = midnight): now = June 15 23:00 2026 → '
+      'window is [June 1 00:00, July 1 00:00)',
+      () {
+        // Source: Parity Rulebook — Day boundary rule (configurable boundary).
+        final now = DateTime(2026, 6, 15, 23, 0);
+        final (start, end) = monthWindow(
+          now: now,
+          boundaryHour: 0,
+          boundaryMinute: 0,
+        );
+
+        expect(start, DateTime(2026, 6, 1, 0, 0));
+        expect(end, DateTime(2026, 7, 1, 0, 0));
+      },
+    );
+
+    test(
+      'December → January year rollover: now = Dec 15 12:00 2026 → window is '
+      '[Dec 1 05:00 2026, Jan 1 05:00 2027)',
+      () {
+        final now = DateTime(2026, 12, 15, 12, 0);
+        final (start, end) = monthWindow(now: now);
+
+        expect(start, DateTime(2026, 12, 1, 5, 0));
+        expect(end, DateTime(2027, 1, 1, 5, 0));
+      },
+    );
+
+    test(
+      'now (as adjusted by day-boundary semantics) always falls within '
+      '[start, end)',
+      () {
+        final cases = [
+          DateTime(2026, 6, 15, 12, 0),
+          DateTime(2026, 6, 1, 2, 0),
+          DateTime(2026, 6, 15, 23, 0),
+          DateTime(2026, 12, 15, 12, 0),
+        ];
+        for (final now in cases) {
+          final (start, end) = monthWindow(now: now);
+          final dayStart = dayWindow(now: now).$1;
+          expect(
+            !start.isAfter(dayStart) && dayStart.isBefore(end),
+            isTrue,
+            reason: 'now\'s day-window start ($dayStart) must satisfy '
+                'start <= dayStart < end (got [$start, $end))',
+          );
+        }
+      },
+    );
+  });
+
+  // Source: Parity Rulebook → "Weekly summary" (ISO week, Mon–Sun) +
+  // "Day boundary"; design/user-experience.md S3 — History range paging
+  // ("step backwards and forwards through past periods"). Steps back by
+  // 7*offset days from the current week's window.
+  group('pagedIsoWeekWindow (ISO week paging, F4/S3)', () {
+    // Anchor: 2026-01-07 is a Wednesday. isoWeekWindow(now) (boundary 5) =
+    // [2026-01-05 05:00, 2026-01-12 05:00) — the week Mon Jan 5 – Sun Jan 11.
+    final anchor = DateTime(2026, 1, 7, 12, 0);
+
+    test('offset=0 matches plain isoWeekWindow for the same now', () {
+      final paged = pagedIsoWeekWindow(now: anchor, offset: 0);
+      final plain = isoWeekWindow(now: anchor);
+
+      expect(paged, equals(plain));
+      expect(paged.$1, DateTime(2026, 1, 5, 5, 0));
+      expect(paged.$2, DateTime(2026, 1, 12, 5, 0));
+    });
+
+    test('offset=1 lands on the prior Monday\'s week window', () {
+      final (start, end) = pagedIsoWeekWindow(now: anchor, offset: 1);
+
+      expect(start, DateTime(2025, 12, 29, 5, 0));
+      expect(end, DateTime(2026, 1, 5, 5, 0));
+    });
+
+    test(
+      'offset=2 lands two whole weeks back, crossing the year boundary',
+      () {
+        final (start, end) = pagedIsoWeekWindow(now: anchor, offset: 2);
+
+        expect(start, DateTime(2025, 12, 22, 5, 0));
+        expect(end, DateTime(2025, 12, 29, 5, 0));
+      },
+    );
+
+    test(
+      'custom boundary hour (0 = midnight) is respected when paging back',
+      () {
+        // isoWeekWindow(anchor, boundary 0) = [2026-01-05 00:00, 2026-01-12 00:00).
+        final (start, end) = pagedIsoWeekWindow(
+          now: anchor,
+          offset: 1,
+          boundaryHour: 0,
+          boundaryMinute: 0,
+        );
+
+        expect(start, DateTime(2025, 12, 29, 0, 0));
+        expect(end, DateTime(2026, 1, 5, 0, 0));
+      },
+    );
+
+    test('every window start is a Monday, 7 days wide', () {
+      for (var offset = 0; offset <= 3; offset++) {
+        final (start, end) = pagedIsoWeekWindow(now: anchor, offset: offset);
+        expect(
+          start.weekday,
+          DateTime.monday,
+          reason: 'offset=$offset window must start on a Monday',
+        );
+        expect(end.difference(start), const Duration(days: 7));
+      }
+    });
+  });
+
+  // Source: Parity Rulebook → "Day boundary"; design/features.md F4 — History
+  // monthly range paging; design/user-experience.md S3 (paging semantics).
+  group('pagedMonthWindow (calendar-month paging, F4/S3)', () {
+    // Anchor: monthWindow(2026-01-15, boundary 5) = [2026-01-01 05:00, 2026-02-01 05:00).
+    final anchor = DateTime(2026, 1, 15, 12, 0);
+
+    test('offset=0 matches plain monthWindow for the same now', () {
+      final paged = pagedMonthWindow(now: anchor, offset: 0);
+      final plain = monthWindow(now: anchor);
+
+      expect(paged, equals(plain));
+      expect(paged.$1, DateTime(2026, 1, 1, 5, 0));
+      expect(paged.$2, DateTime(2026, 2, 1, 5, 0));
+    });
+
+    test(
+      'offset=2 pages back across a year boundary: January → November of '
+      'the previous year',
+      () {
+        final (start, end) = pagedMonthWindow(now: anchor, offset: 2);
+
+        expect(start, DateTime(2025, 11, 1, 5, 0));
+        expect(end, DateTime(2025, 12, 1, 5, 0));
+      },
+    );
+
+    test('offset=1 lands on the previous calendar month', () {
+      final (start, end) = pagedMonthWindow(now: anchor, offset: 1);
+
+      expect(start, DateTime(2025, 12, 1, 5, 0));
+      expect(end, DateTime(2026, 1, 1, 5, 0));
+    });
+
+    test(
+      'custom boundary hour (0 = midnight) is respected when paging back',
+      () {
+        final (start, end) = pagedMonthWindow(
+          now: anchor,
+          offset: 1,
+          boundaryHour: 0,
+          boundaryMinute: 0,
+        );
+
+        expect(start, DateTime(2025, 12, 1, 0, 0));
+        expect(end, DateTime(2026, 1, 1, 0, 0));
+      },
+    );
+
+    test('every window start is the 1st of a month', () {
+      for (var offset = 0; offset <= 14; offset++) {
+        final (start, end) = pagedMonthWindow(now: anchor, offset: offset);
+        expect(
+          start.day,
+          1,
+          reason: 'offset=$offset window must start on the 1st',
+        );
+        expect(
+          end.isAfter(start),
+          isTrue,
+          reason: 'offset=$offset window end must be after its start',
+        );
+      }
+    });
+  });
 }

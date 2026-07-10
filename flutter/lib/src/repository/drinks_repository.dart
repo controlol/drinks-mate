@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../db/app_database.dart';
 import '../models/beverage_type.dart';
+import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 
@@ -449,6 +450,119 @@ class DrinksRepository {
       byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
     }
     return byDay.values.where((total) => total >= dailyGoalMl).length;
+  }
+
+  // ---------------------------------------------------------------------------
+  // History (F4)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of daily hydration totals (ml) for every day-window in
+  /// `[rangeStart, rangeEnd)`, one zero-filled [DailyBucket] per day,
+  /// ordered oldest-first.
+  ///
+  /// [rangeStart] must itself be a day-window boundary instant (e.g. from
+  /// `isoWeekWindow`/`monthWindow` with the same [boundaryHour]/
+  /// [boundaryMinute]) so the zero-fill loop lines up with the per-entry
+  /// bucketing below.
+  ///
+  /// Excludes alcoholic beverages — same scope as [watchTodayTotalMl]
+  /// (data-model.md §BeverageType: "the two flows are strictly disjoint").
+  Stream<List<DailyBucket>> watchDailyTotalsMl({
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+    int boundaryHour = 5,
+    int boundaryMinute = 0,
+  }) {
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchEntriesInWindow(
+          rangeStart.toUtc(),
+          rangeEnd.toUtc(),
+          nonAlcoholicTypes,
+        )
+        .map(
+          (entries) => _bucketByDay(
+            entries,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            boundaryHour: boundaryHour,
+            boundaryMinute: boundaryMinute,
+            reduce: (acc, volumeMl) => acc + volumeMl,
+          ),
+        );
+  }
+
+  /// Reactive stream of hydration drink counts for every day-window in
+  /// `[rangeStart, rangeEnd)`, one zero-filled [DailyBucket] per day,
+  /// ordered oldest-first. See [watchDailyTotalsMl] for the [rangeStart]
+  /// alignment requirement.
+  ///
+  /// Counts non-deleted, non-alcoholic entries — issue #25 scopes History's
+  /// charts to hydration only; alcohol charts land in a follow-up (#26).
+  Stream<List<DailyBucket>> watchDrinksPerDay({
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+    int boundaryHour = 5,
+    int boundaryMinute = 0,
+  }) {
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db
+        .watchEntriesInWindow(
+          rangeStart.toUtc(),
+          rangeEnd.toUtc(),
+          nonAlcoholicTypes,
+        )
+        .map(
+          (entries) => _bucketByDay(
+            entries,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            boundaryHour: boundaryHour,
+            boundaryMinute: boundaryMinute,
+            reduce: (acc, _) => acc + 1,
+          ),
+        );
+  }
+
+  /// Groups `(consumedAt, volumeMl)` pairs into one zero-filled [DailyBucket]
+  /// per day-window in `[rangeStart, rangeEnd)`. [reduce] folds each entry
+  /// into its day's running value — sum of ml for totals, or a `+1` count.
+  static List<DailyBucket> _bucketByDay(
+    List<(DateTime, int)> entries, {
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+    required int boundaryHour,
+    required int boundaryMinute,
+    required int Function(int acc, int volumeMl) reduce,
+  }) {
+    final byDay = <DateTime, int>{};
+    for (final (consumedAt, volumeMl) in entries) {
+      final dayStart = dayWindow(
+        now: consumedAt.toLocal(),
+        boundaryHour: boundaryHour,
+        boundaryMinute: boundaryMinute,
+      ).$1;
+      byDay[dayStart] = reduce(byDay[dayStart] ?? 0, volumeMl);
+    }
+    final buckets = <DailyBucket>[];
+    var day = rangeStart;
+    while (day.isBefore(rangeEnd)) {
+      buckets.add(DailyBucket(dayStart: day, value: byDay[day] ?? 0));
+      day = DateTime(
+        day.year,
+        day.month,
+        day.day + 1,
+        boundaryHour,
+        boundaryMinute,
+      );
+    }
+    return buckets;
   }
 
   /// Reactive stream of today's logged entries in reverse-chronological order.

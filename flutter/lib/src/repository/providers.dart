@@ -4,6 +4,7 @@ import 'package:core/core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/app_database.dart';
+import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/meal.dart';
@@ -250,6 +251,41 @@ final todayEntriesProvider = StreamProvider<List<DrinkEntry>>((ref) {
   return ref
       .watch(drinksRepositoryProvider)
       .watchTodayEntries(now: now, boundaryHour: prefs.dayBoundaryHour);
+});
+
+// ---------------------------------------------------------------------------
+// History (issue #25)
+// ---------------------------------------------------------------------------
+
+/// Keying record for the History range providers below — a plain record has
+/// structural `==`/`hashCode`, which `.family` needs to dedupe subscriptions
+/// for the same range.
+typedef HistoryRangeKey = ({
+  DateTime rangeStart,
+  DateTime rangeEnd,
+  int boundaryHour,
+});
+
+/// Reactive stream of zero-filled daily hydration totals (ml) for the range
+/// in [key]. See [DrinksRepository.watchDailyTotalsMl].
+final historyDailyTotalsProvider =
+    StreamProvider.family<List<DailyBucket>, HistoryRangeKey>((ref, key) {
+  return ref.watch(drinksRepositoryProvider).watchDailyTotalsMl(
+        rangeStart: key.rangeStart,
+        rangeEnd: key.rangeEnd,
+        boundaryHour: key.boundaryHour,
+      );
+});
+
+/// Reactive stream of zero-filled daily drink counts for the range in [key].
+/// See [DrinksRepository.watchDrinksPerDay].
+final historyDrinksPerDayProvider =
+    StreamProvider.family<List<DailyBucket>, HistoryRangeKey>((ref, key) {
+  return ref.watch(drinksRepositoryProvider).watchDrinksPerDay(
+        rangeStart: key.rangeStart,
+        rangeEnd: key.rangeEnd,
+        boundaryHour: key.boundaryHour,
+      );
 });
 
 // ---------------------------------------------------------------------------
