@@ -205,6 +205,7 @@ jobs:
           # ScheduleWakeup has no effect in headless mode; disallow it too.
           claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
           show_full_output: "true"
+          allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
           prompt: |
             You are implementing GitHub issue #${{ needs.select.outputs.issue }}
             in repository ${{ github.repository }}.

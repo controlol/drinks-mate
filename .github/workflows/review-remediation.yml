@@ -149,7 +149,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # App token so claude-code-action's internal git push is also App-authenticated.
           github_token: ${{ steps.app-token.outputs.token }}
-          claude_args: "--permission-mode bypassPermissions"
+          claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
           allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
           prompt: |
             PR #${{ steps.pr.outputs.pr }} in ${{ github.repository }} failed an
