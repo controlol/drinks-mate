@@ -556,11 +556,7 @@ class _DisclaimerBanner extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// Starts a Party Session, collecting/validating the birthday first when the
-/// profile doesn't have one yet (party-session.md §Starting a session), then
-/// showing the single, skippable meal prompt the start flow requires
-/// ("It is the only food question the app ever asks during a session" —
-/// there is deliberately no per-drink prompt, so this is the one place in the
-/// whole screen that calls [_showMealPrompt]).
+/// profile doesn't have one yet (party-session.md §Starting a session).
 /// Returns the new session, or null if the user cancelled or was blocked by
 /// the under-18 gate.
 Future<PartySession?> _startPartySessionFlow(
@@ -598,20 +594,9 @@ Future<PartySession?> _startPartySessionFlow(
     return null;
   }
 
-  final session = await ref
+  return ref
       .read(partySessionRepositoryProvider)
       .startSession(startedAt: startedAt);
-
-  if (context.mounted) {
-    final mealSize = await _showMealPrompt(context);
-    if (mealSize != null) {
-      await ref
-          .read(partySessionRepositoryProvider)
-          .addMeal(sessionId: session.id, size: mealSize);
-    }
-  }
-
-  return session;
 }
 
 /// Result of [_showBirthdatePrompt] — a birthday that has already been
@@ -805,10 +790,7 @@ Future<MealSize?> _showMealPrompt(BuildContext context) {
 
 /// Orchestrates the whole "Log alcohol" flow: pick a preset (via
 /// [PartyLogDrinkSheet]), then — if there's no active [session] — the
-/// start-or-orphan prompt, then the actual log call. The meal prompt is
-/// *not* shown here — party-session.md §Meals is explicit that it is a
-/// once-per-session prompt shown by [_startPartySessionFlow] at session
-/// start, never per-drink.
+/// start-or-orphan prompt, then the actual log call, then the meal prompt.
 Future<void> _handleLogAlcohol(
   BuildContext context,
   WidgetRef ref,
@@ -857,6 +839,14 @@ Future<void> _handleLogAlcohol(
         abvPercent: selection.abvPercent,
         consumedAt: selection.consumedAt,
       );
+
+  if (!context.mounted) return;
+  final mealSize = await _showMealPrompt(context);
+  if (mealSize != null) {
+    await ref
+        .read(partySessionRepositoryProvider)
+        .addMeal(sessionId: sessionId, size: mealSize);
+  }
 }
 
 Future<void> _confirmEndSession(
