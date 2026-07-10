@@ -1352,4 +1352,242 @@ void main() {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // F5 — getLatestDrinkConsumedAt (one-shot; feeds the reminder scheduler's
+  // inactive-user silence check, notifications.md §Inactive-user silence)
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.getLatestDrinkConsumedAt', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns null when no entries exist', () async {
+      expect(await repo.getLatestDrinkConsumedAt(), isNull);
+    });
+
+    test(
+      'returns the max consumedAt across mixed alcoholic/non-alcoholic '
+      'entries — unlike the hydration-total queries, any type counts here '
+      '(notifications.md §Inactive-user silence: "most recent DrinkEntry", '
+      'not "most recent non-alcoholic DrinkEntry")',
+      () async {
+        const beerPreset = DrinkPreset(
+          id: 'test-beer-preset-latest',
+          name: 'Test Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 250,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 99,
+        );
+
+        final earlier = DateTime(2026, 6, 20, 9, 0);
+        final latest = DateTime(2026, 6, 23, 18, 0); // the alcoholic one
+
+        await repo.logDrink(preset: _waterPreset, consumedAt: earlier);
+        await repo.logDrink(preset: beerPreset, consumedAt: latest);
+
+        final result = await repo.getLatestDrinkConsumedAt();
+        expect(result, isNotNull);
+        expect(result!.isAtSameMomentAs(latest.toUtc()), isTrue);
+      },
+    );
+
+    test('ignores soft-deleted entries', () async {
+      final earlier = DateTime(2026, 6, 20, 9, 0);
+      final latest = DateTime(2026, 6, 23, 18, 0);
+
+      await repo.logDrink(preset: _waterPreset, consumedAt: earlier);
+      await repo.logDrink(preset: _waterPreset, consumedAt: latest);
+
+      // Find and soft-delete the most recent entry.
+      final entries = await db.select(db.drinkEntries).get();
+      final latestRow = entries.firstWhere((e) => e.consumedAt.isAtSameMomentAs(
+            latest.toUtc(),
+          ));
+      await repo.deleteDrinkEntry(latestRow.id);
+
+      final result = await repo.getLatestDrinkConsumedAt();
+      expect(
+        result!.isAtSameMomentAs(earlier.toUtc()),
+        isTrue,
+        reason: 'The soft-deleted (later) entry must be excluded, so the '
+            'earlier surviving entry is the max.',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // F5 — getTodayTotalMl (one-shot equivalent of watchTodayTotalMl)
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.getTodayTotalMl', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns 0 for an empty database', () async {
+      final now = DateTime(2026, 6, 23, 12, 0);
+      expect(await repo.getTodayTotalMl(now: now, boundaryHour: 5), equals(0));
+    });
+
+    test(
+      'sums non-alcoholic intake within the day window, excludes alcoholic '
+      '(same filter as watchTodayTotalMl)',
+      () async {
+        const beerPreset = DrinkPreset(
+          id: 'test-beer-preset-total',
+          name: 'Test Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 250,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 99,
+        );
+        final now = DateTime(2026, 6, 23, 12, 0);
+
+        await repo.logDrink(
+          preset: _waterPreset, // 300 ml, inside window
+          consumedAt: DateTime(2026, 6, 23, 8, 0),
+        );
+        await repo.logDrink(
+          preset: beerPreset, // excluded regardless of window
+          consumedAt: DateTime(2026, 6, 23, 9, 0),
+        );
+
+        final total = await repo.getTodayTotalMl(now: now, boundaryHour: 5);
+        expect(total, equals(300));
+      },
+    );
+
+    test(
+      'respects boundaryHour — same day-window semantics as watchTodayTotalMl',
+      () async {
+        // Same fixture as the watchTodayTotalMl boundaryHour regression test
+        // above: drink at 22:00 prev-evening, now=05:30.
+        final now = DateTime(2026, 6, 23, 5, 30);
+        final consumedAt = DateTime(2026, 6, 22, 22, 0);
+
+        await repo.logDrink(preset: _waterPreset, consumedAt: consumedAt);
+
+        expect(
+          await repo.getTodayTotalMl(now: now, boundaryHour: 6),
+          equals(_waterPreset.volumeMl),
+        );
+        expect(
+          await repo.getTodayTotalMl(now: now, boundaryHour: 5),
+          equals(0),
+        );
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // F5 — isoWeekDaysOnGoal (feeds the weekly-summary notification body)
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.isoWeekDaysOnGoal', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns 0 for an empty database', () async {
+      final now = DateTime(2026, 1, 14, 14, 0); // Wed, within Jan 12–18 week
+      expect(
+        await repo.isoWeekDaysOnGoal(dailyGoalMl: 2000, now: now),
+        equals(0),
+      );
+    });
+
+    test(
+      'counts today (partial data) as part of the ISO week — unlike '
+      'watch7DayDaysOnGoal, which excludes today',
+      () async {
+        // ISO week containing `now` (Wed 2026-01-14) is Mon 2026-01-12 –
+        // Sun 2026-01-18 (isoWeekWindow). Source: DrinksRepository
+        // .isoWeekDaysOnGoal docstring — "includes today".
+        final now = DateTime(2026, 1, 14, 14, 0);
+
+        // Monday: meets goal.
+        await repo.logDrink(
+          preset: _waterPreset, // 300 ml
+          volumeMl: 2000,
+          consumedAt: DateTime(2026, 1, 12, 10, 0),
+        );
+        // Today (Wednesday, partial data so far): also meets goal.
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 2000,
+          consumedAt: DateTime(2026, 1, 14, 9, 0),
+        );
+        // Tuesday: below goal.
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 500,
+          consumedAt: DateTime(2026, 1, 13, 10, 0),
+        );
+
+        final daysOnGoal = await repo.isoWeekDaysOnGoal(
+          dailyGoalMl: 2000,
+          now: now,
+        );
+        expect(
+          daysOnGoal,
+          equals(2),
+          reason: 'Monday and today (Wednesday) meet the 2000 ml goal; '
+              "Tuesday's 500 ml does not.",
+        );
+      },
+    );
+
+    test('excludes alcoholic intake from the daily totals', () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-isoweek',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 2000,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+      final now = DateTime(2026, 1, 14, 14, 0);
+
+      await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime(2026, 1, 12, 10, 0),
+      );
+
+      final daysOnGoal = await repo.isoWeekDaysOnGoal(
+        dailyGoalMl: 2000,
+        now: now,
+      );
+      expect(daysOnGoal, equals(0));
+    });
+  });
 }

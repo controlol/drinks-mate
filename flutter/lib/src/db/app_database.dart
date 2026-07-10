@@ -342,6 +342,65 @@ class AppDatabase extends _$AppDatabase {
   Future<void> insertDrinkEntry(DrinkEntriesCompanion companion) =>
       into(drinkEntries).insert(companion);
 
+  /// One-shot read of the most recent live entry's [consumedAt], across every
+  /// beverage type (alcoholic entries count as engagement too). Null if the
+  /// user has never logged a drink.
+  ///
+  /// Used by the reminder scheduler for the inactive-user silence check
+  /// (notifications.md §Inactive-user silence: `last_engagement` is the most
+  /// recent `DrinkEntry.consumedAt`, any type).
+  Future<DateTime?> getLatestDrinkConsumedAt() async {
+    final row = await (select(drinkEntries)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.consumedAt)])
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.consumedAt;
+  }
+
+  /// One-shot sum of [volumeMl] for live entries within [startUtc, endUtc)
+  /// whose [beverageType] is in [allowedTypes]. Same filter as
+  /// [watchTotalMlInWindow], but a single read for scheduling-time queries
+  /// that don't need a live subscription.
+  Future<int> getTotalMlInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) async {
+    final expr = drinkEntries.volumeMl.sum();
+    final query = selectOnly(drinkEntries)
+      ..addColumns([expr])
+      ..where(
+        drinkEntries.deletedAt.isNull() &
+            drinkEntries.consumedAt.isBiggerOrEqualValue(startUtc) &
+            drinkEntries.consumedAt.isSmallerThanValue(endUtc) &
+            drinkEntries.beverageType.isIn(allowedTypes),
+      );
+    final row = await query.getSingle();
+    return row.read(expr) ?? 0;
+  }
+
+  /// One-shot read of `(consumedAt, volumeMl)` pairs for live entries within
+  /// [startUtc, endUtc) whose [beverageType] is in [allowedTypes]. Same filter
+  /// as [watchEntriesInWindow], for one-shot multi-day aggregation (e.g. the
+  /// weekly-summary ISO-week goal count).
+  Future<List<(DateTime, int)>> getEntriesInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) async {
+    final rows = await (select(drinkEntries)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.consumedAt.isBiggerOrEqualValue(startUtc) &
+                t.consumedAt.isSmallerThanValue(endUtc) &
+                t.beverageType.isIn(allowedTypes),
+          ))
+        .get();
+    return rows.map((r) => (r.consumedAt, r.volumeMl)).toList();
+  }
+
   /// Reactive stream of the sum of [volumeMl] for live entries within
   /// [start, end) (both UTC) whose [beverageType] is in [allowedTypes].
   ///

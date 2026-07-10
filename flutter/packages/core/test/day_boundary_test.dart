@@ -247,4 +247,127 @@ void main() {
       }
     });
   });
+
+  // Source: Parity Rulebook → "Weekly summary" (ISO week, Mon–Sun);
+  // notifications.md §Notification types → Weekly summary. Built from 7
+  // consecutive dayWindows: Monday's day-window start through the following
+  // Monday's day-window start.
+  group('isoWeekWindow (Parity Rulebook — ISO week, Mon–Sun)', () {
+    test(
+      'Sunday 20:00 (well after boundary) → window is the preceding Monday '
+      '05:00 through the following Monday 05:00',
+      () {
+        // 2026-01-04 is a Sunday (weekday == 7) — verified via DateTime.weekday.
+        final now = DateTime(2026, 1, 4, 20, 0);
+        expect(now.weekday, DateTime.sunday);
+
+        final (start, end) = isoWeekWindow(now: now);
+
+        expect(start, DateTime(2025, 12, 29, 5, 0)); // preceding Monday 05:00
+        expect(end, DateTime(2026, 1, 5, 5, 0)); // following Monday 05:00
+      },
+    );
+
+    test(
+      'Sunday 02:00 (before the 05:00 boundary) resolves to Saturday\'s '
+      'day-window, but stays in the SAME ISO week as Sunday 20:00',
+      () {
+        // dayWindow(Jan 4 02:00, boundary 5) shifts back to Saturday Jan 3's
+        // day-window (02:00 < 05:00 boundary) — see day_boundary.dart. But
+        // Saturday Jan 3 and Sunday Jan 4 fall in the SAME Mon–Sun ISO week
+        // (Mon Dec 29 – Sun Jan 4), so the pre-boundary shift does NOT push
+        // this into the previous ISO week — it only matters when the shift
+        // crosses a Sunday→Monday boundary (see the next test).
+        final now = DateTime(2026, 1, 4, 2, 0);
+        final (start, end) = isoWeekWindow(now: now);
+
+        expect(start, DateTime(2025, 12, 29, 5, 0));
+        expect(end, DateTime(2026, 1, 5, 5, 0));
+      },
+    );
+
+    test(
+      'Monday 02:00 (before the 05:00 boundary) shifts back to Sunday\'s '
+      'day-window and thus the PREVIOUS ISO week — the genuinely tricky '
+      'crossing case',
+      () {
+        // dayWindow(Jan 5 02:00, boundary 5) shifts back to Sunday Jan 4's
+        // day-window (still before the day boundary). Sunday Jan 4 belongs to
+        // the ISO week Mon Dec 29 – Sun Jan 4, i.e. the week BEFORE the one
+        // containing "Monday Jan 5" by the calendar date alone. Contrast with
+        // the very next test, where Jan 5 05:00 (3 hours later, at the
+        // boundary) is the start of the NEW week — two instants 3 hours apart
+        // land in different ISO weeks.
+        final now = DateTime(2026, 1, 5, 2, 0);
+        final (start, end) = isoWeekWindow(now: now);
+
+        expect(start, DateTime(2025, 12, 29, 5, 0));
+        expect(end, DateTime(2026, 1, 5, 5, 0));
+      },
+    );
+
+    test(
+      'Monday exactly at the boundary hour (05:00) is the START of the new '
+      'week, not the previous one',
+      () {
+        final now = DateTime(2026, 1, 5, 5, 0);
+        final (start, end) = isoWeekWindow(now: now);
+
+        expect(start, DateTime(2026, 1, 5, 5, 0));
+        expect(end, DateTime(2026, 1, 12, 5, 0));
+      },
+    );
+
+    test('midweek Wednesday resolves to that week\'s Monday–Sunday bounds', () {
+      final now = DateTime(2026, 1, 7, 12, 0); // Wednesday, well after boundary
+      expect(now.weekday, DateTime.wednesday);
+
+      final (start, end) = isoWeekWindow(now: now);
+
+      expect(start, DateTime(2026, 1, 5, 5, 0));
+      expect(end, DateTime(2026, 1, 12, 5, 0));
+    });
+
+    test('window duration is always exactly 7 days', () {
+      final cases = [
+        DateTime(2026, 1, 4, 20, 0),
+        DateTime(2026, 1, 4, 2, 0),
+        DateTime(2026, 1, 5, 2, 0),
+        DateTime(2026, 1, 5, 5, 0),
+        DateTime(2026, 1, 7, 12, 0),
+      ];
+      for (final now in cases) {
+        final (start, end) = isoWeekWindow(now: now);
+        expect(
+          end.difference(start),
+          const Duration(days: 7),
+          reason: 'isoWeekWindow($now) must span exactly 7 days',
+        );
+      }
+    });
+
+    test(
+      'now (as adjusted by day-boundary semantics) always falls within '
+      '[start, end)',
+      () {
+        final cases = [
+          DateTime(2026, 1, 4, 20, 0),
+          DateTime(2026, 1, 4, 2, 0),
+          DateTime(2026, 1, 5, 2, 0),
+          DateTime(2026, 1, 5, 5, 0),
+          DateTime(2026, 1, 7, 12, 0),
+        ];
+        for (final now in cases) {
+          final (start, end) = isoWeekWindow(now: now);
+          final dayStart = dayWindow(now: now).$1;
+          expect(
+            !start.isAfter(dayStart) && dayStart.isBefore(end),
+            isTrue,
+            reason: 'now\'s day-window start ($dayStart) must satisfy '
+                'start <= dayStart < end (got [$start, $end))',
+          );
+        }
+      },
+    );
+  });
 }
