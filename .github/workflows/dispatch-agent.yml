@@ -198,11 +198,35 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Auto mode: this is an ephemeral CI runner, so let the agent run its
           # tools (git, gh, flutter, dart) without per-command allowlisting.
-          claude_args: "--permission-mode bypassPermissions"
+          # ScheduleWakeup is explicitly disallowed: it's a session-scoped
+          # tool for interactive `/loop` use with no execution semantics in
+          # headless/print mode (see anthropics/claude-code#59864) — a run
+          # here has already ended for good by the time any "wakeup" could
+          # fire. Leaving it reachable let an agent believe it could pause
+          # and resume later (issues #17, #20, #22 all stalled this way:
+          # no PR, no commit, work abandoned mid-delegation).
+          claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
           show_full_output: "true"
           prompt: |
             You are implementing GitHub issue #${{ needs.select.outputs.issue }}
             in repository ${{ github.repository }}.
+
+            IMPORTANT — read this before doing anything else: this is a
+            single, one-shot, non-interactive run. There is no scheduler, no
+            notification, and no way to resume once you stop — the moment
+            you end your turn, this process exits for good, whether or not
+            the task is finished. "I'll check back once X finishes" is not
+            an option here; nothing will bring you back. Concretely:
+            - If you delegate to a subagent (test-author, spec-auditor), you
+              must stay in this same turn/session until it returns a result
+              before doing anything else. Never end your turn while a
+              subagent you launched is still running.
+            - Do not use ScheduleWakeup or any "resume later" pattern — it
+              has no effect here and abandons the task if you rely on it.
+            - Ending this run without a PR or a comment IS ending the task,
+              permanently, not pausing it. Budget your time so the PR (or
+              the explanation for why there isn't one) and the issue comment
+              both happen inside this one session.
 
             Start by reading the issue and its acceptance criteria:
               gh issue view ${{ needs.select.outputs.issue }}
