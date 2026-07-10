@@ -239,6 +239,61 @@ jobs:
             a silent exit leaves the queue unable to tell success from a
             no-op.
 
+      # Defense-in-depth: the Claude step exiting 0 doesn't guarantee it pushed
+      # anything — a run that stalls (endless DoD fix-loop, ambiguous spec,
+      # instruction-compliance drift over a long session) can exit having done
+      # real work locally that never reaches origin. Push whatever is here
+      # ourselves so a stalled run still leaves a branch a human can pick up,
+      # instead of the silent "no PR, no comment, nothing to recover" failure
+      # seen on issues #17 and #20. Idempotent: if the agent already pushed
+      # (the normal path), this is a no-op fast-forward.
+      - name: Recover unpushed work
+        if: success()
+        env:
+          ISSUE: ${{ needs.select.outputs.issue }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::ISSUE '$ISSUE' is not a valid issue number; refusing to proceed."
+            exit 1
+          fi
+
+          branch=$(git branch --show-current)
+
+          # Still on main: the agent never created its branch. If it also left
+          # no uncommitted changes, there is genuinely nothing to recover.
+          if [ "$branch" = "main" ]; then
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "Still on main with a clean tree; nothing to recover."
+              exit 0
+            fi
+            branch="claude/issue-$ISSUE-recovered-$GITHUB_RUN_ID"
+            git checkout -b "$branch"
+          fi
+
+          # Commit anything left uncommitted so it isn't lost.
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "claude[bot]"
+            git config user.email "claude[bot]@users.noreply.github.com"
+            git add -A
+            git commit --quiet -m "wip: recover uncommitted changes from a stalled agent run" \
+              -m "Issue #$ISSUE, run $GITHUB_RUN_ID. Committed mechanically because the run ended without committing this itself. DoD checks have NOT been verified against this state — treat as a starting point, not a finished change."
+          fi
+
+          # Nothing to push if the branch has no commits beyond main.
+          ahead=$(git rev-list --count origin/main.."$branch" 2>/dev/null || echo 0)
+          if [ "$ahead" -eq 0 ]; then
+            echo "Branch $branch has no commits ahead of main; nothing to push."
+            exit 0
+          fi
+
+          if git push origin "HEAD:refs/heads/$branch"; then
+            echo "RECOVERED_BRANCH=$branch" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Failed to push $branch; recovery step could not save this run's work."
+          fi
+
       # The Claude Code step exiting 0 only means the SDK session didn't crash —
       # it does NOT mean a PR was opened (the agent may have concluded no change
       # was needed, hit a wall, or otherwise stopped short). Check for a matching
@@ -323,8 +378,17 @@ jobs:
             # work) and would likely reach it again on retry.
             gh issue edit "$ISSUE" --repo "$REPO" \
               --add-label "$NO_PR_LABEL" --remove-label "$WORKING_LABEL" || true
+
+            # Set by "Recover unpushed work" if it pushed something on this
+            # run's behalf. Surface it so triage doesn't have to go digging.
+            if [ -n "${RECOVERED_BRANCH:-}" ]; then
+              branch_note=" A branch with the agent's unfinished work was recovered and pushed: \`$RECOVERED_BRANCH\` (https://github.com/$REPO/tree/$RECOVERED_BRANCH). Its DoD checks were NOT verified — review before opening a PR from it."
+            else
+              branch_note=""
+            fi
+
             gh issue comment "$ISSUE" --repo "$REPO" --body \
-              "Agent run finished (run $RUN_URL) without opening a pull request. Added \`$NO_PR_LABEL\` and released \`$WORKING_LABEL\` so this issue no longer silently occupies the in-flight slot. Check the agent's comment above for its reasoning — the run log won't show it (output is hidden by the action), so a missing comment here is itself worth flagging as a prompt-compliance gap. Then either close this issue, fix the blocker, or remove \`$NO_PR_LABEL\` to let the dispatcher retry it." || true
+              "Agent run finished (run $RUN_URL) without opening a pull request.${branch_note} Added \`$NO_PR_LABEL\` and released \`$WORKING_LABEL\` so this issue no longer silently occupies the in-flight slot. Check the agent's comment above for its reasoning — the run log won't show it (output is hidden by the action), so a missing comment here is itself worth flagging as a prompt-compliance gap. Then either close this issue, fix the blocker, or remove \`$NO_PR_LABEL\` to let the dispatcher retry it." || true
           fi
 
       # If the run failed before a PR was opened, release the claim so the issue
