@@ -794,6 +794,26 @@ Future<MealSize?> _showMealPrompt(BuildContext context) {
   );
 }
 
+/// Logs [selection] as an orphan drink (no Party Session) and shows a
+/// confirmation SnackBar.
+Future<void> _logOrphanDrink(
+  BuildContext context,
+  WidgetRef ref,
+  AlcoholicDrinkSelection selection,
+) async {
+  await ref.read(drinksRepositoryProvider).logDrink(
+        preset: selection.preset,
+        volumeMl: selection.volumeMl,
+        abvPercent: selection.abvPercent,
+        consumedAt: selection.consumedAt,
+      );
+  if (context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Drink logged')));
+  }
+}
+
 /// Orchestrates the whole "Log alcohol" flow: pick a preset (via
 /// [PartyLogDrinkSheet]), then — if there's no active [session] — the
 /// start-or-orphan prompt, then the actual log call, then the meal prompt.
@@ -815,17 +835,7 @@ Future<void> _handleLogAlcohol(
     final startNewSession = await _showStartSessionPrompt(context);
     if (startNewSession == null) return;
     if (!startNewSession) {
-      await ref.read(drinksRepositoryProvider).logDrink(
-            preset: selection.preset,
-            volumeMl: selection.volumeMl,
-            abvPercent: selection.abvPercent,
-            consumedAt: selection.consumedAt,
-          );
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Drink logged')));
-      }
+      if (context.mounted) await _logOrphanDrink(context, ref, selection);
       return;
     }
     if (!context.mounted) return;
@@ -834,7 +844,14 @@ Future<void> _handleLogAlcohol(
       ref,
       startedAt: selection.consumedAt,
     );
-    if (newSession == null) return;
+    if (newSession == null) {
+      // Blocked by the under-18 gate or the birthdate dialog was cancelled —
+      // the user already confirmed this drink, so fall back to logging it as
+      // an orphan rather than silently discarding it (party-session.md
+      // §Logging alcohol when no session is active).
+      if (context.mounted) await _logOrphanDrink(context, ref, selection);
+      return;
+    }
     sessionId = newSession.id;
   }
 

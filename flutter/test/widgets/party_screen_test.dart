@@ -811,6 +811,70 @@ void main() {
         expect(find.text('Drink logged'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'Accepting "Start party session" while under 18 falls back to logging '
+      'the drink as an orphan instead of discarding it',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final drinksRepo = _FakeDrinksRepo();
+        final now = DateTime.now();
+        // 10 years ago — comfortably under 18.
+        final birthDate = _isoDate(DateTime(now.year - 10, now.month, now.day));
+        final profile = _makeProfile(birthDate: birthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            drinksRepo: drinksRepo,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The no-session view's own "Log alcohol" button — the under-18
+        // gate only hides "Start party session", not this button (see the
+        // "Under-18 gate" group below).
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Start a Party Session first?'), findsOneWidget);
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(FilledButton, 'Start party session'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // _startPartySessionFlow's under-18 dialog (no actions, dismissed by
+        // tapping the barrier) — party_screen.dart's `_isUnder18` gate.
+        expect(
+          find.text('Party Mode requires you to be 18 or older'),
+          findsOneWidget,
+        );
+        await tester.tapAt(const Offset(1, 1));
+        await tester.pumpAndSettle();
+
+        // The drink the user already picked and confirmed must not be
+        // silently discarded: it's logged as an orphan, same as the
+        // "Don't start a session" branch.
+        expect(
+          drinksRepo.logDrinkCalls,
+          contains((presetId: _beerPreset.id, abvPercent: 5.0)),
+        );
+        expect(repo.startSessionCalls, isEmpty);
+        expect(repo.logAlcoholicDrinkCalls, isEmpty);
+        expect(find.text('Did you eat recently?'), findsNothing);
+        expect(find.text('Drink logged'), findsOneWidget);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
