@@ -13,8 +13,11 @@ import '../models/party_session_price.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
+import '../services/bac_estimator.dart';
 import '../services/goal_celebration_guard.dart';
 import '../services/notification_service.dart';
+import '../services/party_notification_guard.dart';
+import '../services/party_notification_service.dart';
 import '../services/reminder_scheduler.dart';
 import 'drinks_repository.dart';
 import 'party_session_repository.dart';
@@ -349,3 +352,85 @@ Stream<DateTime> _minuteTicker() async* {
   yield DateTime.now();
   yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
 }
+
+// ---------------------------------------------------------------------------
+// Party Mode notifications (issue #24)
+// ---------------------------------------------------------------------------
+
+/// Once-per-session guard for the approaching-cap notification.
+final partyNotificationGuardProvider = Provider<PartyNotificationGuard>((ref) {
+  return SharedPrefsPartyNotificationGuard();
+});
+
+/// Schedules/cancels the approaching-cap and sober-estimate notifications.
+final partyNotificationServiceProvider = Provider<PartyNotificationService>((
+  ref,
+) {
+  return PartyNotificationService(
+    ref.watch(notificationServiceProvider),
+    ref.watch(partyNotificationGuardProvider),
+  );
+});
+
+/// Side-effect provider: re-syncs Party Mode's two session-scoped
+/// notifications whenever the active session, its drinks/meals, or
+/// preferences change.
+///
+/// Both notification types are event-driven (a logged drink, a changed
+/// toggle) rather than time-driven, so this deliberately does not watch
+/// [nowTickerProvider] — see [PartyNotificationService.sync]'s doc.
+///
+/// Must be `watch`ed somewhere always-mounted (see `_AppGate` in `app.dart`),
+/// mirroring [reminderReschedulerProvider], so notifications keep syncing
+/// even while the user isn't looking at the Party tab.
+final partyNotificationSyncProvider = Provider<void>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return;
+  final session = ref.watch(activePartySessionProvider).valueOrNull;
+  final service = ref.watch(partyNotificationServiceProvider);
+
+  if (session == null) {
+    unawaited(service.sync(session: null, prefs: prefs));
+    return;
+  }
+
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  final entriesAsync = ref.watch(partySessionEntriesProvider(session.id));
+  final mealsAsync = ref.watch(partySessionMealsProvider(session.id));
+  if (profile == null ||
+      profile.birthDate == null ||
+      !entriesAsync.hasValue ||
+      !mealsAsync.hasValue) {
+    return;
+  }
+
+  final alcoholicEntries = entriesAsync.requireValue
+      .where((e) => e.beverageType.isAlcoholic)
+      .toList();
+  final meals = mealsAsync.requireValue;
+  final now = DateTime.now();
+  final estimate = estimateSessionBac(
+    profile: profile,
+    alcoholicEntries: alcoholicEntries,
+    meals: meals,
+    at: now,
+  );
+  final soberTime = alcoholicEntries.isEmpty
+      ? null
+      : projectedSoberTime(
+          profile: profile,
+          alcoholicEntries: alcoholicEntries,
+          meals: meals,
+        );
+
+  unawaited(
+    service.sync(
+      session: session,
+      prefs: prefs,
+      estimate: estimate,
+      capGPerL: prefs.bacCapGramsPerL,
+      projectedSoberTime: soberTime,
+      now: now,
+    ),
+  );
+});

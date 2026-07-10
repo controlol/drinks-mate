@@ -40,7 +40,9 @@ void main() {
       expect(prefs.weeklySummaryEnabled, isTrue);
       expect(prefs.defaultDrinkPresetId, kWaterGlassPresetId);
       expect(prefs.bacCapGramsPerL, isNull);
-      expect(prefs.bacOnLockScreenEnabled, isFalse);
+      // data-model.md §UserPreferences: default ON (notifications.md
+      // §Lock-screen visibility).
+      expect(prefs.bacOnLockScreenEnabled, isTrue);
       // Party Mode notifications are OFF by default (notifications.md §4).
       expect(prefs.approachingCapNotifEnabled, isFalse);
       expect(prefs.soberEstimateNotifEnabled, isFalse);

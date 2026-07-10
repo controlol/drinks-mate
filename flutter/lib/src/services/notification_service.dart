@@ -17,6 +17,11 @@ const String kHydrationChannelName = 'Hydration reminders';
 const String kWeeklySummaryChannelId = 'weekly_summary';
 const String kWeeklySummaryChannelName = 'Weekly summary';
 
+/// Android notification channel for Party Mode's approaching-cap and
+/// sober-estimate notifications (notifications.md §Party Mode notifications).
+const String kPartyModeChannelId = 'party_mode';
+const String kPartyModeChannelName = 'Party Mode';
+
 /// Action id for the hydration reminder's quick-log button.
 ///
 /// notifications.md §Notification quick-log action: tapping it should log the
@@ -82,6 +87,18 @@ abstract interface class NotificationService {
   /// [payload] is forwarded verbatim to `zonedSchedule` so a registered
   /// delivery-time callback can re-query the DB and re-evaluate the fire
   /// predicate at delivery time.
+  ///
+  /// [visibility] controls the Android lock-screen preview
+  /// (notifications.md §Lock-screen visibility). Defaults to `private`;
+  /// Party Mode callers pass `public` when
+  /// `UserPreferences.bacOnLockScreenEnabled` is true. No iOS equivalent
+  /// exists in this plugin — iOS lock-screen previews are controlled by the
+  /// user at the OS level, not per-notification.
+  ///
+  /// Calling this again with the same [id] replaces any still-pending
+  /// notification previously scheduled under that id (the underlying plugin
+  /// overwrites by id) — callers rely on this to reschedule (e.g. the
+  /// sober-estimate notification moving as new drinks are logged).
   Future<void> scheduleOnce({
     required int id,
     required String title,
@@ -89,6 +106,7 @@ abstract interface class NotificationService {
     required String channelId,
     required DateTime scheduledTime,
     String? payload,
+    NotificationVisibility visibility = NotificationVisibility.private,
   });
 
   /// Cancels the repeating batch previously scheduled with id [id].
@@ -173,6 +191,16 @@ class FlutterNotificationService implements NotificationService {
           kWeeklySummaryChannelName,
           description: 'A weekly recap of your hydration goal achievement.',
           importance: Importance.low,
+        ),
+      );
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          kPartyModeChannelId,
+          kPartyModeChannelName,
+          description:
+              'Approaching-cap and sober-estimate alerts during a Party '
+              'Session.',
+          importance: Importance.high,
         ),
       );
 
@@ -288,9 +316,10 @@ class FlutterNotificationService implements NotificationService {
     required String channelId,
     required DateTime scheduledTime,
     String? payload,
+    NotificationVisibility visibility = NotificationVisibility.private,
   }) async {
     try {
-      final details = _notificationDetails(channelId);
+      final details = _notificationDetails(channelId, visibility: visibility);
       final tzTime = tz.TZDateTime.from(scheduledTime, tz.local);
       await _plugin.zonedSchedule(
         id,
@@ -348,6 +377,7 @@ class FlutterNotificationService implements NotificationService {
   NotificationDetails _notificationDetails(
     String channelId, {
     String? quickLogActionLabel,
+    NotificationVisibility visibility = NotificationVisibility.private,
   }) {
     final String channelName;
     switch (channelId) {
@@ -355,6 +385,8 @@ class FlutterNotificationService implements NotificationService {
         channelName = kHydrationChannelName;
       case kWeeklySummaryChannelId:
         channelName = kWeeklySummaryChannelName;
+      case kPartyModeChannelId:
+        channelName = kPartyModeChannelName;
       default:
         // Never surface an internal channel id as the user-visible name in
         // Android Settings.
@@ -367,9 +399,11 @@ class FlutterNotificationService implements NotificationService {
         channelName,
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
-        // Hide notification content (may include hydration/BAC data) on the
-        // lock screen; badge/existence still visible.
-        visibility: NotificationVisibility.private,
+        // Hydration/weekly-summary calls never pass a non-default visibility
+        // (notifications.md §Lock-screen visibility: their content is always
+        // safe to show). Party Mode calls pass `public` when
+        // bacOnLockScreenEnabled is true.
+        visibility: visibility,
         actions: quickLogActionLabel == null
             ? null
             : [
@@ -406,6 +440,7 @@ class FakeNotificationService implements NotificationService {
         String body,
         String? payload,
         String? quickLogActionLabel,
+        NotificationVisibility visibility,
       })> scheduled = [];
   final List<int> cancelled = [];
   bool allCancelled = false;
@@ -445,6 +480,7 @@ class FakeNotificationService implements NotificationService {
         body: body,
         payload: payload,
         quickLogActionLabel: quickLogActionLabel,
+        visibility: NotificationVisibility.private,
       ));
     }
   }
@@ -457,7 +493,12 @@ class FakeNotificationService implements NotificationService {
     required String channelId,
     required DateTime scheduledTime,
     String? payload,
+    NotificationVisibility visibility = NotificationVisibility.private,
   }) async {
+    // Mirrors the real plugin's zonedSchedule: scheduling under an id that's
+    // already pending replaces it, rather than appending a duplicate — see
+    // NotificationService.scheduleOnce's doc.
+    scheduled.removeWhere((e) => e.id == id);
     scheduled.add((
       id: id,
       scheduledTime: scheduledTime,
@@ -465,6 +506,7 @@ class FakeNotificationService implements NotificationService {
       body: body,
       payload: payload,
       quickLogActionLabel: null,
+      visibility: visibility,
     ));
   }
 
