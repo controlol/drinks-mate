@@ -161,7 +161,12 @@ bool bmiWarningApplies({required double bmi, required Gender gender}) {
   };
 }
 
-/// party-session.md §BAC goal: the "approaching cap" trigger fires when the
-/// estimated BAC passes **80%** of the personal cap.
+/// party-session.md §BAC goal / Parity Rulebook (design-system.md
+/// "Approaching-cap trigger"): the "approaching cap" trigger fires once the
+/// estimated BAC reaches **80%** of the personal cap. The boundary is
+/// inclusive (`>=`, not `>`) — reaching the threshold counts as approaching
+/// it, matching the app's conservative-estimate posture elsewhere (e.g. the
+/// unspecified-gender path). Pinned explicitly here and in the Rulebook
+/// rather than left implicit, since "past 80%" alone is ambiguous.
 bool isApproachingCap({required double bacGPerL, required double capGPerL}) =>
     bacGPerL >= 0.8 * capGPerL;

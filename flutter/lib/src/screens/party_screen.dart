@@ -76,9 +76,14 @@ class _NoSessionView extends ConsumerWidget {
         const SizedBox(height: 16),
         const _DisclaimerBanner(),
         const SizedBox(height: 24),
+        // Only the "Start party session" branch is age-gated (party-session.md
+        // §Logging alcohol when no session is active): the age check sits on
+        // the "Start party session" arrow, not on "Don't start a session", so
+        // an alcoholic drink can always be logged as an orphan regardless of
+        // age. "Log alcohol" therefore stays visible even when under18.
         if (under18)
           const _Under18Gate()
-        else ...[
+        else
           Semantics(
             label: SemanticsLabels.startPartySession,
             button: true,
@@ -92,30 +97,29 @@ class _NoSessionView extends ConsumerWidget {
               child: const Text('Start party session'),
             ),
           ),
-          const SizedBox(height: 12),
-          Semantics(
-            label: SemanticsLabels.logAlcoholButton,
-            button: true,
-            excludeSemantics: true,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _emerald(context),
-                side: BorderSide(color: _emerald(context)),
-                minimumSize: const Size.fromHeight(48),
-              ),
-              onPressed: () => _handleLogAlcohol(context, ref, null),
-              child: const Text('Log alcohol'),
+        const SizedBox(height: 12),
+        Semantics(
+          label: SemanticsLabels.logAlcoholButton,
+          button: true,
+          excludeSemantics: true,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _emerald(context),
+              side: BorderSide(color: _emerald(context)),
+              minimumSize: const Size.fromHeight(48),
             ),
+            onPressed: () => _handleLogAlcohol(context, ref, null),
+            child: const Text('Log alcohol'),
           ),
-          if (prefs?.bacCapGramsPerL != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Your cap: ${prefs!.bacCapGramsPerL!.toStringAsFixed(2)} g/L '
-              '(set in Settings → Party Mode)',
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
+        ),
+        if (!under18 && prefs?.bacCapGramsPerL != null) ...[
+          const SizedBox(height: 16),
+          Text(
+            'Your cap: ${prefs!.bacCapGramsPerL!.toStringAsFixed(2)} g/L '
+            '(set in Settings → Party Mode)',
+            style: Theme.of(context).textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
         ],
       ],
     );
@@ -428,8 +432,10 @@ class _CapReferenceBar extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: (width * capFraction - 1)
-                        .clamp(0.0, (width - 2).clamp(0.0, double.infinity)),
+                    left: (width * capFraction - 1).clamp(
+                      0.0,
+                      (width - 2).clamp(0.0, double.infinity),
+                    ),
                     top: 0,
                     bottom: 0,
                     child: Container(

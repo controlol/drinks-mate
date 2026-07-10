@@ -441,7 +441,7 @@ A 75 kg, 180 cm, 30-year-old male starts a session and drinks two 250 ml beers a
 - The user can set a personal cap, configured in settings, expressed in **g/L** (with the mmol/L equivalent shown). Default: **off** (no cap).
 - The cap is a single persistent setting and applies whenever a session is active. It is not per-session.
 - During an active session the [Party tab](./user-experience.md#s7--party) shows current estimated BAC versus the cap, with a clear visual indicator when the user is approaching or above the cap.
-- The "approaching cap" notification fires when a logged drink pushes the estimated BAC past **80%** of the cap.
+- The "approaching cap" notification fires when a logged drink pushes the estimated BAC to **80% or more** of the cap (inclusive boundary — see Parity Rulebook "Approaching-cap trigger").
 - The cap is a personal goal, not a legal threshold. The UI must not present it as a "safe to drive" line under any circumstances.
 
 ### Relation to legal limits
@@ -457,7 +457,7 @@ Settings show these limits as reference values inside the Party Mode section, wi
 
 When a session is active, the standard hydration reminders ([notifications.md](./notifications.md)) continue to behave as normal. Two additional notifications, both off by default, become eligible to fire:
 
-- **Approaching cap.** When the user logs a drink that pushes the estimated BAC past **80%** of the cap, the app sends a notification.
+- **Approaching cap.** When the user logs a drink that pushes the estimated BAC to **80% or more** of the cap (inclusive), the app sends a notification.
 - **Sober estimate.** When the estimated BAC returns to 0 g/L, the app sends a single notification ("Estimated BAC is back to 0 — remember this is an estimate."). The user can disable this independently.
 
 When the session ends (manually or automatically), neither of these notifications fires until a new session is active.
