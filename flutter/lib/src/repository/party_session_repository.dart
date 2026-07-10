@@ -629,6 +629,39 @@ class PartySessionRepository {
   }
 
   // ---------------------------------------------------------------------------
+  // History — alcohol charts + day drill-down (issue #26)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of live sessions whose window overlaps
+  /// `[rangeStart, rangeEnd)`, ordered by [PartySession.startedAt] — feeds
+  /// the History alcohol section's conditional-visibility check, the session
+  /// overlay band, and BAC-peak sampling (F4/#26).
+  Stream<List<PartySession>> watchSessionsInRange(
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) =>
+      _db
+          .watchSessionsOverlapping(rangeStart.toUtc(), rangeEnd.toUtc())
+          .map((rows) => rows.map(_rowToSession).toList());
+
+  /// One-shot read of every live alcoholic entry belonging to any of
+  /// [sessionIds] — feeds the BAC-peak-per-day sampler (F4/#26), which needs
+  /// each session's full entry list regardless of the sampled day/range.
+  Future<List<DrinkEntry>> getEntriesForSessions(
+    List<String> sessionIds,
+  ) async {
+    final rows = await _db.getEntriesForSessions(sessionIds);
+    return rows.map(_rowToEntry).toList();
+  }
+
+  /// One-shot read of every live meal belonging to any of [sessionIds] — see
+  /// [getEntriesForSessions].
+  Future<List<Meal>> getMealsForSessions(List<String> sessionIds) async {
+    final rows = await _db.getMealsForSessions(sessionIds);
+    return rows.map(_rowToMeal).toList();
+  }
+
+  // ---------------------------------------------------------------------------
   // Mapping helpers
   // ---------------------------------------------------------------------------
 

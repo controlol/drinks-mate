@@ -4,16 +4,19 @@ import 'package:core/core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../db/app_database.dart';
+import '../models/bac_daily_bucket.dart';
 import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/meal.dart';
 import '../models/party_session.dart';
 import '../models/party_session_price.dart';
+import '../models/session_day_summary.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
 import '../services/goal_celebration_guard.dart';
+import '../services/history_bac_service.dart';
 import '../services/notification_service.dart';
 import '../services/reminder_scheduler.dart';
 import 'drinks_repository.dart';
@@ -286,6 +289,118 @@ final historyDrinksPerDayProvider =
         rangeEnd: key.rangeEnd,
         boundaryHour: key.boundaryHour,
       );
+});
+
+// ---------------------------------------------------------------------------
+// History — alcohol charts + day drill-down (issue #26)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of zero-filled daily alcoholic-drink counts for the range
+/// in [key]. See [DrinksRepository.watchAlcoholicDrinksPerDay].
+final historyAlcoholicDrinksPerDayProvider =
+    StreamProvider.family<List<DailyBucket>, HistoryRangeKey>((ref, key) {
+  return ref.watch(drinksRepositoryProvider).watchAlcoholicDrinksPerDay(
+        rangeStart: key.rangeStart,
+        rangeEnd: key.rangeEnd,
+        boundaryHour: key.boundaryHour,
+      );
+});
+
+/// Reactive stream of live [PartySession]s overlapping the range in [key].
+/// Drives the alcohol section's conditional visibility (features.md F4:
+/// "shown only when the user has at least one PartySession whose window
+/// intersects the selected range") and the session overlay band.
+final historySessionsInRangeProvider =
+    StreamProvider.family<List<PartySession>, HistoryRangeKey>((ref, key) {
+  return ref
+      .watch(partySessionRepositoryProvider)
+      .watchSessionsInRange(key.rangeStart, key.rangeEnd);
+});
+
+/// Computes the "Max estimated BAC per day" chart data for the range in
+/// [key] (party-session.md BAC peak sampling; features.md F4).
+///
+/// Re-fetches session entries/meals whenever the overlapping-sessions list
+/// or the user profile changes. Also watches
+/// [historyAlcoholicDrinksPerDayProvider] purely as an extra recompute
+/// trigger, so a drink logged into an already-known session updates the BAC
+/// bars too, not just the drinks-per-day chart.
+final historyMaxBacPerDayProvider =
+    FutureProvider.family<List<BacDailyBucket>, HistoryRangeKey>((
+  ref,
+  key,
+) async {
+  final sessions =
+      ref.watch(historySessionsInRangeProvider(key)).valueOrNull ?? [];
+  ref.watch(historyAlcoholicDrinksPerDayProvider(key));
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+
+  final repo = ref.watch(partySessionRepositoryProvider);
+  final sessionIds = sessions.map((s) => s.id).toList();
+  final entries = await repo.getEntriesForSessions(sessionIds);
+  final meals = await repo.getMealsForSessions(sessionIds);
+
+  return computeMaxBacPerDay(
+    rangeStart: key.rangeStart,
+    rangeEnd: key.rangeEnd,
+    boundaryHour: key.boundaryHour,
+    sessions: sessions,
+    alcoholicEntries: entries,
+    meals: meals,
+    profile: profile,
+    now: DateTime.now(),
+  );
+});
+
+/// Keying record for a single day's History drill-down providers.
+typedef HistoryDayKey = ({DateTime dayStart, DateTime dayEnd});
+
+/// Reactive stream of every live entry (any beverage type) for the day in
+/// [key], newest-first. See [DrinksRepository.watchDayEntries].
+final historyDayEntriesProvider =
+    StreamProvider.family<List<DrinkEntry>, HistoryDayKey>((ref, key) {
+  return ref
+      .watch(drinksRepositoryProvider)
+      .watchDayEntries(key.dayStart, key.dayEnd);
+});
+
+/// Reactive stream of live [PartySession]s overlapping the day in [key].
+final historyDaySessionsProvider =
+    StreamProvider.family<List<PartySession>, HistoryDayKey>((ref, key) {
+  return ref
+      .watch(partySessionRepositoryProvider)
+      .watchSessionsInRange(key.dayStart, key.dayEnd);
+});
+
+/// One [SessionDaySummary] per session overlapping the day in [key] — feeds
+/// the day drill-down's session summary card(s) (F4/#26).
+final historyDaySessionSummariesProvider =
+    FutureProvider.family<List<SessionDaySummary>, HistoryDayKey>((
+  ref,
+  key,
+) async {
+  final sessions = ref.watch(historyDaySessionsProvider(key)).valueOrNull ?? [];
+  if (sessions.isEmpty) return [];
+
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  final repo = ref.watch(partySessionRepositoryProvider);
+  final sessionIds = sessions.map((s) => s.id).toList();
+  final entries = await repo.getEntriesForSessions(sessionIds);
+  final meals = await repo.getMealsForSessions(sessionIds);
+  final now = DateTime.now();
+
+  return [
+    for (final session in sessions)
+      buildSessionDaySummary(
+        session: session,
+        dayStart: key.dayStart,
+        dayEnd: key.dayEnd,
+        entries: entries,
+        meals: meals,
+        profile: profile,
+        now: now,
+      ),
+  ];
 });
 
 // ---------------------------------------------------------------------------

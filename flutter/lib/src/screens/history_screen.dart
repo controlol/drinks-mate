@@ -7,16 +7,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../a11y/semantics_labels.dart';
+import '../models/bac_daily_bucket.dart';
 import '../models/daily_bucket.dart';
 import '../models/history_range.dart';
+import '../models/party_session.dart';
 import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
 import '../theme/color_tokens.dart';
+import 'history_day_screen.dart';
 import 'settings_screen.dart';
 
 /// History tab — F4/S3: weekly/monthly range paging over the hydration
-/// charts (issue #25). Alcohol charts (BAC, session overlay) land in #26.
+/// charts (issue #25) plus the conditional alcohol charts, session overlay
+/// band, and day drill-down (issue #26).
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
@@ -117,6 +121,11 @@ class _HistoryBody extends ConsumerWidget {
 
     final totalsAsync = ref.watch(historyDailyTotalsProvider(key));
     final countsAsync = ref.watch(historyDrinksPerDayProvider(key));
+    final alcoholicCountsAsync = ref.watch(
+      historyAlcoholicDrinksPerDayProvider(key),
+    );
+    final sessionsAsync = ref.watch(historySessionsInRangeProvider(key));
+    final maxBacAsync = ref.watch(historyMaxBacPerDayProvider(key));
     final fmt = ref.watch(formatServiceProvider);
 
     return Column(
@@ -135,8 +144,28 @@ class _HistoryBody extends ConsumerWidget {
                 const Center(child: Text('Could not load history.')),
             data: (totals) {
               final counts = countsAsync.valueOrNull ?? [];
-              final isEmpty = totals.every((b) => b.value == 0);
+              // features.md F4: alcohol charts show only when at least one
+              // PartySession intersects the selected range — driven off the
+              // sessions stream itself, not off whether any BAC bucket is
+              // non-null, so a party-only period (no hydration/non-alcoholic
+              // drinks logged) still shows the alcohol section instead of
+              // falling into the all-zero empty state below.
+              final sessions = sessionsAsync.valueOrNull ?? [];
+              final hasAlcoholSection = sessions.isNotEmpty;
+              final isEmpty = totals.every((b) => b.value == 0) &&
+                  counts.every((b) => b.value == 0) &&
+                  !hasAlcoholSection;
               if (isEmpty) return const _EmptyState();
+
+              void onDayTap(int index) {
+                if (index < 0 || index >= totals.length) return;
+                _openDayDrilldown(
+                  context,
+                  dayStart: totals[index].dayStart,
+                  boundaryHour: prefs.dayBoundaryHour,
+                );
+              }
+
               return ListView(
                 padding: const EdgeInsets.only(bottom: 16),
                 children: [
@@ -147,6 +176,7 @@ class _HistoryBody extends ConsumerWidget {
                       goalMl: prefs.dailyGoalMl,
                       mode: selection.mode,
                       fmt: fmt,
+                      onDayTap: onDayTap,
                     ),
                   ),
                   _ChartCard(
@@ -154,14 +184,64 @@ class _HistoryBody extends ConsumerWidget {
                     child: _DrinksPerDayChart(
                       buckets: counts,
                       mode: selection.mode,
+                      onDayTap: onDayTap,
                     ),
                   ),
+                  if (hasAlcoholSection) ...[
+                    _ChartCard(
+                      title: 'Alcoholic drinks per day',
+                      child: _AlcoholicDrinksPerDayChart(
+                        buckets: alcoholicCountsAsync.valueOrNull ?? [],
+                        dayStarts: totals.map((b) => b.dayStart).toList(),
+                        sessions: sessions,
+                        boundaryHour: prefs.dayBoundaryHour,
+                        mode: selection.mode,
+                        onDayTap: onDayTap,
+                      ),
+                    ),
+                    _ChartCard(
+                      title: 'Max estimated BAC per day',
+                      child: _MaxBacChart(
+                        buckets: maxBacAsync.valueOrNull ??
+                            totals
+                                .map(
+                                    (b) => BacDailyBucket(dayStart: b.dayStart))
+                                .toList(),
+                        dayStarts: totals.map((b) => b.dayStart).toList(),
+                        sessions: sessions,
+                        boundaryHour: prefs.dayBoundaryHour,
+                        capGPerL: prefs.bacCapGramsPerL,
+                        mode: selection.mode,
+                        fmt: fmt,
+                        onDayTap: onDayTap,
+                      ),
+                    ),
+                  ],
                 ],
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  static void _openDayDrilldown(
+    BuildContext context, {
+    required DateTime dayStart,
+    required int boundaryHour,
+  }) {
+    final dayEnd = DateTime(
+      dayStart.year,
+      dayStart.month,
+      dayStart.day + 1,
+      boundaryHour,
+    );
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => HistoryDayScreen(dayStart: dayStart, dayEnd: dayEnd),
+      ),
     );
   }
 
@@ -301,12 +381,14 @@ class _HydrationChart extends StatelessWidget {
     required this.goalMl,
     required this.mode,
     required this.fmt,
+    required this.onDayTap,
   });
 
   final List<DailyBucket> buckets;
   final int goalMl;
   final HistoryRangeMode mode;
   final FormatService? fmt;
+  final ValueChanged<int> onDayTap;
 
   @override
   Widget build(BuildContext context) {
@@ -314,6 +396,7 @@ class _HydrationChart extends StatelessWidget {
     final maxY = (math.max(maxBarValue, goalMl) * 1.15).ceilToDouble();
     final belowGoalCount = buckets.where((b) => b.value < goalMl).length;
     final colorScheme = Theme.of(context).colorScheme;
+    final dayStarts = buckets.map((b) => b.dayStart).toList();
 
     return Semantics(
       container: true,
@@ -327,7 +410,7 @@ class _HydrationChart extends StatelessWidget {
               maxY: maxY <= 0 ? 1 : maxY,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
-              barTouchData: BarTouchData(enabled: false),
+              barTouchData: barTouchDataForDayTap(onDayTap),
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
               extraLinesData: ExtraLinesData(
@@ -373,7 +456,7 @@ class _HydrationChart extends StatelessWidget {
                     reservedSize: 24,
                     interval: mode == HistoryRangeMode.weekly ? 1 : 5,
                     getTitlesWidget: (value, meta) =>
-                        _dayLabel(buckets, value, mode),
+                        dayLabel(dayStarts, value, mode),
                   ),
                 ),
               ),
@@ -426,15 +509,21 @@ class _HydrationChart extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _DrinksPerDayChart extends StatelessWidget {
-  const _DrinksPerDayChart({required this.buckets, required this.mode});
+  const _DrinksPerDayChart({
+    required this.buckets,
+    required this.mode,
+    required this.onDayTap,
+  });
 
   final List<DailyBucket> buckets;
   final HistoryRangeMode mode;
+  final ValueChanged<int> onDayTap;
 
   @override
   Widget build(BuildContext context) {
     final maxCount = buckets.fold(0, (m, b) => math.max(m, b.value));
     final maxY = math.max(maxCount, 1) * 1.2;
+    final dayStarts = buckets.map((b) => b.dayStart).toList();
 
     return Semantics(
       container: true,
@@ -451,7 +540,7 @@ class _DrinksPerDayChart extends StatelessWidget {
               maxY: maxY,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
-              barTouchData: BarTouchData(enabled: false),
+              barTouchData: barTouchDataForDayTap(onDayTap),
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
@@ -477,7 +566,7 @@ class _DrinksPerDayChart extends StatelessWidget {
                     reservedSize: 24,
                     interval: mode == HistoryRangeMode.weekly ? 1 : 5,
                     getTitlesWidget: (value, meta) =>
-                        _dayLabel(buckets, value, mode),
+                        dayLabel(dayStarts, value, mode),
                   ),
                 ),
               ),
@@ -503,14 +592,17 @@ class _DrinksPerDayChart extends StatelessWidget {
   }
 }
 
-Widget _dayLabel(
-  List<DailyBucket> buckets,
+/// Shared bottom-axis day label — used by every History day-bar chart
+/// (hydration, drinks, alcoholic drinks, max BAC) so all four stay aligned
+/// on the same day index → date mapping.
+Widget dayLabel(
+  List<DateTime> dayStarts,
   double value,
   HistoryRangeMode mode,
 ) {
   final index = value.round();
-  if (index < 0 || index >= buckets.length) return const SizedBox.shrink();
-  final day = buckets[index].dayStart;
+  if (index < 0 || index >= dayStarts.length) return const SizedBox.shrink();
+  final day = dayStarts[index];
   final text = mode == HistoryRangeMode.weekly
       ? DateFormat('E').format(day)
       : DateFormat('d').format(day);
@@ -518,6 +610,371 @@ Widget _dayLabel(
     padding: const EdgeInsets.only(top: 4),
     child: Text(text, style: const TextStyle(fontSize: 10)),
   );
+}
+
+/// Shared bar-tap-to-drill-down wiring (user-experience.md S3: "Tapping a
+/// day on any chart ... drills into the day detail") — every History day-bar
+/// chart uses this so a tap on any bar (including a transparent
+/// no-session/no-bar rod) navigates to that day.
+///
+/// [getTooltipItem] optionally renders a tooltip on touch before the tap-up
+/// navigates away (used by the max-BAC chart for its mmol/L secondary value
+/// — features.md F4: "mmol/L shown alongside in tooltips"); charts that
+/// don't need one get a fully transparent, content-free tooltip.
+BarTouchData barTouchDataForDayTap(
+  ValueChanged<int> onDayTap, {
+  BarTooltipItem? Function(
+    BarChartGroupData,
+    int,
+    BarChartRodData,
+    int,
+  )? getTooltipItem,
+}) {
+  return BarTouchData(
+    touchTooltipData: BarTouchTooltipData(
+      getTooltipColor: (_) => Colors.transparent,
+      // Suppress fl_chart's default y-value tooltip text when the caller
+      // doesn't supply its own — a floating, background-less number would
+      // otherwise show on every tap given the transparent tooltip colour
+      // above (which exists to avoid a visible box over the day-drill-down
+      // gesture, not to hide a rendered value).
+      getTooltipItem: getTooltipItem ?? (_, __, ___, ____) => null,
+    ),
+    touchCallback: (event, response) {
+      if (event is! FlTapUpEvent) return;
+      final index = response?.spot?.touchedBarGroupIndex;
+      if (index != null) onDayTap(index);
+    },
+  );
+}
+
+/// Builds the session-overlay band (features.md F4: "both alcohol charts
+/// get a shaded background band ... spanning the relevant days") — one
+/// [VerticalRangeAnnotation] per session, covering every day index in
+/// [dayStarts] that session's `[startedAt, endedAt)` window touches.
+///
+/// Uses an opacity fill (not a flat saturated colour) as the accessibility
+/// signal so the band never relies on hue alone, and is what disambiguates
+/// a session-day whose BAC has fully decayed to 0 (an invisible zero-height
+/// bar) from a day with no session at all (also no visible bar) — only the
+/// former gets the band.
+RangeAnnotations sessionOverlayAnnotations({
+  required List<DateTime> dayStarts,
+  required List<PartySession> sessions,
+  required int boundaryHour,
+  required Color color,
+}) {
+  final annotations = <VerticalRangeAnnotation>[];
+  for (final session in sessions) {
+    final sessionEnd = session.endedAt ?? DateTime.now();
+    int? firstIndex;
+    int? lastIndex;
+    for (var i = 0; i < dayStarts.length; i++) {
+      final day = dayStarts[i];
+      final dayEnd = DateTime(day.year, day.month, day.day + 1, boundaryHour);
+      final touchesDay =
+          session.startedAt.isBefore(dayEnd) && sessionEnd.isAfter(day);
+      if (touchesDay) {
+        firstIndex ??= i;
+        lastIndex = i;
+      }
+    }
+    if (firstIndex != null && lastIndex != null) {
+      annotations.add(
+        VerticalRangeAnnotation(
+          x1: firstIndex - 0.5,
+          x2: lastIndex + 0.5,
+          color: color,
+        ),
+      );
+    }
+  }
+  return RangeAnnotations(verticalRangeAnnotations: annotations);
+}
+
+/// Alcohol-section overlay/bar tint — a shared warm accent (not the
+/// Party-only emerald token; History is not a Party screen, so
+/// [PartyColorTokens] must never appear here — design-system.md §Dark mode &
+/// emerald quarantine).
+Color alcoholAccent(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? kColorWarningDark
+        : kColorWarning;
+
+// ---------------------------------------------------------------------------
+// Alcoholic drinks-per-day chart
+// ---------------------------------------------------------------------------
+
+class _AlcoholicDrinksPerDayChart extends StatelessWidget {
+  const _AlcoholicDrinksPerDayChart({
+    required this.buckets,
+    required this.dayStarts,
+    required this.sessions,
+    required this.boundaryHour,
+    required this.mode,
+    required this.onDayTap,
+  });
+
+  final List<DailyBucket> buckets;
+  final List<DateTime> dayStarts;
+  final List<PartySession> sessions;
+  final int boundaryHour;
+  final HistoryRangeMode mode;
+  final ValueChanged<int> onDayTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxCount = buckets.fold(0, (m, b) => math.max(m, b.value));
+    final maxY = math.max(maxCount, 1) * 1.2;
+    final accent = alcoholAccent(context);
+
+    return Semantics(
+      container: true,
+      label: '${SemanticsLabels.historyAlcoholicDrinksChartPrefix}'
+          '${buckets.fold(0, (s, b) => s + b.value)} alcoholic drinks logged.',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final barWidth = _HydrationChart._barWidth(
+            buckets.length,
+            constraints.maxWidth,
+          );
+          return BarChart(
+            BarChartData(
+              maxY: maxY,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              barTouchData: barTouchDataForDayTap(onDayTap),
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+              rangeAnnotations: sessionOverlayAnnotations(
+                dayStarts: dayStarts,
+                sessions: sessions,
+                boundaryHour: boundaryHour,
+                color: accent.withAlpha(46),
+              ),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(),
+                rightTitles: const AxisTitles(),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 32,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) =>
+                        value == value.roundToDouble()
+                            ? Text(
+                                value.toInt().toString(),
+                                style: const TextStyle(fontSize: 10),
+                              )
+                            : const SizedBox.shrink(),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 24,
+                    interval: mode == HistoryRangeMode.weekly ? 1 : 5,
+                    getTitlesWidget: (value, meta) =>
+                        dayLabel(dayStarts, value, mode),
+                  ),
+                ),
+              ),
+              barGroups: [
+                for (var i = 0; i < buckets.length; i++)
+                  BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: buckets[i].value.toDouble(),
+                        width: barWidth,
+                        borderRadius: BorderRadius.circular(3),
+                        color: accent,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Max estimated BAC-per-day chart
+// ---------------------------------------------------------------------------
+
+class _MaxBacChart extends StatelessWidget {
+  const _MaxBacChart({
+    required this.buckets,
+    required this.dayStarts,
+    required this.sessions,
+    required this.boundaryHour,
+    required this.capGPerL,
+    required this.mode,
+    required this.fmt,
+    required this.onDayTap,
+  });
+
+  final List<BacDailyBucket> buckets;
+  final List<DateTime> dayStarts;
+  final List<PartySession> sessions;
+  final int boundaryHour;
+  final double? capGPerL;
+  final HistoryRangeMode mode;
+  final FormatService? fmt;
+  final ValueChanged<int> onDayTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = buckets.fold(
+      0.0,
+      (m, b) => math.max(m, b.maxGPerL ?? 0.0),
+    );
+    final maxY = math.max(math.max(maxValue, capGPerL ?? 0) * 1.25, 0.01);
+    final accent = alcoholAccent(context);
+    final daysWithSession = buckets.where((b) => b.maxGPerL != null).length;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Semantics(
+      container: true,
+      label: '${SemanticsLabels.historyMaxBacChartPrefix}'
+          '$daysWithSession of ${buckets.length} days had a party session.',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final barWidth = _HydrationChart._barWidth(
+            buckets.length,
+            constraints.maxWidth,
+          );
+          return BarChart(
+            BarChartData(
+              maxY: maxY,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              barTouchData: barTouchDataForDayTap(
+                onDayTap,
+                // features.md F4: "g/L ... with ... mmol/L shown alongside
+                // in tooltips" — no-session (null) days have nothing to
+                // show, so their transparent rod gets no tooltip.
+                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                  final value = groupIndex < buckets.length
+                      ? buckets[groupIndex].maxGPerL
+                      : null;
+                  if (value == null) return null;
+                  return BarTooltipItem(
+                    '${value.toStringAsFixed(2)} g/L\n'
+                    '≈ ${gPerLToMmol(value).toStringAsFixed(2)} mmol/L',
+                    TextStyle(
+                      color: colorScheme.onSurface,
+                      fontSize: 11,
+                    ),
+                  );
+                },
+              ),
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+              rangeAnnotations: sessionOverlayAnnotations(
+                dayStarts: dayStarts,
+                sessions: sessions,
+                boundaryHour: boundaryHour,
+                color: accent.withAlpha(46),
+              ),
+              extraLinesData: capGPerL == null
+                  ? const ExtraLinesData()
+                  : ExtraLinesData(
+                      horizontalLines: [
+                        HorizontalLine(
+                          y: capGPerL!,
+                          color: kColorError,
+                          strokeWidth: 2,
+                          dashArray: const [6, 4],
+                          label: HorizontalLineLabel(
+                            show: true,
+                            alignment: Alignment.topRight,
+                            style: const TextStyle(
+                              color: kColorError,
+                              fontSize: 10,
+                            ),
+                            labelResolver: (_) =>
+                                '${capGPerL!.toStringAsFixed(2)} g/L cap',
+                          ),
+                        ),
+                      ],
+                    ),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(),
+                rightTitles: const AxisTitles(),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 40,
+                    getTitlesWidget: (value, meta) => Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text(
+                        value.toStringAsFixed(2),
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 24,
+                    interval: mode == HistoryRangeMode.weekly ? 1 : 5,
+                    getTitlesWidget: (value, meta) =>
+                        dayLabel(dayStarts, value, mode),
+                  ),
+                ),
+              ),
+              barGroups: [
+                for (var i = 0; i < buckets.length; i++)
+                  _bacBarGroup(
+                      i, buckets[i], capGPerL, barWidth, accent, colorScheme),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static BarChartGroupData _bacBarGroup(
+    int index,
+    BacDailyBucket bucket,
+    double? capGPerL,
+    double barWidth,
+    Color accent,
+    ColorScheme colorScheme,
+  ) {
+    final value = bucket.maxGPerL;
+    // "at or above cap" mirrors isApproachingCap's inclusive boundary
+    // (core/bac.dart) — the conservative-estimate posture applied
+    // consistently across the app.
+    final isAboveCap = value != null && capGPerL != null && value >= capGPerL;
+    return BarChartGroupData(
+      x: index,
+      barRods: [
+        BarChartRodData(
+          toY: value ?? 0,
+          width: barWidth,
+          borderRadius: BorderRadius.circular(3),
+          // No-session days get a transparent rod (F4: "no bar" — not a
+          // visible zero) while still occupying this x position, so every
+          // day stays tappable for the day drill-down.
+          color: value == null
+              ? Colors.transparent
+              : (isAboveCap ? kColorError : accent),
+          // Non-colour above-cap signal, mirroring the hydration chart's
+          // below-goal border (Parity Rulebook §Non-colour-signal rules).
+          borderSide: isAboveCap
+              ? BorderSide(color: colorScheme.onSurface, width: 1.5)
+              : BorderSide.none,
+        ),
+      ],
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

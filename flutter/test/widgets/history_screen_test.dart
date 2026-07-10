@@ -13,13 +13,30 @@
 //     non-colour signal — Parity Rulebook: "History bar below daily goal:
 //     non-colour pattern/marker in addition to colour") while an
 //     at-or-above-goal bar does not.
+//  6. Alcohol section (issue #26): conditional visibility driven by
+//     historySessionsInRangeProvider alone (not by whether the BAC/alcoholic
+//     buckets are all-zero) — including the party-only-period regression
+//     case (no hydration entries, but a session in range: the alcohol
+//     section must show, not the "no drinks" empty state).
+//  7. Max-BAC chart: the cap HorizontalLine appears only when
+//     UserPreferences.bacCapGramsPerL is set; at/above-cap bars get a
+//     visible border (the non-colour signal), below-cap bars don't.
+//  8. Session overlay band: both alcohol charts' rangeAnnotations carry one
+//     VerticalRangeAnnotation per session in range.
 //
 // Provider override pattern mirrors flutter/test/widgets/today_drinks_screen_test.dart:
 // a fake DrinksRepository subclass records calls without touching the DB.
+// The three #26 family providers (historySessionsInRangeProvider,
+// historyAlcoholicDrinksPerDayProvider, historyMaxBacPerDayProvider) are
+// overridden directly with caller-supplied fake data via `_buildScreen`'s
+// optional params, since they're simple family providers (no fake-repo
+// subclass needed for these three).
 
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/bac_daily_bucket.dart';
 import 'package:drinks_mate/src/models/daily_bucket.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -73,7 +90,7 @@ class _FakeRepo extends DrinksRepository {
 // Helpers
 // ---------------------------------------------------------------------------
 
-UserPreferences _makePrefs({int dailyGoalMl = 2000}) {
+UserPreferences _makePrefs({int dailyGoalMl = 2000, double? bacCapGramsPerL}) {
   final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   return UserPreferences(
     id: kUserPreferencesId,
@@ -88,10 +105,30 @@ UserPreferences _makePrefs({int dailyGoalMl = 2000}) {
     reminderIntervalMin: 90,
     inactivityReminderEnabled: false,
     weeklySummaryEnabled: false,
+    bacCapGramsPerL: bacCapGramsPerL,
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
     installedAt: epoch,
+    createdAt: epoch,
+    updatedAt: epoch,
+  );
+}
+
+/// A minimal live [PartySession] fixture — id is the only field the History
+/// screen's session-overlay/conditional-visibility logic reads meaningfully
+/// alongside [startedAt]/[endedAt].
+PartySession _session({
+  String id = 'session-1',
+  required DateTime startedAt,
+  DateTime? endedAt,
+}) {
+  final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  return PartySession(
+    id: id,
+    startedAt: startedAt,
+    endedAt: endedAt,
+    useSessionPrices: false,
     createdAt: epoch,
     updatedAt: epoch,
   );
@@ -125,7 +162,26 @@ List<DailyBucket> _month(int count, {int fillValue = 500}) {
   ];
 }
 
-Widget _buildScreen({required _FakeRepo repo, UserPreferences? prefs}) {
+/// Seven [BacDailyBucket]s aligned to the same Monday as [_week] — `null`
+/// entries in [values] produce a no-session (null `maxGPerL`) bucket.
+List<BacDailyBucket> _bacWeek(List<double?> values) {
+  final monday = DateTime(2026, 6, 22, 5, 0);
+  return [
+    for (var i = 0; i < values.length; i++)
+      BacDailyBucket(
+        dayStart: DateTime(monday.year, monday.month, monday.day + i, 5, 0),
+        maxGPerL: values[i],
+      ),
+  ];
+}
+
+Widget _buildScreen({
+  required _FakeRepo repo,
+  UserPreferences? prefs,
+  List<PartySession> sessions = const [],
+  List<DailyBucket> alcoholicCounts = const [],
+  List<BacDailyBucket> maxBacBuckets = const [],
+}) {
   return ProviderScope(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(repo),
@@ -135,9 +191,34 @@ Widget _buildScreen({required _FakeRepo repo, UserPreferences? prefs}) {
       // charts fall back to their raw-value label strings (deterministic,
       // locale-independent).
       formatServiceProvider.overrideWithValue(null),
+      // These #26 family providers resolve to partySessionRepositoryProvider
+      // -> a real AppDatabase by default, which throws on path_provider in a
+      // widget-test environment, so every test overrides them directly —
+      // defaulting to empty/no-session for the pre-#26 tests, and to
+      // caller-supplied fixtures for the #26 tests below.
+      historySessionsInRangeProvider
+          .overrideWith((ref, key) => Stream.value(sessions)),
+      historyAlcoholicDrinksPerDayProvider
+          .overrideWith((ref, key) => Stream.value(alcoholicCounts)),
+      historyMaxBacPerDayProvider
+          .overrideWith((ref, key) => Future.value(maxBacBuckets)),
     ],
     child: const MaterialApp(home: HistoryScreen()),
   );
+}
+
+/// Enlarges the test surface so all 4 chart cards (hydration, drinks,
+/// alcoholic-drinks-per-day, max-BAC) fit without scrolling — the History
+/// body's `ListView(children: [...])` still lazily mounts children through a
+/// sliver, so cards below the fold (the alcohol section's, 3rd/4th in the
+/// list) would otherwise be absent from the tree at the default 800×600 test
+/// surface size. Call before `pumpWidget`; the physical size resets
+/// automatically via `addTearDown`.
+void _growSurfaceForAlcoholSection(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
 }
 
 void main() {
@@ -410,6 +491,307 @@ void main() {
         equals(BorderSide.none),
         reason: 'At/above-goal bars must not carry the below-goal border',
       );
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 6. Alcohol section conditional visibility (issue #26)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'alcohol section is NOT shown when there is no session in range, even '
+    'if the (fake) alcoholic/BAC buckets carry data',
+    (tester) async {
+      final repo = _FakeRepo(totals: _week([500, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: const [], // no sessions — the discriminator.
+          alcoholicCounts: _week([3, 0, 0, 0, 0, 0, 0]),
+          maxBacBuckets: _bacWeek([0.2, null, null, null, null, null, null]),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Alcoholic drinks per day'), findsNothing);
+      expect(find.text('Max estimated BAC per day'), findsNothing);
+      expect(
+        find.byType(BarChart),
+        findsNWidgets(2),
+        reason: 'Only the hydration + drinks-per-day charts render — '
+            'visibility is driven by historySessionsInRangeProvider, not by '
+            'whether the alcohol buckets are non-zero',
+      );
+    },
+  );
+
+  testWidgets(
+    'alcohol section IS shown when a session is in range, even with an '
+    'otherwise all-zero (party-only) period — the regression case: must '
+    'not fall into the "No drinks logged" empty state',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final repo = _FakeRepo(
+        totals: _week([0, 0, 0, 0, 0, 0, 0]), // no hydration logged at all
+        counts: _week([0, 0, 0, 0, 0, 0, 0]),
+      );
+      final session = _session(
+        startedAt: DateTime(2026, 6, 22, 20, 0),
+        endedAt: DateTime(2026, 6, 22, 22, 0),
+      );
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: [session],
+          alcoholicCounts: _week([2, 0, 0, 0, 0, 0, 0]),
+          maxBacBuckets: _bacWeek([0.2, null, null, null, null, null, null]),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text('No drinks logged in this period'),
+        findsNothing,
+        reason: 'features.md F4: a party-only period must show the alcohol '
+            'section, not the hydration empty state',
+      );
+      // The alcohol section's cards are 3rd/4th in the ListView — scroll
+      // them into the viewport before asserting they exist (the underlying
+      // sliver only lazily mounts children near the viewport + cache
+      // extent).
+      expect(find.text('Alcoholic drinks per day'), findsOneWidget);
+      expect(find.text('Max estimated BAC per day'), findsOneWidget);
+      expect(find.byType(BarChart), findsNWidgets(4));
+    },
+  );
+
+  testWidgets(
+    'alcoholic-drinks-per-day and max-BAC charts render bar values matching '
+    'the fake buckets',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final repo = _FakeRepo(totals: _week([500, 0, 0, 0, 0, 0, 0]));
+      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+      final alcoholicCounts = _week([2, 0, 1, 0, 0, 0, 0]);
+      final maxBacBuckets = _bacWeek([0.2, null, 0.0, null, null, null, null]);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: [session],
+          alcoholicCounts: alcoholicCounts,
+          maxBacBuckets: maxBacBuckets,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final alcoholicChart =
+          tester.widget<BarChart>(find.byType(BarChart).at(2));
+      expect(alcoholicChart.data.barGroups.length, equals(7));
+      for (var i = 0; i < alcoholicCounts.length; i++) {
+        expect(
+          alcoholicChart.data.barGroups[i].barRods.single.toY,
+          equals(alcoholicCounts[i].value.toDouble()),
+        );
+      }
+
+      final maxBacChart = tester.widget<BarChart>(find.byType(BarChart).at(3));
+      expect(maxBacChart.data.barGroups.length, equals(7));
+      for (var i = 0; i < maxBacBuckets.length; i++) {
+        expect(
+          maxBacChart.data.barGroups[i].barRods.single.toY,
+          equals(maxBacBuckets[i].maxGPerL ?? 0),
+        );
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 7. Max-BAC chart: cap reference line + above/below-cap border
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'cap HorizontalLine is present when bacCapGramsPerL is set',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+      final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          prefs: _makePrefs(bacCapGramsPerL: 0.5),
+          sessions: [session],
+          maxBacBuckets: maxBacBuckets,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final withCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
+      expect(withCap.data.extraLinesData.horizontalLines, hasLength(1));
+    },
+  );
+
+  testWidgets(
+    'cap HorizontalLine is absent when bacCapGramsPerL is null',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+      final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          prefs: _makePrefs(),
+          sessions: [session],
+          maxBacBuckets: maxBacBuckets,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final withoutCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
+      expect(withoutCap.data.extraLinesData.horizontalLines, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'at/above-cap bar has a non-BorderSide.none border; below-cap bar does '
+    'not; no-session (null) bar is transparent with no border',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+      // cap = 0.3: bucket 0 (0.5) is above cap, bucket 1 (0.1) is below,
+      // bucket 2 (null) has no session at all.
+      final maxBacBuckets = _bacWeek([0.5, 0.1, null, null, null, null, null]);
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          prefs: _makePrefs(bacCapGramsPerL: 0.3),
+          sessions: [session],
+          maxBacBuckets: maxBacBuckets,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final maxBacChart = tester.widget<BarChart>(find.byType(BarChart).at(3));
+      final aboveCapRod = maxBacChart.data.barGroups[0].barRods.single;
+      final belowCapRod = maxBacChart.data.barGroups[1].barRods.single;
+      final noSessionRod = maxBacChart.data.barGroups[2].barRods.single;
+
+      // Source: history_screen.dart _MaxBacChart._bacBarGroup — mirrors the
+      // hydration chart's below-goal border (Parity Rulebook
+      // §Non-colour-signal rules), using isApproachingCap's inclusive (>=)
+      // boundary (core/bac.dart).
+      expect(
+        aboveCapRod.borderSide,
+        isNot(equals(BorderSide.none)),
+        reason: 'At/above-cap bars must carry a visible border as the '
+            'non-colour signal',
+      );
+      expect(belowCapRod.borderSide, equals(BorderSide.none));
+      expect(
+        noSessionRod.color,
+        equals(Colors.transparent),
+        reason: 'No-session days get a transparent (not omitted) rod so the '
+            'day stays tappable for the drill-down',
+      );
+      expect(noSessionRod.borderSide, equals(BorderSide.none));
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 8. Session overlay band
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'both alcohol charts carry one VerticalRangeAnnotation per session in '
+    'range',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final sessionA = _session(
+        id: 'sA',
+        startedAt: DateTime(2026, 6, 22, 20, 0),
+        endedAt: DateTime(2026, 6, 22, 22, 0),
+      );
+      final sessionB = _session(
+        id: 'sB',
+        startedAt: DateTime(2026, 6, 24, 20, 0),
+        endedAt: DateTime(2026, 6, 24, 22, 0),
+      );
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: [sessionA, sessionB],
+          alcoholicCounts: _week([1, 0, 1, 0, 0, 0, 0]),
+          maxBacBuckets: _bacWeek([0.1, null, 0.1, null, null, null, null]),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final alcoholicChart =
+          tester.widget<BarChart>(find.byType(BarChart).at(2));
+      final maxBacChart = tester.widget<BarChart>(find.byType(BarChart).at(3));
+
+      expect(
+        alcoholicChart.data.rangeAnnotations.verticalRangeAnnotations,
+        hasLength(2),
+      );
+      expect(
+        maxBacChart.data.rangeAnnotations.verticalRangeAnnotations,
+        hasLength(2),
+      );
+    },
+  );
+
+  testWidgets(
+    'a session spanning two consecutive days gets one band covering both '
+    "day indices (x1/x2 span Monday's and Tuesday's bar positions)",
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      // Monday 22:00 -> Tuesday 08:00 — the 05:00 day-boundary (_makePrefs's
+      // dayBoundaryHour) falls inside this window, so it genuinely spans
+      // Monday's AND Tuesday's day-windows, not just calendar midnight.
+      final session = _session(
+        startedAt: DateTime(2026, 6, 22, 22, 0),
+        endedAt: DateTime(2026, 6, 23, 8, 0),
+      );
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: [session],
+          maxBacBuckets: _bacWeek([0.1, 0.1, null, null, null, null, null]),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final maxBacChart = tester.widget<BarChart>(find.byType(BarChart).at(3));
+      final annotations =
+          maxBacChart.data.rangeAnnotations.verticalRangeAnnotations;
+
+      expect(annotations, hasLength(1));
+      // Day index 0 (Monday) through day index 1 (Tuesday) — see
+      // sessionOverlayAnnotations()'s `firstIndex`/`lastIndex` +/- 0.5
+      // padding around each touched bar's x position.
+      expect(annotations.single.x1, -0.5);
+      expect(annotations.single.x2, 1.5);
     },
   );
 }

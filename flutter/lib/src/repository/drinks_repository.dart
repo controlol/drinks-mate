@@ -565,6 +565,41 @@ class DrinksRepository {
     return buckets;
   }
 
+  /// Reactive stream of alcoholic drink counts (non-deleted,
+  /// `partySessionId` not null) for every day-window in
+  /// `[rangeStart, rangeEnd)`, one zero-filled [DailyBucket] per day, ordered
+  /// oldest-first — F4/#26 "Alcoholic drinks per day". See
+  /// [watchDailyTotalsMl] for the [rangeStart] alignment requirement.
+  Stream<List<DailyBucket>> watchAlcoholicDrinksPerDay({
+    required DateTime rangeStart,
+    required DateTime rangeEnd,
+    int boundaryHour = 5,
+    int boundaryMinute = 0,
+  }) {
+    return _db
+        .watchPartySessionEntriesInWindow(rangeStart.toUtc(), rangeEnd.toUtc())
+        .map(
+          (entries) => _bucketByDay(
+            entries,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            boundaryHour: boundaryHour,
+            boundaryMinute: boundaryMinute,
+            reduce: (acc, _) => acc + 1,
+          ),
+        );
+  }
+
+  /// Reactive stream of every live entry (any beverage type) within
+  /// `[dayStart, dayEnd)`, newest-first — feeds the History day drill-down
+  /// (F4/#26), which shows both hydration and alcoholic entries for the day.
+  Stream<List<DrinkEntry>> watchDayEntries(DateTime dayStart, DateTime dayEnd) {
+    final allTypes = BeverageType.values.map((t) => t.stored).toList();
+    return _db
+        .watchEntriesInWindowFull(dayStart.toUtc(), dayEnd.toUtc(), allTypes)
+        .map((rows) => rows.map(_rowToEntry).toList());
+  }
+
   /// Reactive stream of today's logged entries in reverse-chronological order.
   ///
   /// Only non-alcoholic entries are included — this screen is reached from the

@@ -13,6 +13,7 @@ import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/meal.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_profile.dart';
+import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/preferences_repository.dart';
 
@@ -1708,6 +1709,267 @@ void main() {
           tokenName: 'Chip',
         ),
         throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. History — watchSessionsInRange / getEntriesForSessions /
+  //    getMealsForSessions (issue #26)
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository — History range/entries (issue #26)', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    group('watchSessionsInRange', () {
+      test(
+        'returns a session fully inside the range, ordered by startedAt',
+        () async {
+          final earlier = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+            now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          await repo.endSession(
+            earlier.id,
+            PartySessionEndReason.manual,
+            now: DateTime.utc(2026, 7, 10, 22, 0),
+          );
+
+          final sessions = await repo
+              .watchSessionsInRange(
+                DateTime.utc(2026, 7, 10, 5, 0),
+                DateTime.utc(2026, 7, 11, 5, 0),
+              )
+              .first;
+
+          expect(sessions.map((s) => s.id).toList(), [earlier.id]);
+        },
+      );
+
+      test(
+        'includes a session that only partially overlaps the range '
+        '(starts before rangeStart, ends inside it)',
+        () async {
+          final session = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 2, 0), // before the range
+            now: DateTime.utc(2026, 7, 10, 2, 0),
+          );
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: DateTime.utc(2026, 7, 10, 8, 0), // inside the range
+          );
+
+          final sessions = await repo
+              .watchSessionsInRange(
+                DateTime.utc(2026, 7, 10, 5, 0),
+                DateTime.utc(2026, 7, 11, 5, 0),
+              )
+              .first;
+
+          expect(sessions.map((s) => s.id).toList(), [session.id]);
+        },
+      );
+
+      test(
+        'an active (endedAt IS NULL) session is treated as open-ended — '
+        'included whenever startedAt < rangeEnd',
+        () async {
+          final active = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+            now: DateTime.utc(2026, 7, 1, 20, 0),
+          );
+
+          // A range far in the future — the still-active session must still
+          // be returned since it has no defined end.
+          final sessions = await repo
+              .watchSessionsInRange(
+                DateTime.utc(2026, 8, 1, 5, 0),
+                DateTime.utc(2026, 8, 2, 5, 0),
+              )
+              .first;
+
+          expect(sessions.map((s) => s.id).toList(), [active.id]);
+        },
+      );
+
+      test(
+        'excludes a session that ended before rangeStart',
+        () async {
+          final past = await repo.startSession(
+            startedAt: DateTime.utc(2026, 6, 1, 20, 0),
+            now: DateTime.utc(2026, 6, 1, 20, 0),
+          );
+          await repo.endSession(
+            past.id,
+            PartySessionEndReason.manual,
+            now: DateTime.utc(2026, 6, 1, 22, 0),
+          );
+
+          final sessions = await repo
+              .watchSessionsInRange(
+                DateTime.utc(2026, 7, 10, 5, 0),
+                DateTime.utc(2026, 7, 11, 5, 0),
+              )
+              .first;
+
+          expect(sessions, isEmpty);
+        },
+      );
+
+      test(
+        'excludes a session that starts at/after rangeEnd '
+        '(half-open [rangeStart, rangeEnd))',
+        () async {
+          await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 11, 5, 0), // == rangeEnd
+            now: DateTime.utc(2026, 7, 11, 5, 0),
+          );
+
+          final sessions = await repo
+              .watchSessionsInRange(
+                DateTime.utc(2026, 7, 10, 5, 0),
+                DateTime.utc(2026, 7, 11, 5, 0),
+              )
+              .first;
+
+          expect(sessions, isEmpty);
+        },
+      );
+
+      test('orders multiple overlapping sessions by startedAt', () async {
+        final later = await repo.startSession(
+          startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+        await repo.endSession(
+          later.id,
+          PartySessionEndReason.manual,
+          now: DateTime.utc(2026, 7, 10, 21, 0),
+        );
+        // Start a second, earlier-starting session — auto-end the first
+        // isn't relevant here since it's already manually ended.
+        final earlier = await repo.startSession(
+          startedAt: DateTime.utc(2026, 7, 10, 8, 0),
+          now: DateTime.utc(2026, 7, 10, 22, 0),
+        );
+        await repo.endSession(
+          earlier.id,
+          PartySessionEndReason.manual,
+          now: DateTime.utc(2026, 7, 10, 23, 0),
+        );
+
+        final sessions = await repo
+            .watchSessionsInRange(
+              DateTime.utc(2026, 7, 10, 5, 0),
+              DateTime.utc(2026, 7, 11, 5, 0),
+            )
+            .first;
+
+        expect(sessions.map((s) => s.id).toList(), [earlier.id, later.id]);
+      });
+    });
+
+    group('getEntriesForSessions / getMealsForSessions', () {
+      test('empty sessionIds list returns an empty list (no query)', () async {
+        expect(await repo.getEntriesForSessions(const []), isEmpty);
+        expect(await repo.getMealsForSessions(const []), isEmpty);
+      });
+
+      test(
+        'returns only entries/meals belonging to the requested session ids',
+        () async {
+          final sessionA = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+            now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: sessionA.id,
+            consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+            now: DateTime.utc(2026, 7, 10, 20, 5),
+          );
+          await repo.addMeal(
+            sessionId: sessionA.id,
+            size: MealSize.medium,
+            eatenAt: DateTime.utc(2026, 7, 10, 19, 0),
+            now: DateTime.utc(2026, 7, 10, 19, 0),
+          );
+          await repo.endSession(
+            sessionA.id,
+            PartySessionEndReason.manual,
+            now: DateTime.utc(2026, 7, 10, 21, 0),
+          );
+
+          final sessionB = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 11, 20, 0),
+            now: DateTime.utc(2026, 7, 11, 20, 0),
+          );
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: sessionB.id,
+            consumedAt: DateTime.utc(2026, 7, 11, 20, 5),
+            now: DateTime.utc(2026, 7, 11, 20, 5),
+          );
+          await repo.addMeal(
+            sessionId: sessionB.id,
+            size: MealSize.large,
+            eatenAt: DateTime.utc(2026, 7, 11, 19, 0),
+            now: DateTime.utc(2026, 7, 11, 19, 0),
+          );
+
+          final entries = await repo.getEntriesForSessions([sessionA.id]);
+          expect(entries, hasLength(1));
+          expect(entries.single.partySessionId, sessionA.id);
+
+          final meals = await repo.getMealsForSessions([sessionA.id]);
+          expect(meals, hasLength(1));
+          expect(meals.single.partySessionId, sessionA.id);
+          expect(meals.single.size, MealSize.medium);
+
+          // Requesting both ids returns both sessions' rows.
+          final bothEntries = await repo.getEntriesForSessions(
+            [sessionA.id, sessionB.id],
+          );
+          expect(bothEntries, hasLength(2));
+        },
+      );
+
+      test(
+        'excludes a soft-deleted entry from getEntriesForSessions',
+        () async {
+          final session = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+            now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+            now: DateTime.utc(2026, 7, 10, 20, 5),
+          );
+
+          final before = await repo.getEntriesForSessions([session.id]);
+          expect(before, hasLength(1));
+
+          await DrinksRepository(db).deleteDrinkEntry(entry.id);
+
+          final after = await repo.getEntriesForSessions([session.id]);
+          expect(
+            after,
+            isEmpty,
+            reason: 'getEntriesForSessions must exclude soft-deleted rows '
+                '(F7 soft-delete)',
+          );
+        },
       );
     });
   });

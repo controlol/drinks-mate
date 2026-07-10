@@ -1,8 +1,10 @@
 import 'package:drift/native.dart';
 import 'package:drinks_mate/app.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/bac_daily_bucket.dart';
 import 'package:drinks_mate/src/models/daily_bucket.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -73,14 +75,23 @@ Widget _appWithFakeStreams() {
       // resolve immediately regardless of which tab is selected — override
       // them for the same QueryStream-cleanup reason as the others above.
       activePartySessionProvider.overrideWith((_) => Stream.value(null)),
-      // HistoryScreen (issue #25) is also built eagerly by the IndexedStack —
-      // override its two family providers for the same QueryStream-cleanup
-      // reason as the others above.
+      // HistoryScreen (issue #25/#26) is also built eagerly by the
+      // IndexedStack — override its family providers for the same
+      // QueryStream-cleanup reason as the others above.
       historyDailyTotalsProvider.overrideWith(
         (_, __) => Stream.value(const <DailyBucket>[]),
       ),
       historyDrinksPerDayProvider.overrideWith(
         (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historyAlcoholicDrinksPerDayProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historySessionsInRangeProvider.overrideWith(
+        (_, __) => Stream.value(const <PartySession>[]),
+      ),
+      historyMaxBacPerDayProvider.overrideWith(
+        (_, __) => Future.value(const <BacDailyBucket>[]),
       ),
       appInfoServiceProvider.overrideWithValue(const FakeAppInfoService()),
     ],
