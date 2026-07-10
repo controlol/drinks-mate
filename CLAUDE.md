@@ -53,6 +53,7 @@ Prefer the Dart MCP tools over manual file reading or shell commands when explor
 - **Architecture:** Riverpod + repository over Drift; Drift types never reach widgets. Math stays in `core`, behind the repository.
 - **Testing pyramid:** unit (≈60–70%, mostly `core`) → widget → golden (design-system parity) → integration (`integration_test`/Patrol). Target ≥80% coverage on `core`/services.
 - **Generated code** (`*.g.dart`) is excluded from analysis and lint; don't hand-edit it.
+- **Comments explain "why", not "what"**, and cite their source (`Source: <doc> §<section>` or Parity Rulebook rule) where the comment reflects a spec rule rather than a local implementation choice. When editing a block that already has a rationale comment, revise it in place to describe the current logic — don't append a new sentence alongside the old one. Stacked, overlapping rationale from repeated edits is worse for DX than no comment at all.
 
 ## Subagents available (`.claude/agents/`)
 
