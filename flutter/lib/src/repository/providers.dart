@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/app_database.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
+import '../models/meal.dart';
 import '../models/party_session.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
@@ -49,6 +50,14 @@ final visibleNonAlcoholicPresetsProvider = StreamProvider<List<DrinkPreset>>((
 /// sortOrder — feeds the "Manage drinks" screen.
 final allPresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
   return ref.watch(drinksRepositoryProvider).watchAllPresets();
+});
+
+/// Stream of visible alcoholic presets — feeds the Party Mode "Log alcohol"
+/// preset picker (party-session.md §Logging an alcoholic drink).
+final visibleAlcoholicPresetsProvider = StreamProvider<List<DrinkPreset>>((
+  ref,
+) {
+  return ref.watch(drinksRepositoryProvider).watchAlcoholicPresets();
 });
 
 /// Reactive stream of today's total intake in ml.
@@ -257,3 +266,35 @@ final partySessionRepositoryProvider = Provider<PartySessionRepository>((ref) {
 final activePartySessionProvider = StreamProvider<PartySession?>((ref) {
   return ref.watch(partySessionRepositoryProvider).watchActiveSession();
 });
+
+// ---------------------------------------------------------------------------
+// Party Session UI (issue #22)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of a session's live drink entries — feeds the BAC card.
+final partySessionEntriesProvider =
+    StreamProvider.family<List<DrinkEntry>, String>((ref, sessionId) {
+  return ref
+      .watch(partySessionRepositoryProvider)
+      .watchSessionEntries(sessionId);
+});
+
+/// Reactive stream of a session's live meals — feeds the BAC card's meal
+/// modifier and the "add/last meal" indicator.
+final partySessionMealsProvider = StreamProvider.family<List<Meal>, String>((
+  ref,
+  sessionId,
+) {
+  return ref.watch(partySessionRepositoryProvider).watchSessionMeals(sessionId);
+});
+
+/// Emits immediately, then once a minute — drives the BAC card's live
+/// recompute (elapsed time, elimination) without a raw [Timer] in the widget
+/// tree. Overridden in widget tests with a single-value stream so
+/// `pumpAndSettle` doesn't hang on a repeating timer.
+final nowTickerProvider = StreamProvider<DateTime>((ref) => _minuteTicker());
+
+Stream<DateTime> _minuteTicker() async* {
+  yield DateTime.now();
+  yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
+}

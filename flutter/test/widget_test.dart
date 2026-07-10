@@ -68,6 +68,10 @@ Widget _appWithFakeStreams() {
       allPresetsProvider.overrideWith(
         (_) => Stream.value(const <DrinkPreset>[]),
       ),
+      // IndexedStack builds every tab eagerly, so PartyScreen's providers
+      // resolve immediately regardless of which tab is selected — override
+      // them for the same QueryStream-cleanup reason as the others above.
+      activePartySessionProvider.overrideWith((_) => Stream.value(null)),
       appInfoServiceProvider.overrideWithValue(const FakeAppInfoService()),
     ],
     child: const DrinksMateApp(),
@@ -135,7 +139,9 @@ void main() {
     await tester.tap(find.descendant(of: navBar, matching: find.text('Party')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Party Session feature coming soon.'), findsOneWidget);
+    // No active session (overridden to null above) → the Party tab shows
+    // the no-session explainer / start CTA (issue #22).
+    expect(find.text('Start party session'), findsOneWidget);
   });
 
   testWidgets('gear icon navigates to Settings full-screen', (tester) async {
