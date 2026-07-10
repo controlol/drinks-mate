@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -74,6 +75,7 @@ class _PartyPricingSheetState extends State<PartyPricingSheet> {
   late final TextEditingController _tokenNameCtrl;
   late final TextEditingController _tokenValueCtrl;
   late String _tokenValueCurrency;
+  String? _tokenNameError;
 
   @override
   void initState() {
@@ -136,12 +138,29 @@ class _PartyPricingSheetState extends State<PartyPricingSheet> {
         );
       }
     }
-    final tokenName = _tokenNameCtrl.text.trim();
+    final rawTokenName = _tokenNameCtrl.text.trim();
+    String? tokenName;
+    if (rawTokenName.isNotEmpty) {
+      // Mirrors PartySessionRepository.updateTokenConfig's own
+      // normalise-then-validate so a name accepted here is guaranteed to be
+      // accepted there — a rejected name must never reach the repository as
+      // an unhandled ArgumentError (Parity Rulebook §Username rules: same
+      // whitelist as tokenName, 1–30 chars).
+      final normalized = normalizeNfc(rawTokenName);
+      final validation = validateUsername(normalized, minLength: 1);
+      if (!validation.isValid) {
+        setState(() => _tokenNameError = validation.error);
+        return;
+      }
+      tokenName = normalized;
+    }
+    setState(() => _tokenNameError = null);
+
     final tokenValue = double.tryParse(_tokenValueCtrl.text);
     Navigator.of(context).pop(
       PricingSetupResult(
         prices: prices,
-        tokenName: tokenName.isEmpty ? null : tokenName,
+        tokenName: tokenName,
         tokenValueMinor: tokenValue == null ? null : (tokenValue * 100).round(),
         tokenValueCurrency: tokenValue == null ? null : _tokenValueCurrency,
       ),
@@ -177,9 +196,10 @@ class _PartyPricingSheetState extends State<PartyPricingSheet> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: _tokenNameCtrl,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
                       hintText: 'Token',
+                      errorText: _tokenNameError,
                     ),
                   ),
                   const SizedBox(height: 16),
