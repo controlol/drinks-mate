@@ -165,6 +165,7 @@ jobs:
           github.event.pull_request.draft == false && (
             github.event.pull_request.author_association == 'OWNER' ||
             github.event.pull_request.user.login == 'claude[bot]' ||
+            github.event.pull_request.user.login == 'github-actions[bot]' ||
             (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
             contains(github.event.pull_request.labels.*.name, 'agent-ok')
           )
@@ -277,6 +278,7 @@ jobs:
           github.event.pull_request.draft == false && (
             github.event.pull_request.author_association == 'OWNER' ||
             github.event.pull_request.user.login == 'claude[bot]' ||
+            github.event.pull_request.user.login == 'github-actions[bot]' ||
             (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
             contains(github.event.pull_request.labels.*.name, 'agent-ok')
           )
