@@ -59,6 +59,9 @@ abstract final class SemanticsLabels {
   static const String under18Gate = 'Party Mode is for adults 18 and over';
   static const String bacDisclaimer =
       'BAC is an estimate. Never use it to determine fitness to drive.';
+  static const String useSessionPricesToggle = 'Use session prices';
+  static const String managePricesButton = 'Manage prices';
+  static const String sessionTotalsStrip = 'Session spending totals';
 
   // ---------------------------------------------------------------------------
   // Navigation & global chrome

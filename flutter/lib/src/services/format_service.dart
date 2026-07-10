@@ -98,7 +98,17 @@ class FormatService {
   ///
   /// Parity Rulebook: "symbol position & decimal separator follow platform
   /// locale conventions, not the currency."
-  String formatPrice(int minorUnits, String currency, {String? locale}) {
+  String formatPrice(int minorUnits, String currency, {String? locale}) =>
+      formatPriceValue(minorUnits, currency, locale: locale);
+
+  /// Static form of [formatPrice] — doesn't depend on [UserPreferences], so
+  /// callers that only need currency formatting (e.g. the Party Session
+  /// price editor) don't need a live [FormatService] instance.
+  static String formatPriceValue(
+    int minorUnits,
+    String currency, {
+    String? locale,
+  }) {
     final symbol = _currencySymbol(currency);
     final major = minorUnits / 100.0;
     final fmt = NumberFormat.currency(

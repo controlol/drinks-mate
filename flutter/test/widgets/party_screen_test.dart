@@ -48,6 +48,7 @@ import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/meal.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
+import 'package:drinks_mate/src/models/party_session_price.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/models/user_profile.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
@@ -76,6 +77,11 @@ class _FakePartySessionRepo extends PartySessionRepository {
   /// a returned value threaded through several awaits.
   String nextSessionId = 'new-session-1';
 
+  /// Tracks the most recently started fake session so [getSessionById] (used
+  /// by the start-session flow to refresh its in-memory copy after the
+  /// pricing prompt) can resolve it without touching the real DB.
+  PartySession? _lastSession;
+
   @override
   Future<PartySession> startSession({
     DateTime? startedAt,
@@ -87,7 +93,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
   }) async {
     startSessionCalls.add(startedAt);
     final at = now ?? DateTime.now();
-    return PartySession(
+    final session = PartySession(
       id: nextSessionId,
       startedAt: startedAt ?? at,
       useSessionPrices: useSessionPrices,
@@ -97,6 +103,15 @@ class _FakePartySessionRepo extends PartySessionRepository {
       createdAt: at,
       updatedAt: at,
     );
+    _lastSession = session;
+    return session;
+  }
+
+  @override
+  Future<PartySession> getSessionById(String id) async {
+    final session = _lastSession;
+    if (session != null && session.id == id) return session;
+    throw StateError('PartySession $id not found.');
   }
 
   @override
@@ -281,6 +296,9 @@ Widget _buildScreen({
       ),
       partySessionMealsProvider.overrideWith(
         (ref, sessionId) => Stream.value(meals),
+      ),
+      partySessionPricesProvider.overrideWith(
+        (ref, sessionId) => Stream.value(const <PartySessionPrice>[]),
       ),
       userProfileProvider.overrideWith((_) => Stream.value(profile)),
       userPreferencesProvider.overrideWith(
@@ -754,6 +772,13 @@ void main() {
             matching: find.widgetWithText(FilledButton, 'Start party session'),
           ),
         );
+        await tester.pumpAndSettle();
+
+        // The pricing prompt (party-session.md §Starting a session —
+        // pricing prompt) fires right after the session is created; skip it
+        // to fall through to the regular-prices default for this flow.
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
         await tester.pumpAndSettle();
 
         expect(repo.startSessionCalls, hasLength(1));
