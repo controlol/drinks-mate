@@ -12,8 +12,12 @@ class DrinkEntry {
     this.abvPercent,
     this.priceMinor,
     this.currency,
+    this.priceTokens,
+    this.tokenValueMinor,
+    this.tokenValueCurrency,
     this.iconKey,
     this.iconColor,
+    this.partySessionId,
     required this.consumedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -25,10 +29,29 @@ class DrinkEntry {
   final BeverageType beverageType;
   final int volumeMl;
   final double? abvPercent;
+
+  /// Snapshot of money price at log time. Mutually exclusive with
+  /// [priceTokens] (data-model.md §DrinkEntry).
   final int? priceMinor;
   final String? currency;
+
+  /// Snapshot of the token cost at log time (Party Session). Mutually
+  /// exclusive with [priceMinor].
+  final int? priceTokens;
+
+  /// Snapshot of the token-to-money value at log time. Null when
+  /// [priceTokens] is null.
+  final int? tokenValueMinor;
+
+  /// Snapshot of the currency [tokenValueMinor] was expressed in. Null when
+  /// [priceTokens] is null.
+  final String? tokenValueCurrency;
   final String? iconKey;
   final String? iconColor;
+
+  /// FK to the owning Party Session. Null for non-alcoholic drinks and for
+  /// alcoholic "orphan" drinks logged with no active session.
+  final String? partySessionId;
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
