@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:drinks_mate/app.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/daily_bucket.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
@@ -72,6 +73,15 @@ Widget _appWithFakeStreams() {
       // resolve immediately regardless of which tab is selected — override
       // them for the same QueryStream-cleanup reason as the others above.
       activePartySessionProvider.overrideWith((_) => Stream.value(null)),
+      // HistoryScreen (issue #25) is also built eagerly by the IndexedStack —
+      // override its two family providers for the same QueryStream-cleanup
+      // reason as the others above.
+      historyDailyTotalsProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historyDrinksPerDayProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
       appInfoServiceProvider.overrideWithValue(const FakeAppInfoService()),
     ],
     child: const DrinksMateApp(),
@@ -125,8 +135,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // History placeholder visible; Today content gone.
-    expect(find.text('Past intake and sessions coming soon.'), findsOneWidget);
+    // History screen visible (empty state — the overridden providers above
+    // emit an empty bucket list); Today content gone.
+    expect(find.text('No drinks logged in this period'), findsOneWidget);
     expect(find.text('Quick log'), findsNothing);
   });
 

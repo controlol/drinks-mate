@@ -1590,4 +1590,341 @@ void main() {
       expect(daysOnGoal, equals(0));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // History (issue #25) — watchDailyTotalsMl / watchDrinksPerDay
+  // ---------------------------------------------------------------------------
+  //
+  // Range fixture shared by most tests below (boundary hour 5, the Rulebook
+  // default): rangeStart = Mon 2026-06-22 05:00, rangeEnd = Fri 2026-06-26
+  // 05:00 — a 4 day-window range: Mon, Tue, Wed, Thu (day-window starts at
+  // each day's 05:00). rangeStart is itself a day-window boundary instant,
+  // as required by the [DrinksRepository.watchDailyTotalsMl] docstring.
+  // Source: Parity Rulebook → "Day boundary"; design/features.md F4.
+
+  group('DrinksRepository.watchDailyTotalsMl', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    final rangeStart = DateTime(2026, 6, 22, 5, 0); // Mon 05:00
+    final rangeEnd = DateTime(2026, 6, 26, 5, 0); // Fri 05:00
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'sums non-alcoholic ml per day-window across the range, zero-filling '
+      'days with no entries, ordered oldest-first',
+      () async {
+        // Monday: two entries, 300 + 500 = 800 ml.
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 300,
+          consumedAt: DateTime(2026, 6, 22, 8, 0),
+        );
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 500,
+          consumedAt: DateTime(2026, 6, 22, 20, 0),
+        );
+        // Wednesday: one entry, 200 ml. Tuesday and Thursday: nothing.
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 200,
+          consumedAt: DateTime(2026, 6, 24, 10, 0),
+        );
+
+        final buckets = await repo
+            .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+            .first;
+
+        expect(buckets.length, equals(4));
+        expect(
+          buckets.map((b) => b.dayStart).toList(),
+          equals([
+            DateTime(2026, 6, 22, 5, 0), // Mon
+            DateTime(2026, 6, 23, 5, 0), // Tue
+            DateTime(2026, 6, 24, 5, 0), // Wed
+            DateTime(2026, 6, 25, 5, 0), // Thu
+          ]),
+          reason: 'buckets must be ordered oldest-first, one per day-window',
+        );
+        expect(
+          buckets.map((b) => b.value).toList(),
+          equals([800, 0, 200, 0]),
+          reason: 'Tue and Thu have no entries → zero-filled, not omitted',
+        );
+      },
+    );
+
+    test('excludes alcoholic entries from the daily totals', () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-history-totals',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+
+      await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
+
+      final buckets = await repo
+          .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+
+      expect(
+        buckets.every((b) => b.value == 0),
+        isTrue,
+        reason:
+            'Alcoholic entries must not contribute to hydration bucket totals '
+            '(data-model.md §BeverageType: strictly disjoint flows)',
+      );
+    });
+
+    test('excludes soft-deleted entries from the daily totals', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 300,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+
+      final before = await repo
+          .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(before.first.value, equals(300));
+
+      final rows = await db.select(db.drinkEntries).get();
+      await repo.deleteDrinkEntry(rows.single.id);
+
+      final after = await repo
+          .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(
+        after.first.value,
+        equals(0),
+        reason: 'Soft-deleted entries must not appear in daily totals '
+            '(F7 soft-delete)',
+      );
+    });
+
+    test(
+      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+      'is excluded (half-open [rangeStart, rangeEnd))',
+      () async {
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 111,
+          consumedAt: rangeStart,
+        );
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 222,
+          consumedAt: rangeEnd,
+        );
+
+        final buckets = await repo
+            .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+            .first;
+
+        expect(
+          buckets.first.value,
+          equals(111),
+          reason: 'consumedAt == rangeStart must be included in the first '
+              'bucket',
+        );
+        expect(
+          buckets.fold<int>(0, (s, b) => s + b.value),
+          equals(111),
+          reason: 'consumedAt == rangeEnd must be excluded entirely — it '
+              'falls outside every day-window in [rangeStart, rangeEnd)',
+        );
+      },
+    );
+
+    test(
+      'boundaryHour ≠ midnight: entry logged at 02:00 local falls into the '
+      'PREVIOUS day\'s bucket, not the calendar day it was logged on',
+      () async {
+        // dayWindow(Tue 06-23 02:00, boundary 5) shifts back to Monday's
+        // day-window (02:00 < 05:00 boundary) — same rule as day_boundary.dart.
+        await repo.logDrink(
+          preset: _waterPreset,
+          volumeMl: 400,
+          consumedAt: DateTime(2026, 6, 23, 2, 0), // Tue 02:00 local
+        );
+
+        final buckets = await repo
+            .watchDailyTotalsMl(
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+              boundaryHour: 5,
+            )
+            .first;
+
+        expect(
+          buckets[0].value, // Monday's bucket
+          equals(400),
+          reason: 'Tue 02:00 is before the 05:00 boundary, so it belongs to '
+              "Monday's day-window",
+        );
+        expect(
+          buckets[1].value, // Tuesday's bucket
+          equals(0),
+          reason: 'The entry must NOT be counted under the calendar day it '
+              'was logged on when boundaryHour ≠ midnight',
+        );
+      },
+    );
+  });
+
+  group('DrinksRepository.watchDrinksPerDay', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    final rangeStart = DateTime(2026, 6, 22, 5, 0); // Mon 05:00
+    final rangeEnd = DateTime(2026, 6, 26, 5, 0); // Fri 05:00
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'counts non-alcoholic entries per day-window across the range, '
+      'zero-filling days with no entries, ordered oldest-first',
+      () async {
+        // Monday: two entries. Wednesday: one entry. Tue/Thu: none.
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 22, 8, 0),
+        );
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 22, 20, 0),
+        );
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 24, 10, 0),
+        );
+
+        final buckets = await repo
+            .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+            .first;
+
+        expect(buckets.length, equals(4));
+        expect(
+          buckets.map((b) => b.value).toList(),
+          equals([2, 0, 1, 0]),
+          reason: 'Tue and Thu have no entries → zero-filled counts, not '
+              'omitted buckets',
+        );
+      },
+    );
+
+    test('excludes alcoholic entries from the drink counts', () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-history-counts',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+
+      await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
+
+      final buckets = await repo
+          .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+
+      expect(
+        buckets.every((b) => b.value == 0),
+        isTrue,
+        reason: 'Alcoholic entries must not contribute to drink counts '
+            '(issue #25 scopes History charts to hydration only)',
+      );
+    });
+
+    test('excludes soft-deleted entries from the drink counts', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+
+      final before = await repo
+          .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(before.first.value, equals(1));
+
+      final rows = await db.select(db.drinkEntries).get();
+      await repo.deleteDrinkEntry(rows.single.id);
+
+      final after = await repo
+          .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(
+        after.first.value,
+        equals(0),
+        reason: 'Soft-deleted entries must not appear in drink counts '
+            '(F7 soft-delete)',
+      );
+    });
+
+    test(
+      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+      'is excluded (half-open [rangeStart, rangeEnd))',
+      () async {
+        await repo.logDrink(preset: _waterPreset, consumedAt: rangeStart);
+        await repo.logDrink(preset: _waterPreset, consumedAt: rangeEnd);
+
+        final buckets = await repo
+            .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+            .first;
+
+        expect(buckets.first.value, equals(1));
+        expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
+      },
+    );
+
+    test(
+      'boundaryHour ≠ midnight: an entry logged at 02:00 local is counted in '
+      "the PREVIOUS day's bucket",
+      () async {
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 23, 2, 0), // Tue 02:00 local
+        );
+
+        final buckets = await repo
+            .watchDrinksPerDay(
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+              boundaryHour: 5,
+            )
+            .first;
+
+        expect(buckets[0].value, equals(1)); // Monday's bucket
+        expect(buckets[1].value, equals(0)); // Tuesday's bucket
+      },
+    );
+  });
 }

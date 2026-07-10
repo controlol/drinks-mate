@@ -89,3 +89,104 @@ library;
   );
   return (mondayStart, nextMondayStart);
 }
+
+/// Returns the `[start, end)` calendar-month window (local time) that
+/// contains [now].
+///
+/// The window runs from the 1st of the month's day-window start through the
+/// 1st of the following month's day-window start, mirroring [isoWeekWindow]'s
+/// construction: a pre-boundary instant on the 1st still resolves to the
+/// previous month's window, consistent with "day" meaning the day-window,
+/// not the calendar date.
+///
+/// Source: Parity Rulebook → "Day boundary"; design/features.md F4 — History
+/// monthly range.
+(DateTime start, DateTime end) monthWindow({
+  required DateTime now,
+  int boundaryHour = 5,
+  int boundaryMinute = 0,
+}) {
+  final todayStart = dayWindow(
+    now: now,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  ).$1;
+  final monthStart = DateTime(
+    todayStart.year,
+    todayStart.month,
+    1,
+    boundaryHour,
+    boundaryMinute,
+  );
+  final nextMonthStart = DateTime(
+    todayStart.year,
+    todayStart.month + 1,
+    1,
+    boundaryHour,
+    boundaryMinute,
+  );
+  return (monthStart, nextMonthStart);
+}
+
+/// Returns the `[start, end)` ISO-week window [offset] whole weeks before the
+/// week containing [now] (`offset = 0` → the current week, `offset = 1` →
+/// last week, etc.) — feeds the History screen's weekly paging (F4).
+(DateTime start, DateTime end) pagedIsoWeekWindow({
+  required DateTime now,
+  required int offset,
+  int boundaryHour = 5,
+  int boundaryMinute = 0,
+}) {
+  final current = isoWeekWindow(
+    now: now,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  );
+  final start = DateTime(
+    current.$1.year,
+    current.$1.month,
+    current.$1.day - 7 * offset,
+    boundaryHour,
+    boundaryMinute,
+  );
+  final end = DateTime(
+    current.$2.year,
+    current.$2.month,
+    current.$2.day - 7 * offset,
+    boundaryHour,
+    boundaryMinute,
+  );
+  return (start, end);
+}
+
+/// Returns the `[start, end)` calendar-month window [offset] whole months
+/// before the month containing [now] (`offset = 0` → the current month,
+/// `offset = 1` → last month, etc.) — feeds the History screen's monthly
+/// paging (F4).
+(DateTime start, DateTime end) pagedMonthWindow({
+  required DateTime now,
+  required int offset,
+  int boundaryHour = 5,
+  int boundaryMinute = 0,
+}) {
+  final current = monthWindow(
+    now: now,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  );
+  final start = DateTime(
+    current.$1.year,
+    current.$1.month - offset,
+    1,
+    boundaryHour,
+    boundaryMinute,
+  );
+  final end = DateTime(
+    current.$1.year,
+    current.$1.month - offset + 1,
+    1,
+    boundaryHour,
+    boundaryMinute,
+  );
+  return (start, end);
+}

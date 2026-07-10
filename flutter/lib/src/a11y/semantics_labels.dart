@@ -64,6 +64,20 @@ abstract final class SemanticsLabels {
   static const String sessionTotalsStrip = 'Session spending totals';
 
   // ---------------------------------------------------------------------------
+  // History screen (S3)
+  // ---------------------------------------------------------------------------
+
+  static const String historyRangeModeSelector = 'Weekly or monthly range';
+  static const String historyPageBack = 'Previous period';
+  static const String historyPageForward = 'Next period';
+  static const String historyEmptyState = 'No drinks logged in this period';
+
+  // Prefix — append the below-goal-day count summary, e.g.
+  // '${SemanticsLabels.historyHydrationChartPrefix}2 of 7 days below goal'.
+  static const String historyHydrationChartPrefix = 'Hydration per day chart. ';
+  static const String historyDrinksChartPrefix = 'Drinks per day chart. ';
+
+  // ---------------------------------------------------------------------------
   // Navigation & global chrome
   // ---------------------------------------------------------------------------
 
