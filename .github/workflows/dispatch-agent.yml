@@ -199,6 +199,7 @@ jobs:
           # Auto mode: this is an ephemeral CI runner, so let the agent run its
           # tools (git, gh, flutter, dart) without per-command allowlisting.
           claude_args: "--permission-mode bypassPermissions"
+          show_full_output: "true"
           prompt: |
             You are implementing GitHub issue #${{ needs.select.outputs.issue }}
             in repository ${{ github.repository }}.
