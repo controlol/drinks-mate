@@ -38,6 +38,18 @@ class PartySessionRepository {
         (row) => row == null ? null : _rowToSession(row),
       );
 
+  /// One-shot read of session [id] — lets callers refresh a [PartySession]
+  /// snapshot after mutating it (e.g. the pricing prompt's writes to
+  /// `useSessionPrices`/token config right after [startSession]), so a
+  /// stale in-memory copy is never used for [resolvePrice].
+  ///
+  /// Throws [StateError] if [id] does not exist.
+  Future<PartySession> getSessionById(String id) async {
+    final row = await _db.getPartySessionById(id);
+    if (row == null) throw StateError('PartySession $id not found.');
+    return _rowToSession(row);
+  }
+
   /// Starts a new session, enforcing at-most-one-active-session.
   ///
   /// Applies the lazy 12h auto-end rule to any existing active session
@@ -481,6 +493,141 @@ class PartySessionRepository {
     return rows.map(_rowToPrice).toList();
   }
 
+  /// Reactive stream of [getSessionPrices] — feeds the session-prices
+  /// control's "off — using regular prices" label and the "Manage prices"
+  /// sheet (party-session.md §Party tab during a session).
+  Stream<List<PartySessionPrice>> watchSessionPrices(String sessionId) => _db
+      .watchSessionPrices(sessionId)
+      .map((rows) => rows.map(_rowToPrice).toList());
+
+  /// Toggles [PartySession.useSessionPrices] live, mid-session
+  /// (party-session.md §Toggle: use session prices). Purely a flag flip —
+  /// existing [PartySessionPrice] overrides and already-logged entries are
+  /// never touched.
+  ///
+  /// Throws [StateError] if [sessionId] does not exist.
+  Future<void> setUseSessionPrices(
+    String sessionId,
+    bool value, {
+    DateTime? now,
+  }) async {
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    final rows = await _db.updatePartySessionFields(
+      sessionId,
+      PartySessionsCompanion(
+        useSessionPrices: Value(value),
+        updatedAt: Value(nowUtc),
+      ),
+    );
+    if (rows == 0) throw StateError('PartySession $sessionId not found.');
+  }
+
+  /// Updates the token configuration on an existing session — usable at
+  /// session start (the pricing prompt) or "any time during the session"
+  /// (party-session.md §Money vs tokens). Pass `null` for a field to clear
+  /// it (e.g. turning tokens off).
+  ///
+  /// Throws [ArgumentError] if [tokenValueMinor] is set without
+  /// [tokenValueCurrency] (or vice versa), or if [tokenName] fails
+  /// [validateUsername]. Throws [StateError] if [sessionId] does not exist.
+  Future<void> updateTokenConfig({
+    required String sessionId,
+    String? tokenName,
+    int? tokenValueMinor,
+    String? tokenValueCurrency,
+    DateTime? now,
+  }) async {
+    if ((tokenValueMinor == null) != (tokenValueCurrency == null)) {
+      throw ArgumentError(
+        'tokenValueCurrency is required when tokenValueMinor is set, and '
+        'must be null otherwise',
+      );
+    }
+    var normalizedTokenName = tokenName;
+    if (tokenName != null) {
+      normalizedTokenName = normalizeNfc(tokenName);
+      final validation = validateUsername(normalizedTokenName, minLength: 1);
+      if (!validation.isValid) {
+        throw ArgumentError.value(tokenName, 'tokenName', validation.error);
+      }
+    }
+
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    final rows = await _db.updatePartySessionFields(
+      sessionId,
+      PartySessionsCompanion(
+        tokenName: Value(normalizedTokenName),
+        tokenValueMinor: Value(tokenValueMinor),
+        tokenValueCurrency: Value(tokenValueCurrency),
+        updatedAt: Value(nowUtc),
+      ),
+    );
+    if (rows == 0) throw StateError('PartySession $sessionId not found.');
+  }
+
+  /// The most recently *ended* session's pricing config, for the "copy
+  /// prices from your last session?" shortcut (party-session.md §Starting a
+  /// session — pricing prompt). Returns null when there is no ended session,
+  /// or the most recent one has no overrides and no token config to copy.
+  Future<LastSessionPricing?> getLastSessionPricing() async {
+    final last = await _db.getMostRecentEndedSession();
+    if (last == null) return null;
+    final prices = await getSessionPrices(last.id);
+    if (prices.isEmpty && last.tokenName == null) return null;
+    return LastSessionPricing(
+      prices: prices,
+      tokenName: last.tokenName,
+      tokenValueMinor: last.tokenValueMinor,
+      tokenValueCurrency: last.tokenValueCurrency,
+    );
+  }
+
+  /// Resolves the price to snapshot onto a [DrinkEntry] for [preset] within
+  /// [session], applying both pricing rules in one place so callers never
+  /// duplicate this logic:
+  ///
+  /// - `useSessionPrices == false`: always the preset's regular price —
+  ///   overrides are ignored even though they still exist (party-session.md
+  ///   §Toggle: use session prices — "Off: drinks log at their regular price
+  ///   even though overrides exist").
+  /// - `useSessionPrices == true`: the matching [PartySessionPrice] if one
+  ///   exists (and actually sets a price/token value), else the preset's
+  ///   regular price (data-model.md §PartySessionPrice → Snapshot at log
+  ///   time).
+  Future<ResolvedDrinkPrice> resolvePrice({
+    required PartySession session,
+    required DrinkPreset preset,
+  }) async {
+    if (session.useSessionPrices) {
+      final prices = await getSessionPrices(session.id);
+      PartySessionPrice? override;
+      for (final p in prices) {
+        if (p.drinkPresetId == preset.id) {
+          override = p;
+          break;
+        }
+      }
+      if (override != null &&
+          (override.priceMinor != null || override.priceTokens != null)) {
+        if (override.priceTokens != null) {
+          return ResolvedDrinkPrice(
+            priceTokens: override.priceTokens,
+            tokenValueMinor: session.tokenValueMinor,
+            tokenValueCurrency: session.tokenValueCurrency,
+          );
+        }
+        return ResolvedDrinkPrice(
+          priceMinor: override.priceMinor,
+          currency: override.currency,
+        );
+      }
+    }
+    return ResolvedDrinkPrice(
+      priceMinor: preset.regularPriceMinor,
+      currency: preset.regularCurrency,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Mapping helpers
   // ---------------------------------------------------------------------------
@@ -573,4 +720,42 @@ class PartySessionPriceInput {
   final int? priceMinor;
   final String? currency;
   final int? priceTokens;
+}
+
+/// The most recently *ended* session's pricing configuration, returned by
+/// [PartySessionRepository.getLastSessionPricing] for the "copy from last
+/// session" shortcut.
+class LastSessionPricing {
+  const LastSessionPricing({
+    required this.prices,
+    this.tokenName,
+    this.tokenValueMinor,
+    this.tokenValueCurrency,
+  });
+
+  final List<PartySessionPrice> prices;
+  final String? tokenName;
+  final int? tokenValueMinor;
+  final String? tokenValueCurrency;
+}
+
+/// The price to snapshot onto a [DrinkEntry], returned by
+/// [PartySessionRepository.resolvePrice]. Exactly one of ([priceMinor] +
+/// [currency]) or [priceTokens] is set, mirroring [DrinkEntry]'s own mutual
+/// exclusivity — or all fields are null when neither a regular price nor an
+/// override applies.
+class ResolvedDrinkPrice {
+  const ResolvedDrinkPrice({
+    this.priceMinor,
+    this.currency,
+    this.priceTokens,
+    this.tokenValueMinor,
+    this.tokenValueCurrency,
+  });
+
+  final int? priceMinor;
+  final String? currency;
+  final int? priceTokens;
+  final int? tokenValueMinor;
+  final String? tokenValueCurrency;
 }

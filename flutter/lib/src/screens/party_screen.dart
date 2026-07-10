@@ -3,12 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
+import '../models/drink_entry.dart';
 import '../models/party_session.dart';
 import '../models/user_profile.dart';
+import '../repository/party_session_repository.dart';
 import '../repository/providers.dart';
 import '../services/bac_estimator.dart';
+import '../services/format_service.dart';
+import '../services/session_pricing_totals.dart';
 import '../theme/app_theme.dart';
 import 'party_log_drink_sheet.dart';
+import 'party_pricing_sheet.dart';
 import 'settings_screen.dart';
 
 /// Party tab (S7) — Party Session UI (issue #22).
@@ -246,6 +251,13 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
           const SizedBox(height: 12),
           const _ApproachingCapBanner(),
         ],
+        const SizedBox(height: 16),
+        _SessionPricesControl(session: widget.session),
+        const SizedBox(height: 12),
+        _SessionTotalsStrip(
+          entries: entriesAsync.requireValue,
+          tokenName: widget.session.tokenName,
+        ),
         const SizedBox(height: 16),
         Semantics(
           label: SemanticsLabels.logAlcoholButton,
@@ -520,6 +532,131 @@ class _ApproachingCapBanner extends StatelessWidget {
   }
 }
 
+/// The session-prices control (party-session.md §Party tab during a
+/// session): a live toggle for [PartySession.useSessionPrices] plus a
+/// "Manage prices" link. Reads live overrides only to decide the toggle's
+/// off-state label ("off — using regular prices" vs plain "off").
+class _SessionPricesControl extends ConsumerWidget {
+  const _SessionPricesControl({required this.session});
+
+  final PartySession session;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overrides =
+        ref.watch(partySessionPricesProvider(session.id)).valueOrNull ?? [];
+    final hasOverrides = overrides.isNotEmpty;
+    final label = session.useSessionPrices
+        ? 'Session prices: on'
+        : hasOverrides
+            ? 'Session prices: off — using regular prices'
+            : 'Session prices: off';
+
+    return Semantics(
+      label: SemanticsLabels.useSessionPricesToggle,
+      child: Row(
+        children: [
+          Switch(
+            value: session.useSessionPrices,
+            onChanged: (value) => ref
+                .read(partySessionRepositoryProvider)
+                .setUseSessionPrices(session.id, value),
+          ),
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          Semantics(
+            label: SemanticsLabels.managePricesButton,
+            button: true,
+            excludeSemantics: true,
+            child: TextButton(
+              onPressed: () => _showManagePrices(context, ref, session),
+              child: const Text('Manage prices'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Opens the per-session price table pre-filled with [session]'s existing
+/// overrides and token config (party-session.md §Editing prices during a
+/// session).
+Future<void> _showManagePrices(
+  BuildContext context,
+  WidgetRef ref,
+  PartySession session,
+) async {
+  final repo = ref.read(partySessionRepositoryProvider);
+  final existing = await repo.getSessionPrices(session.id);
+  if (!context.mounted) return;
+  final presets = ref.read(visiblePresetsProvider).valueOrNull ?? [];
+  final defaultCurrency =
+      ref.read(userPreferencesProvider).valueOrNull?.currency ?? 'EUR';
+
+  final result = await showModalBottomSheet<PricingSetupResult>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => PartyPricingSheet(
+      presets: presets,
+      existingOverrides: existing,
+      initialTokenName: session.tokenName,
+      initialTokenValueMinor: session.tokenValueMinor,
+      initialTokenValueCurrency: session.tokenValueCurrency,
+      defaultCurrency: defaultCurrency,
+    ),
+  );
+  if (result == null) return;
+  await repo.setSessionPrices(sessionId: session.id, prices: result.prices);
+  await repo.updateTokenConfig(
+    sessionId: session.id,
+    tokenName: result.tokenName,
+    tokenValueMinor: result.tokenValueMinor,
+    tokenValueCurrency: result.tokenValueCurrency,
+  );
+}
+
+/// Session totals strip (party-session.md §Aggregations across mixed
+/// payment): money spent grouped by currency, tokens used, and the token
+/// money-equivalent if set — never summed across currencies.
+class _SessionTotalsStrip extends StatelessWidget {
+  const _SessionTotalsStrip({required this.entries, this.tokenName});
+
+  final List<DrinkEntry> entries;
+  final String? tokenName;
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = SessionPricingTotals.fromEntries(entries);
+    if (totals.moneyByCurrency.isEmpty && totals.tokensSpent == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final moneyText = totals.moneyByCurrency.entries
+        .map((e) => FormatService.formatPriceValue(e.value, e.key))
+        .join(' | ');
+    final tokenValueText = totals.tokenValueByCurrency.entries
+        .map((e) => FormatService.formatPriceValue(e.value, e.key))
+        .join(' | ');
+
+    return Semantics(
+      label: SemanticsLabels.sessionTotalsStrip,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          if (moneyText.isNotEmpty) Text('Spent: $moneyText'),
+          if (totals.tokensSpent > 0)
+            Text('${tokenName ?? 'Tokens'} used: ${totals.tokensSpent}'),
+          if (tokenValueText.isNotEmpty) Text('Token value: ≈ $tokenValueText'),
+        ],
+      ),
+    );
+  }
+}
+
 class _DisclaimerBanner extends StatelessWidget {
   const _DisclaimerBanner();
 
@@ -600,9 +737,137 @@ Future<PartySession?> _startPartySessionFlow(
     return null;
   }
 
-  return ref
-      .read(partySessionRepositoryProvider)
-      .startSession(startedAt: startedAt);
+  final repo = ref.read(partySessionRepositoryProvider);
+  final session = await repo.startSession(startedAt: startedAt);
+
+  if (context.mounted) {
+    await _runPricingPrompt(context, ref, session);
+  }
+  // Re-fetch: the pricing prompt may have written useSessionPrices/token
+  // config for this same session, and the caller (e.g. the very next
+  // logAlcoholicDrink call) must see those values rather than the
+  // now-stale defaults captured before the prompt ran.
+  return repo.getSessionById(session.id);
+}
+
+/// The pricing step of the start-session flow (party-session.md §Starting a
+/// session — pricing prompt): "Skip / Copy from last / Configure". A no-op
+/// (session stays at its `useSessionPrices = false` default) if the user
+/// skips or dismisses the prompt.
+Future<void> _runPricingPrompt(
+  BuildContext context,
+  WidgetRef ref,
+  PartySession session,
+) async {
+  final repo = ref.read(partySessionRepositoryProvider);
+  final lastPricing = await repo.getLastSessionPricing();
+  if (!context.mounted) return;
+
+  final choice = await showModalBottomSheet<_PricingPromptChoice>(
+    context: context,
+    builder: (_) => _PricingPromptSheet(hasLastSession: lastPricing != null),
+  );
+  if (choice == null || choice == _PricingPromptChoice.skip) return;
+
+  if (choice == _PricingPromptChoice.copyFromLast) {
+    if (lastPricing == null) return;
+    final prices = lastPricing.prices
+        .map(
+          (p) => PartySessionPriceInput(
+            drinkPresetId: p.drinkPresetId,
+            priceMinor: p.priceMinor,
+            currency: p.currency,
+            priceTokens: p.priceTokens,
+          ),
+        )
+        .toList();
+    await repo.setSessionPrices(sessionId: session.id, prices: prices);
+    await repo.updateTokenConfig(
+      sessionId: session.id,
+      tokenName: lastPricing.tokenName,
+      tokenValueMinor: lastPricing.tokenValueMinor,
+      tokenValueCurrency: lastPricing.tokenValueCurrency,
+    );
+    await repo.setUseSessionPrices(session.id, prices.isNotEmpty);
+    return;
+  }
+
+  // _PricingPromptChoice.configure
+  if (!context.mounted) return;
+  final presets = ref.read(visiblePresetsProvider).valueOrNull ?? [];
+  final defaultCurrency =
+      ref.read(userPreferencesProvider).valueOrNull?.currency ?? 'EUR';
+  final result = await showModalBottomSheet<PricingSetupResult>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => PartyPricingSheet(
+      presets: presets,
+      existingOverrides: const [],
+      defaultCurrency: defaultCurrency,
+    ),
+  );
+  if (result == null) return;
+  await repo.setSessionPrices(sessionId: session.id, prices: result.prices);
+  await repo.updateTokenConfig(
+    sessionId: session.id,
+    tokenName: result.tokenName,
+    tokenValueMinor: result.tokenValueMinor,
+    tokenValueCurrency: result.tokenValueCurrency,
+  );
+  await repo.setUseSessionPrices(session.id, result.prices.isNotEmpty);
+}
+
+enum _PricingPromptChoice { skip, copyFromLast, configure }
+
+class _PricingPromptSheet extends StatelessWidget {
+  const _PricingPromptSheet({required this.hasLastSession});
+
+  final bool hasLastSession;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Set up party prices?',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Track money or tokens for drinks in this session — or skip '
+              'and use your regular prices.',
+            ),
+            const SizedBox(height: 16),
+            if (hasLastSession)
+              FilledButton(
+                onPressed: () => Navigator.of(
+                  context,
+                ).pop(_PricingPromptChoice.copyFromLast),
+                child: const Text('Copy prices from last session'),
+              ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_PricingPromptChoice.configure),
+              child: const Text('Configure prices'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_PricingPromptChoice.skip),
+              child: const Text('Skip — use regular prices'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Result of [_showBirthdatePrompt] — a birthday that has already been
@@ -830,8 +1095,8 @@ Future<void> _handleLogAlcohol(
   );
   if (selection == null || !context.mounted) return;
 
-  var sessionId = session?.id;
-  if (sessionId == null) {
+  var activeSession = session;
+  if (activeSession == null) {
     final startNewSession = await _showStartSessionPrompt(context);
     if (startNewSession == null) return;
     if (!startNewSession) {
@@ -852,23 +1117,33 @@ Future<void> _handleLogAlcohol(
       if (context.mounted) await _logOrphanDrink(context, ref, selection);
       return;
     }
-    sessionId = newSession.id;
+    activeSession = newSession;
   }
 
-  await ref.read(partySessionRepositoryProvider).logAlcoholicDrink(
-        preset: selection.preset,
-        sessionId: sessionId,
-        volumeMl: selection.volumeMl,
-        abvPercent: selection.abvPercent,
-        consumedAt: selection.consumedAt,
-      );
+  final repo = ref.read(partySessionRepositoryProvider);
+  final resolvedPrice = await repo.resolvePrice(
+    session: activeSession,
+    preset: selection.preset,
+  );
+  await repo.logAlcoholicDrink(
+    preset: selection.preset,
+    sessionId: activeSession.id,
+    volumeMl: selection.volumeMl,
+    abvPercent: selection.abvPercent,
+    consumedAt: selection.consumedAt,
+    priceMinor: resolvedPrice.priceMinor,
+    currency: resolvedPrice.currency,
+    priceTokens: resolvedPrice.priceTokens,
+    tokenValueMinor: resolvedPrice.tokenValueMinor,
+    tokenValueCurrency: resolvedPrice.tokenValueCurrency,
+  );
 
   if (!context.mounted) return;
   final mealSize = await _showMealPrompt(context);
   if (mealSize != null) {
     await ref
         .read(partySessionRepositoryProvider)
-        .addMeal(sessionId: sessionId, size: mealSize);
+        .addMeal(sessionId: activeSession.id, size: mealSize);
   }
 }
 

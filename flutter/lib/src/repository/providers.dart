@@ -8,6 +8,7 @@ import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/meal.dart';
 import '../models/party_session.dart';
+import '../models/party_session_price.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
@@ -286,6 +287,20 @@ final partySessionMealsProvider = StreamProvider.family<List<Meal>, String>((
   sessionId,
 ) {
   return ref.watch(partySessionRepositoryProvider).watchSessionMeals(sessionId);
+});
+
+// ---------------------------------------------------------------------------
+// Party Session pricing (issue #23)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of a session's live price overrides — feeds the
+/// session-prices control's "off — using regular prices" label and the
+/// "Manage prices" sheet.
+final partySessionPricesProvider =
+    StreamProvider.family<List<PartySessionPrice>, String>((ref, sessionId) {
+  return ref
+      .watch(partySessionRepositoryProvider)
+      .watchSessionPrices(sessionId);
 });
 
 /// Emits immediately, then once a minute — drives the BAC card's live

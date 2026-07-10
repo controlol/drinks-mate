@@ -671,6 +671,15 @@ class AppDatabase extends _$AppDatabase {
   Future<PartySessionRow?> getPartySessionById(String id) =>
       (select(partySessions)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// The most recently *ended* session (`endedAt IS NOT NULL`), ordered by
+  /// `endedAt` descending — feeds the "copy prices from last session"
+  /// shortcut (party-session.md §Starting a session — pricing prompt).
+  Future<PartySessionRow?> getMostRecentEndedSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNotNull() & t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.desc(t.endedAt)])
+        ..limit(1))
+      .getSingleOrNull();
+
   Future<void> insertPartySession(PartySessionsCompanion companion) =>
       into(partySessions).insert(companion);
 
@@ -693,6 +702,15 @@ class AppDatabase extends _$AppDatabase {
               (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
             ))
           .get();
+
+  /// Reactive stream of [getSessionPrices] — feeds the session-prices control
+  /// ("off — using regular prices" label) and the "Manage prices" sheet.
+  Stream<List<PartySessionPriceRow>> watchSessionPrices(String sessionId) =>
+      (select(partySessionPrices)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            ))
+          .watch();
 
   Future<void> insertSessionPrice(PartySessionPricesCompanion companion) =>
       into(partySessionPrices).insert(companion);

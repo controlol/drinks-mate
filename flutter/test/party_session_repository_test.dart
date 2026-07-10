@@ -54,6 +54,61 @@ const _waterPreset = DrinkPreset(
   sortOrder: 1,
 );
 
+// A preset that DOES carry a regular price — needed for resolvePrice tests,
+// since `_beerPreset` above has no regularPriceMinor/regularCurrency and
+// couldn't distinguish "returns null" from "returns the regular price" (both
+// look like null on a preset with no regular price set).
+const _pricedBeerPreset = DrinkPreset(
+  id: 'test-priced-beer-preset',
+  name: 'Priced Beer',
+  beverageType: BeverageType.beer,
+  volumeMl: 330,
+  abvPercent: 5.0,
+  regularPriceMinor: 450,
+  regularCurrency: 'EUR',
+  iconKey: 'beer_glass',
+  iconColor: '#d97706',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 99,
+);
+
+// A second priced preset, deliberately never given a session-price override
+// in the resolvePrice tests below, to exercise the "useSessionPrices=true but
+// no matching override row" fallback-to-regular-price case.
+const _pricedWinePreset = DrinkPreset(
+  id: 'test-priced-wine-preset-no-override',
+  name: 'Priced Wine',
+  beverageType: BeverageType.wine,
+  volumeMl: 150,
+  abvPercent: 12.0,
+  regularPriceMinor: 200,
+  regularCurrency: 'USD',
+  iconKey: 'wine_glass',
+  iconColor: '#7c2d12',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 98,
+);
+
+// A preset used only for the token-override resolvePrice case. Its regular
+// price is deliberately set to a distinct, implausible value (999 GBP) so a
+// test that wrongly falls back to the regular price is caught.
+const _tokenCocktailPreset = DrinkPreset(
+  id: 'test-token-cocktail-preset',
+  name: 'Token Cocktail',
+  beverageType: BeverageType.cocktail,
+  volumeMl: 200,
+  abvPercent: 15.0,
+  regularPriceMinor: 999,
+  regularCurrency: 'GBP',
+  iconKey: 'cocktail_glass',
+  iconColor: '#be185d',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 97,
+);
+
 /// Inserts a live, orphaned (partySessionId = null) alcoholic drink entry
 /// directly at the DB layer — mirrors what `DrinksRepository.logDrink()`
 /// produces when an alcoholic drink is logged with no active session
@@ -1146,6 +1201,512 @@ void main() {
     test('unknown session id throws StateError', () async {
       expect(
         () => repo.endSession('does-not-exist', PartySessionEndReason.manual),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. resolvePrice
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.resolvePrice', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+    late String sessionId;
+    final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+
+    setUp(() async {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+      final session = await repo.startSession(
+        now: startedAt,
+        startedAt: startedAt,
+      );
+      sessionId = session.id;
+
+      // Live money override for `_pricedBeerPreset`, deliberately DIFFERENT
+      // from its regular price (300 vs 450) so a test asserting the wrong
+      // one would fail.
+      await repo.setSessionPrices(
+        sessionId: sessionId,
+        prices: const [
+          PartySessionPriceInput(
+            drinkPresetId: 'test-priced-beer-preset',
+            priceMinor: 300,
+            currency: 'EUR',
+          ),
+          PartySessionPriceInput(
+            drinkPresetId: 'test-token-cocktail-preset',
+            priceTokens: 2,
+          ),
+        ],
+      );
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'useSessionPrices=false returns the regular price even though a live '
+      'override exists (party-session.md §Toggle: use session prices — '
+      '"Off: drinks log at their regular price even though overrides '
+      'exist") — this is the "toggle off mid-session" case',
+      () async {
+        final sessionPricesOff = PartySession(
+          id: sessionId,
+          startedAt: startedAt,
+          useSessionPrices: false,
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        );
+
+        final resolved = await repo.resolvePrice(
+          session: sessionPricesOff,
+          preset: _pricedBeerPreset,
+        );
+
+        expect(resolved.priceMinor, 450, reason: 'must be the regular price');
+        expect(resolved.currency, 'EUR');
+        expect(resolved.priceTokens, isNull);
+      },
+    );
+
+    test(
+      'useSessionPrices=true with a matching money override returns the '
+      'override, not the regular price (data-model.md §PartySessionPrice — '
+      '"Snapshot at log time") — same override row as the off-case above, '
+      'proving the toggle is the discriminator',
+      () async {
+        final sessionPricesOn = PartySession(
+          id: sessionId,
+          startedAt: startedAt,
+          useSessionPrices: true,
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        );
+
+        final resolved = await repo.resolvePrice(
+          session: sessionPricesOn,
+          preset: _pricedBeerPreset,
+        );
+
+        expect(resolved.priceMinor, 300, reason: 'must be the override');
+        expect(resolved.currency, 'EUR');
+        expect(resolved.priceTokens, isNull);
+      },
+    );
+
+    test(
+      'useSessionPrices=true with a matching token override returns '
+      'priceTokens from the override, and tokenValueMinor/tokenValueCurrency '
+      'from the SESSION, not the override — party-session.md §Toggle: use '
+      'session prices: "tokens don\'t carry their own value, the session '
+      'does"',
+      () async {
+        final sessionWithTokenValue = PartySession(
+          id: sessionId,
+          startedAt: startedAt,
+          useSessionPrices: true,
+          tokenValueMinor: 150,
+          tokenValueCurrency: 'USD',
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        );
+
+        final resolved = await repo.resolvePrice(
+          session: sessionWithTokenValue,
+          preset: _tokenCocktailPreset,
+        );
+
+        expect(resolved.priceTokens, 2);
+        expect(resolved.tokenValueMinor, 150);
+        expect(resolved.tokenValueCurrency, 'USD');
+        expect(resolved.priceMinor, isNull);
+        expect(resolved.currency, isNull);
+      },
+    );
+
+    test(
+      'useSessionPrices=true with no matching override row falls back to '
+      'the regular price (data-model.md §PartySessionPrice → Snapshot at '
+      'log time: "falling back to the preset\'s regularPrice* otherwise")',
+      () async {
+        final sessionPricesOn = PartySession(
+          id: sessionId,
+          startedAt: startedAt,
+          useSessionPrices: true,
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        );
+
+        final resolved = await repo.resolvePrice(
+          session: sessionPricesOn,
+          preset: _pricedWinePreset,
+        );
+
+        expect(resolved.priceMinor, 200);
+        expect(resolved.currency, 'USD');
+        expect(resolved.priceTokens, isNull);
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10. getLastSessionPricing
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.getLastSessionPricing', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns null when there is no previously-ended session', () async {
+      final result = await repo.getLastSessionPricing();
+      expect(result, isNull);
+    });
+
+    test(
+      'returns null when the most recent ended session has zero price '
+      'overrides AND no tokenName (party-session.md §Starting a session — '
+      'pricing prompt)',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 18, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: startedAt.add(const Duration(hours: 1)),
+        );
+
+        final result = await repo.getLastSessionPricing();
+        expect(result, isNull);
+      },
+    );
+
+    test(
+      'does NOT return null when the most recent ended session has a '
+      'tokenName but zero price overrides — the null rule is an AND of '
+      '"no overrides" and "no tokenName", not an OR',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 18, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        await repo.updateTokenConfig(
+          sessionId: session.id,
+          tokenName: 'Chip',
+          now: startedAt,
+        );
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: startedAt.add(const Duration(hours: 1)),
+        );
+
+        final result = await repo.getLastSessionPricing();
+        expect(result, isNotNull);
+        expect(result!.prices, isEmpty);
+        expect(result.tokenName, 'Chip');
+      },
+    );
+
+    test(
+      'returns the price overrides and token config from the most recently '
+      'ended session (party-session.md §Starting a session — pricing '
+      'prompt: "Choosing yes copies the most recently ended session\'s '
+      'PartySessionPrice rows... including currency / tokens")',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 18, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        await repo.setSessionPrices(
+          sessionId: session.id,
+          prices: const [
+            PartySessionPriceInput(
+              drinkPresetId: 'preset-a',
+              priceMinor: 100,
+              currency: 'EUR',
+            ),
+          ],
+        );
+        await repo.updateTokenConfig(
+          sessionId: session.id,
+          tokenName: 'Token',
+          tokenValueMinor: 150,
+          tokenValueCurrency: 'EUR',
+          now: startedAt,
+        );
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: startedAt.add(const Duration(hours: 2)),
+        );
+
+        final result = await repo.getLastSessionPricing();
+
+        expect(result, isNotNull);
+        expect(result!.prices, hasLength(1));
+        expect(result.prices.single.drinkPresetId, 'preset-a');
+        expect(result.prices.single.priceMinor, 100);
+        expect(result.prices.single.currency, 'EUR');
+        expect(result.tokenName, 'Token');
+        expect(result.tokenValueMinor, 150);
+        expect(result.tokenValueCurrency, 'EUR');
+      },
+    );
+
+    test(
+      '"most recently ended" is determined by endedAt, not startedAt: a '
+      'session that started earlier but ended LATER wins over one that '
+      'started later but ended earlier',
+      () async {
+        // Session A: starts first, but is ended LAST.
+        final aStart = DateTime.utc(2026, 6, 1, 10, 0);
+        final aEnd = DateTime.utc(2026, 6, 10, 10, 0);
+        // Session B: starts AFTER A (more "recent" by startedAt), but is
+        // ended BEFORE A finally ends.
+        final bStart = DateTime.utc(2026, 6, 5, 10, 0);
+        final bEnd = DateTime.utc(2026, 6, 6, 10, 0);
+
+        final sessionA = await repo.startSession(
+          now: aStart,
+          startedAt: aStart,
+        );
+        await repo.setSessionPrices(
+          sessionId: sessionA.id,
+          prices: const [
+            PartySessionPriceInput(
+              drinkPresetId: 'preset-a',
+              priceMinor: 100,
+              currency: 'EUR',
+            ),
+          ],
+        );
+        await repo.endSession(
+          sessionA.id,
+          PartySessionEndReason.manual,
+          now: aEnd,
+        );
+
+        final sessionB = await repo.startSession(
+          now: bStart,
+          startedAt: bStart,
+        );
+        await repo.updateTokenConfig(
+          sessionId: sessionB.id,
+          tokenName: 'ChipFromB',
+          now: bStart,
+        );
+        await repo.endSession(
+          sessionB.id,
+          PartySessionEndReason.manual,
+          now: bEnd,
+        );
+
+        final result = await repo.getLastSessionPricing();
+
+        // If ordering were (wrongly) by startedAt, this would return B's
+        // data (tokenName 'ChipFromB', no prices). Asserting A's data
+        // proves endedAt is the actual ordering key.
+        expect(result, isNotNull);
+        expect(result!.prices, hasLength(1));
+        expect(result.prices.single.drinkPresetId, 'preset-a');
+        expect(result.tokenName, isNull);
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 11. setUseSessionPrices
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.setUseSessionPrices', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'flips useSessionPrices live, mid-session (party-session.md §Toggle: '
+      'use session prices)',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+          useSessionPrices: false,
+        );
+        expect(session.useSessionPrices, isFalse);
+
+        await repo.setUseSessionPrices(
+          session.id,
+          true,
+          now: startedAt.add(const Duration(minutes: 5)),
+        );
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.useSessionPrices, isTrue);
+      },
+    );
+
+    test('unknown session id throws StateError', () async {
+      expect(
+        () => repo.setUseSessionPrices('does-not-exist', true),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 11b. getSessionById
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.getSessionById', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'reflects writes made after startSession — the UI start-flow relies '
+      'on this to pick up useSessionPrices/token config set by the pricing '
+      'prompt right after the session was created, instead of resolving '
+      'prices against a stale in-memory PartySession',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        expect(session.useSessionPrices, isFalse);
+
+        await repo.setUseSessionPrices(session.id, true);
+        await repo.updateTokenConfig(
+          sessionId: session.id,
+          tokenName: 'Munt',
+          tokenValueMinor: 100,
+          tokenValueCurrency: 'EUR',
+        );
+
+        final refreshed = await repo.getSessionById(session.id);
+        expect(refreshed.useSessionPrices, isTrue);
+        expect(refreshed.tokenName, 'Munt');
+        expect(refreshed.tokenValueMinor, 100);
+        expect(refreshed.tokenValueCurrency, 'EUR');
+      },
+    );
+
+    test('unknown session id throws StateError', () async {
+      expect(
+        () => repo.getSessionById('does-not-exist'),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 12. updateTokenConfig
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.updateTokenConfig', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+    late String sessionId;
+
+    setUp(() async {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+      final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+      final session = await repo.startSession(
+        now: startedAt,
+        startedAt: startedAt,
+      );
+      sessionId = session.id;
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'updates tokenName/tokenValueMinor/tokenValueCurrency on the session '
+      'row (party-session.md §Money vs tokens: configurable "any time '
+      'during the session")',
+      () async {
+        await repo.updateTokenConfig(
+          sessionId: sessionId,
+          tokenName: 'Chip',
+          tokenValueMinor: 150,
+          tokenValueCurrency: 'EUR',
+        );
+
+        final row = await db.getPartySessionById(sessionId);
+        expect(row!.tokenName, 'Chip');
+        expect(row.tokenValueMinor, 150);
+        expect(row.tokenValueCurrency, 'EUR');
+      },
+    );
+
+    test('rejects tokenValueMinor set without tokenValueCurrency', () async {
+      expect(
+        () => repo.updateTokenConfig(
+          sessionId: sessionId,
+          tokenValueMinor: 150,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('rejects tokenValueCurrency set without tokenValueMinor', () async {
+      expect(
+        () => repo.updateTokenConfig(
+          sessionId: sessionId,
+          tokenValueCurrency: 'EUR',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test(
+      'rejects a tokenName over 30 characters (Parity Rulebook §Username '
+      'length — validateUsername max length applies regardless of '
+      'minLength)',
+      () async {
+        final tooLong = 'a' * 31;
+        expect(
+          () =>
+              repo.updateTokenConfig(sessionId: sessionId, tokenName: tooLong),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('unknown session id throws StateError', () async {
+      expect(
+        () => repo.updateTokenConfig(
+          sessionId: 'does-not-exist',
+          tokenName: 'Chip',
+        ),
         throwsA(isA<StateError>()),
       );
     });
