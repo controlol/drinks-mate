@@ -193,18 +193,16 @@ jobs:
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
+        env:
+          # Force subagents/Bash to run in the foreground, never backgrounded.
+          # A headless run has no way to resume once it ends its turn.
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
         with:
           # Same subscription auth as claude.yml (see docs/agentic-workflow.md).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Auto mode: this is an ephemeral CI runner, so let the agent run its
           # tools (git, gh, flutter, dart) without per-command allowlisting.
-          # ScheduleWakeup is explicitly disallowed: it's a session-scoped
-          # tool for interactive `/loop` use with no execution semantics in
-          # headless/print mode (see anthropics/claude-code#59864) — a run
-          # here has already ended for good by the time any "wakeup" could
-          # fire. Leaving it reachable let an agent believe it could pause
-          # and resume later (issues #17, #20, #22 all stalled this way:
-          # no PR, no commit, work abandoned mid-delegation).
+          # ScheduleWakeup has no effect in headless mode; disallow it too.
           claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
           show_full_output: "true"
           prompt: |
