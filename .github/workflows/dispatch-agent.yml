@@ -223,6 +223,12 @@ jobs:
             "Closes #${{ needs.select.outputs.issue }}" — merging the PR then
             closes the issue and frees its queue slot for the next one.
 
+            Immediately after opening the PR, enable auto-merge on it with
+            `gh pr merge <PR> --auto --squash`. This only queues the merge —
+            `auto-approve.yml` still gates the actual merge on all four
+            required checks (core, app, review, security) passing, so it is
+            safe to enable before checks finish.
+
             Do not open a PR with failing checks or unresolved spec-auditor findings.
 
             Before you finish, leave exactly one comment on the issue
