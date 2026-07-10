@@ -150,7 +150,7 @@ jobs:
           # App token so claude-code-action's internal git push is also App-authenticated.
           github_token: ${{ steps.app-token.outputs.token }}
           claude_args: "--permission-mode bypassPermissions"
-          allowed_bots: "github-actions[bot],claude[bot]"
+          allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
           prompt: |
             PR #${{ steps.pr.outputs.pr }} in ${{ github.repository }} failed an
             automated review. Your task: fix every blocking finding and push the
