@@ -106,3 +106,62 @@ double bacAtTime({required double bacInitial, required double hoursSince}) =>
 
 /// Step 6 — g/L → mmol/L (display-only).
 double gPerLToMmol(double gPerL) => gPerL * gPerLToMmolPerL;
+
+/// Step 2/3 combined — picks Watson (height available) or Widmark (height
+/// missing) and returns that drink's initial BAC, g/L. Model choice is
+/// data-driven, never user-selectable (party-session.md §BAC estimation
+/// algorithm Step 2: "the app picks the most accurate option the available
+/// data supports").
+double bacInitialForDrink({
+  required double alcoholGrams,
+  required Gender gender,
+  required int ageYears,
+  double? heightCm,
+  required double weightKg,
+  double mealModifier = 1.0,
+}) {
+  if (heightCm != null) {
+    final tbw = watsonTbwLitres(
+      gender: gender,
+      ageYears: ageYears,
+      heightCm: heightCm,
+      weightKg: weightKg,
+    );
+    return bacInitialWatson(
+      alcoholGrams: alcoholGrams,
+      tbwLitres: tbw,
+      mealModifier: mealModifier,
+    );
+  }
+  return bacInitialWidmark(
+    alcoholGrams: alcoholGrams,
+    weightKg: weightKg,
+    r: widmarkR(gender),
+    mealModifier: mealModifier,
+  );
+}
+
+/// Body-mass index, kg/m² — feeds the Watson-path BMI-range warning.
+double bmi({required double weightKg, required double heightCm}) {
+  final heightM = heightCm / 100;
+  return weightKg / (heightM * heightM);
+}
+
+/// Watson-path BMI-range warning (party-session.md §BAC estimation algorithm
+/// Step 2; Parity Rulebook note): warn if `BMI < 17` (any gender), `BMI > 67`
+/// for `male`, or `BMI > 80` for `female`/`unspecified` (unspecified follows
+/// the conservative path). Informational only — the estimate still displays
+/// when this returns true. Only meaningful on the Watson path; callers on the
+/// Widmark fallback (no height, so no BMI) should never call this.
+bool bmiWarningApplies({required double bmi, required Gender gender}) {
+  if (bmi < 17) return true;
+  return switch (gender) {
+    Gender.male => bmi > 67,
+    Gender.female || Gender.unspecified => bmi > 80,
+  };
+}
+
+/// party-session.md §BAC goal: the "approaching cap" trigger fires when the
+/// estimated BAC passes **80%** of the personal cap.
+bool isApproachingCap({required double bacGPerL, required double capGPerL}) =>
+    bacGPerL >= 0.8 * capGPerL;

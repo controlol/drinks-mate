@@ -255,10 +255,17 @@ class DrinksRepository {
   /// Log a drink from a preset, snapshotting its values at the current time.
   ///
   /// [volumeMl] overrides the preset default (phase-2 edit in S2).
+  /// [abvPercent] overrides the preset default — used for the Party Mode
+  /// "orphan drink" path (party-session.md §Logging alcohol when no session
+  /// is active: "Don't start a session"), where the user may still edit ABV
+  /// even though the drink is never attached to a session. A future session's
+  /// orphan absorption reads this stored value, so it must reflect the
+  /// user's actual entry, not just the preset default.
   /// [consumedAt] defaults to now.
   Future<void> logDrink({
     required DrinkPreset preset,
     int? volumeMl,
+    double? abvPercent,
     DateTime? consumedAt,
   }) async {
     final now = DateTime.now().toUtc();
@@ -268,7 +275,7 @@ class DrinksRepository {
       name: Value(preset.name),
       beverageType: preset.beverageType.stored,
       volumeMl: volumeMl ?? preset.volumeMl,
-      abvPercent: Value(preset.abvPercent),
+      abvPercent: Value(abvPercent ?? preset.abvPercent),
       priceMinor: Value(preset.regularPriceMinor),
       currency: Value(preset.regularCurrency),
       iconKey: Value(preset.iconKey),

@@ -53,6 +53,12 @@ abstract final class SemanticsLabels {
       'Estimated blood alcohol concentration — this is an estimate only';
   static const String startPartySession = 'Start party session';
   static const String endPartySession = 'End party session';
+  static const String logAlcoholButton = 'Log alcohol';
+  static const String approachingCapBanner = 'Approaching your personal cap';
+  static const String bmiWarningBanner = 'BAC accuracy notice';
+  static const String under18Gate = 'Party Mode is for adults 18 and over';
+  static const String bacDisclaimer =
+      'BAC is an estimate. Never use it to determine fitness to drive.';
 
   // ---------------------------------------------------------------------------
   // Navigation & global chrome
