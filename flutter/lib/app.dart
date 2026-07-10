@@ -35,6 +35,9 @@ class _AppGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keeps the reminder scheduler alive for the app's lifetime — see
+    // reminderReschedulerProvider's doc in repository/providers.dart.
+    ref.watch(reminderReschedulerProvider);
     final prefsAsync = ref.watch(userPreferencesProvider);
     return prefsAsync.when(
       loading: () =>

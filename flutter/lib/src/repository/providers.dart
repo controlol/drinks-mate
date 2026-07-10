@@ -12,6 +12,7 @@ import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
 import '../services/goal_celebration_guard.dart';
 import '../services/notification_service.dart';
+import '../services/reminder_scheduler.dart';
 import 'drinks_repository.dart';
 import 'party_session_repository.dart';
 import 'preferences_repository.dart';
@@ -149,6 +150,49 @@ final sevenDayDaysOnGoalProvider = StreamProvider<int>((ref) {
 /// plugin calls.
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return FlutterNotificationService();
+});
+
+// ---------------------------------------------------------------------------
+// Reminder scheduling (issue #20)
+// ---------------------------------------------------------------------------
+
+/// Resolves [UserPreferences.defaultDrinkPresetId] to a [DrinkPreset],
+/// falling back to the seeded "Glass of water" preset when unset or when the
+/// referenced preset no longer exists (data-model.md §UserPreferences).
+final defaultDrinkPresetProvider = FutureProvider<DrinkPreset?>((ref) async {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return null;
+  final repo = ref.watch(drinksRepositoryProvider);
+  final presetId = prefs.defaultDrinkPresetId;
+  final preset = presetId == null ? null : await repo.getPresetById(presetId);
+  return preset ?? await repo.getPresetById(kWaterGlassPresetId);
+});
+
+/// Schedules/cancels the three hydration-related reminder types (F5).
+final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  return ReminderScheduler(
+    ref.watch(notificationServiceProvider),
+    ref.watch(drinksRepositoryProvider),
+  );
+});
+
+/// Side-effect provider: re-runs [ReminderScheduler.reschedule] whenever
+/// preferences, the resolved default drink, or today's intake change.
+///
+/// Must be `watch`ed somewhere always-mounted (see `_AppGate` in `app.dart`)
+/// so it stays alive for the lifetime of the app — a provider nobody watches
+/// never initializes and reminders silently stop rescheduling.
+final reminderReschedulerProvider = Provider<void>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return;
+  final defaultPreset = ref.watch(defaultDrinkPresetProvider).valueOrNull;
+  // Re-run on every log/delete so the "reset timer on log" and "cancel on
+  // goal met" rules (notifications.md §Scheduling) take effect promptly.
+  ref.watch(todayTotalMlProvider);
+  final scheduler = ref.watch(reminderSchedulerProvider);
+  unawaited(
+    scheduler.reschedule(prefs: prefs, defaultDrinkPreset: defaultPreset),
+  );
 });
 
 // ---------------------------------------------------------------------------

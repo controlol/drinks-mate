@@ -31,6 +31,15 @@ class DrinksRepository {
   Stream<List<DrinkPreset>> watchAllPresets() =>
       _db.watchAllPresets().map((rows) => rows.map(_rowToPreset).toList());
 
+  /// One-shot read of a single preset by id, or null if missing/deleted-out.
+  ///
+  /// Used by the reminder scheduler to resolve `defaultDrinkPresetId` at
+  /// reschedule time (data-model.md §UserPreferences).
+  Future<DrinkPreset?> getPresetById(String id) async {
+    final row = await _db.getPresetById(id);
+    return row == null ? null : _rowToPreset(row);
+  }
+
   /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
   /// Intended for the Party Mode preset picker.
   Stream<List<DrinkPreset>> watchAlcoholicPresets() {
@@ -294,6 +303,34 @@ class DrinksRepository {
     );
   }
 
+  /// One-shot read of today's hydration total in ml — same filter as
+  /// [watchTodayTotalMl], for reminder-scheduling reads that don't need a
+  /// live subscription.
+  Future<int> getTodayTotalMl({DateTime? now, int boundaryHour = 5}) {
+    final window = dayWindow(
+      now: now ?? DateTime.now(),
+      boundaryHour: boundaryHour,
+    );
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    return _db.getTotalMlInWindow(
+      window.$1.toUtc(),
+      window.$2.toUtc(),
+      nonAlcoholicTypes,
+    );
+  }
+
+  /// One-shot read of the most recent drink's `consumedAt`, across every
+  /// beverage type (alcoholic entries count as engagement too), or null if
+  /// the user has never logged a drink.
+  ///
+  /// Feeds the reminder scheduler's inactive-user silence check
+  /// (notifications.md §Inactive-user silence).
+  Future<DateTime?> getLatestDrinkConsumedAt() =>
+      _db.getLatestDrinkConsumedAt();
+
   /// Reactive stream of the 7-day daily average hydration intake in ml.
   ///
   /// Covers the last 7 completed day windows before today (today is excluded).
@@ -368,6 +405,43 @@ class DrinksRepository {
       }
       return byDay.values.where((total) => total >= dailyGoalMl).length;
     });
+  }
+
+  /// One-shot count of how many days in the current ISO week (Monday–Sunday,
+  /// containing [now]) met the daily goal so far.
+  ///
+  /// Unlike [watch7DayDaysOnGoal] (trailing 7 days, today excluded), this
+  /// covers the fixed Mon–Sun calendar week and *includes* today — the
+  /// weekly-summary notification fires on the Sunday of the week it reports
+  /// on (notifications.md §Notification types → Weekly summary: "the seven
+  /// days ending on the day of firing").
+  Future<int> isoWeekDaysOnGoal({
+    required int dailyGoalMl,
+    int boundaryHour = 5,
+    DateTime? now,
+  }) async {
+    final window = isoWeekWindow(
+      now: now ?? DateTime.now(),
+      boundaryHour: boundaryHour,
+    );
+    final nonAlcoholicTypes = BeverageType.values
+        .where((t) => !t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
+    final entries = await _db.getEntriesInWindow(
+      window.$1.toUtc(),
+      window.$2.toUtc(),
+      nonAlcoholicTypes,
+    );
+    final byDay = <DateTime, int>{};
+    for (final (consumedAt, volumeMl) in entries) {
+      final dayStart = dayWindow(
+        now: consumedAt.toLocal(),
+        boundaryHour: boundaryHour,
+      ).$1;
+      byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
+    }
+    return byDay.values.where((total) => total >= dailyGoalMl).length;
   }
 
   /// Reactive stream of today's logged entries in reverse-chronological order.

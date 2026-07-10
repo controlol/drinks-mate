@@ -17,6 +17,19 @@ const String kHydrationChannelName = 'Hydration reminders';
 const String kWeeklySummaryChannelId = 'weekly_summary';
 const String kWeeklySummaryChannelName = 'Weekly summary';
 
+/// Action id for the hydration reminder's quick-log button.
+///
+/// notifications.md §Notification quick-log action: tapping it should log the
+/// default drink without opening the app. Phase 1 only wires the visible
+/// action button (this id + the iOS category below); handling the tap to
+/// actually log a drink requires a native background-isolate callback and is
+/// deferred — see [FlutterNotificationService] class doc.
+const String kLogDrinkActionId = 'log_drink';
+
+/// iOS notification category carrying the quick-log action, registered at
+/// [FlutterNotificationService.initialize] time.
+const String kHydrationReminderCategoryId = 'hydration_reminder_category';
+
 // ---------------------------------------------------------------------------
 // Abstract interface — all callers program against this, not the plugin.
 // ---------------------------------------------------------------------------
@@ -47,6 +60,9 @@ abstract interface class NotificationService {
   /// [payload] is forwarded verbatim to `zonedSchedule` so a registered
   /// delivery-time callback can re-query the DB and re-evaluate the fire
   /// predicate at delivery time.
+  ///
+  /// [quickLogActionLabel], when non-null, adds a "Log a drink"-style action
+  /// button (see [kLogDrinkActionId]) to every scheduled occurrence.
   Future<void> scheduleRepeating({
     required int id,
     required String title,
@@ -58,6 +74,7 @@ abstract interface class NotificationService {
     required int activeEndHour,
     int count = 48,
     String? payload,
+    String? quickLogActionLabel,
   });
 
   /// Schedules a single notification at [scheduledTime].
@@ -119,12 +136,20 @@ class FlutterNotificationService implements NotificationService {
       const androidSettings = AndroidInitializationSettings(
         '@mipmap/ic_launcher',
       );
-      const darwinSettings = DarwinInitializationSettings(
+      final darwinSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
+        notificationCategories: [
+          DarwinNotificationCategory(
+            kHydrationReminderCategoryId,
+            actions: [
+              DarwinNotificationAction.plain(kLogDrinkActionId, 'Log a drink'),
+            ],
+          ),
+        ],
       );
-      const initSettings = InitializationSettings(
+      final initSettings = InitializationSettings(
         android: androidSettings,
         iOS: darwinSettings,
       );
@@ -202,6 +227,7 @@ class FlutterNotificationService implements NotificationService {
     required int activeEndHour,
     int count = 48,
     String? payload,
+    String? quickLogActionLabel,
   }) async {
     try {
       final slots = buildScheduleSlots(
@@ -227,7 +253,10 @@ class FlutterNotificationService implements NotificationService {
         }
         return;
       }
-      final details = _notificationDetails(channelId);
+      final details = _notificationDetails(
+        channelId,
+        quickLogActionLabel: quickLogActionLabel,
+      );
       for (var i = 0; i < slots.length; i++) {
         final slotId = id * 1000 + i;
         final tzTime = tz.TZDateTime.from(slots[i], tz.local);
@@ -316,7 +345,10 @@ class FlutterNotificationService implements NotificationService {
     }
   }
 
-  NotificationDetails _notificationDetails(String channelId) {
+  NotificationDetails _notificationDetails(
+    String channelId, {
+    String? quickLogActionLabel,
+  }) {
     final String channelName;
     switch (channelId) {
       case kHydrationChannelId:
@@ -338,8 +370,19 @@ class FlutterNotificationService implements NotificationService {
         // Hide notification content (may include hydration/BAC data) on the
         // lock screen; badge/existence still visible.
         visibility: NotificationVisibility.private,
+        actions: quickLogActionLabel == null
+            ? null
+            : [
+                AndroidNotificationAction(
+                  kLogDrinkActionId,
+                  quickLogActionLabel,
+                ),
+              ],
       ),
-      iOS: const DarwinNotificationDetails(),
+      iOS: DarwinNotificationDetails(
+        categoryIdentifier:
+            quickLogActionLabel == null ? null : kHydrationReminderCategoryId,
+      ),
     );
   }
 }
@@ -362,6 +405,7 @@ class FakeNotificationService implements NotificationService {
         String title,
         String body,
         String? payload,
+        String? quickLogActionLabel,
       })> scheduled = [];
   final List<int> cancelled = [];
   bool allCancelled = false;
@@ -384,6 +428,7 @@ class FakeNotificationService implements NotificationService {
     required int activeEndHour,
     int count = 48,
     String? payload,
+    String? quickLogActionLabel,
   }) async {
     final slots = buildScheduleSlots(
       from: startTime,
@@ -399,6 +444,7 @@ class FakeNotificationService implements NotificationService {
         title: title,
         body: body,
         payload: payload,
+        quickLogActionLabel: quickLogActionLabel,
       ));
     }
   }
@@ -418,6 +464,7 @@ class FakeNotificationService implements NotificationService {
       title: title,
       body: body,
       payload: payload,
+      quickLogActionLabel: null,
     ));
   }
 

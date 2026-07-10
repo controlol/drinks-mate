@@ -48,3 +48,44 @@ library;
     return (todayBoundary, end);
   }
 }
+
+/// Returns the `[start, end)` ISO-week window (Monday–Sunday, local time)
+/// that contains [now].
+///
+/// The window is built from 7 consecutive [dayWindow]s: Monday's day-window
+/// start through Sunday's day-window end (i.e. the following Monday's
+/// day-window start). Because [dayWindow] shifts a pre-boundary instant back
+/// to the previous calendar day, a Sunday firing time just after midnight but
+/// before [boundaryHour] still resolves to Saturday's day-window and thus the
+/// *previous* ISO week — consistent with "today" meaning the day-window, not
+/// the calendar date.
+///
+/// Source: Parity Rulebook → "Weekly summary" (ISO week, Mon–Sun);
+/// notifications.md §Notification types → Weekly summary.
+(DateTime start, DateTime end) isoWeekWindow({
+  required DateTime now,
+  int boundaryHour = 5,
+  int boundaryMinute = 0,
+}) {
+  final todayStart = dayWindow(
+    now: now,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  ).$1;
+  // DateTime.weekday: Monday = 1 .. Sunday = 7.
+  final mondayStart = DateTime(
+    todayStart.year,
+    todayStart.month,
+    todayStart.day - (todayStart.weekday - 1),
+    boundaryHour,
+    boundaryMinute,
+  );
+  final nextMondayStart = DateTime(
+    mondayStart.year,
+    mondayStart.month,
+    mondayStart.day + 7,
+    boundaryHour,
+    boundaryMinute,
+  );
+  return (mondayStart, nextMondayStart);
+}
