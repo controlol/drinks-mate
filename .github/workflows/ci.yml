@@ -198,7 +198,7 @@ jobs:
           # Allow the dispatch-agent (github-actions bot) to trigger reviews on
           # its own PRs. The trust gate in the `if:` above already limits which
           # PRs get reviewed; this just lifts the bot-actor block inside the action.
-          allowed_bots: "github-actions[bot],claude[bot]"
+          allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
           prompt: |
             Review this pull request's diff.
 
