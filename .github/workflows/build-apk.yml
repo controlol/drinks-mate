@@ -1,6 +1,12 @@
 # .github/workflows/build-apk.yml
 name: Build Android APK
 
+# Triggered by workflow_run rather than push, so it can't carry its own path
+# filter on `on:` (workflow_run doesn't run per-commit-diff — it fires once
+# CI completes). Instead the `changes` job below diffs the built commit
+# against its parent and the build job's `if:` skips when nothing under
+# flutter/ changed, so a workflow/docs-only push to main doesn't spend
+# minutes building an APK nothing in it actually changed.
 on:
   workflow_dispatch:
   workflow_run:
@@ -16,11 +22,62 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect relevant changes
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      relevant: ${{ steps.decide.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - id: decide
+        # Deliberately no `set -e`: on any doubt this must default to
+        # relevant=true (build the APK) rather than silently skip a build
+        # that should have happened.
+        run: |
+          set -uo pipefail
+          relevant=true
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          head="${{ github.event.workflow_run.head_sha }}"
+          base=$(git rev-parse "$head^" 2>/dev/null || echo "")
+
+          if [ -n "$base" ] && [ -n "$head" ] \
+              && changed=$(git diff --name-only "$base...$head" 2>/dev/null); then
+            echo "Changed files:"
+            echo "$changed"
+            # Relevant = app code (the only thing that ends up in the APK),
+            # or this workflow's own definition.
+            if echo "$changed" | grep -qE '^(flutter/|\.github/workflows/build-apk\.yml)'; then
+              relevant=true
+            else
+              relevant=false
+            fi
+          else
+            echo "Could not compute a diff (base='$base' head='$head') — defaulting to relevant=true."
+            relevant=true
+          fi
+
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+
   build-apk:
     name: Build Android APK
+    needs: changes
     runs-on: ubuntu-latest
-    # Only run when CI passed; workflow_dispatch bypasses this check.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Only run when CI passed and relevant files changed; workflow_dispatch
+    # bypasses the CI-passed check (the path-relevance check still applies).
+    if: >
+      needs.changes.outputs.relevant == 'true' && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success'
+      )
     defaults:
       run:
         working-directory: flutter
