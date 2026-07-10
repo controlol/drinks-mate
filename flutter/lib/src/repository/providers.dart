@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/app_database.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
+import '../models/party_session.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
 import '../services/goal_celebration_guard.dart';
 import '../services/notification_service.dart';
 import 'drinks_repository.dart';
+import 'party_session_repository.dart';
 import 'preferences_repository.dart';
 
 /// Package-private — widgets use [drinksRepositoryProvider] instead of
@@ -194,4 +196,20 @@ final todayEntriesProvider = StreamProvider<List<DrinkEntry>>((ref) {
   return ref
       .watch(drinksRepositoryProvider)
       .watchTodayEntries(now: now, boundaryHour: prefs.dayBoundaryHour);
+});
+
+// ---------------------------------------------------------------------------
+// Party Session repository (issue #21)
+// ---------------------------------------------------------------------------
+
+/// Repository provider for Party Session data (sessions, meals, prices).
+///
+/// Reuses [_appDatabaseProvider] — never creates a second [AppDatabase].
+final partySessionRepositoryProvider = Provider<PartySessionRepository>((ref) {
+  return PartySessionRepository(ref.watch(_appDatabaseProvider));
+});
+
+/// Reactive stream of the current open Party Session, or null.
+final activePartySessionProvider = StreamProvider<PartySession?>((ref) {
+  return ref.watch(partySessionRepositoryProvider).watchActiveSession();
 });

@@ -7,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 
 import 'tables/drink_entry_table.dart';
 import 'tables/drink_preset_table.dart';
+import 'tables/meal_table.dart';
+import 'tables/party_session_price_table.dart';
+import 'tables/party_session_table.dart';
 import 'tables/user_preferences_table.dart';
 import 'tables/user_profile_table.dart';
 
@@ -22,28 +25,40 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 3.
+/// Phase-1 Drift database — schema version 4.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
 /// v3 (issue #9): UserProfiles + UserPreferences tables + preferences seeding.
 /// (issue #16): added 4 default alcoholic presets to beforeOpen seeding;
 ///   no DDL change → schema stays at v3.
+/// v4 (issue #21): PartySessions + PartySessionPrices + Meals tables;
+///   DrinkEntries gains partySessionId/priceTokens/tokenValueMinor/
+///   tokenValueCurrency columns.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
 ///
 /// Drift row types are named [DrinkPresetRow] / [DrinkEntryRow] /
-/// [UserProfileRow] / [UserPreferencesRow] (via @DataClassName) to avoid name
+/// [UserProfileRow] / [UserPreferencesRow] / [PartySessionRow] /
+/// [PartySessionPriceRow] / [MealRow] (via @DataClassName) to avoid name
 /// collisions with the pure-Dart domain models in lib/src/models/.
 @DriftDatabase(
-  tables: [DrinkPresets, DrinkEntries, UserProfiles, UserPreferencesTable],
+  tables: [
+    DrinkPresets,
+    DrinkEntries,
+    UserProfiles,
+    UserPreferencesTable,
+    PartySessions,
+    PartySessionPrices,
+    Meals,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -53,7 +68,7 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           // Add an `if (from < N)` block for each schema version bump.
           // Each block must be cumulative — a user upgrading directly from v1
-          // to v3 must run BOTH the v1→v2 and v2→v3 blocks in sequence.
+          // to v4 must run every earlier block in sequence.
           if (from < 2) {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
@@ -61,6 +76,15 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await m.createTable(userProfiles);
             await m.createTable(userPreferencesTable);
+          }
+          if (from < 4) {
+            await m.createTable(partySessions);
+            await m.createTable(partySessionPrices);
+            await m.createTable(meals);
+            await m.addColumn(drinkEntries, drinkEntries.partySessionId);
+            await m.addColumn(drinkEntries, drinkEntries.priceTokens);
+            await m.addColumn(drinkEntries, drinkEntries.tokenValueMinor);
+            await m.addColumn(drinkEntries, drinkEntries.tokenValueCurrency);
           }
         },
         beforeOpen: (_) async {
@@ -567,6 +591,134 @@ class AppDatabase extends _$AppDatabase {
           );
         }
       });
+
+  // ---------------------------------------------------------------------------
+  // PartySession queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of the current open session (`endedAt IS NULL`), or null.
+  /// At most one live row can match — enforced by [PartySessionRepository].
+  Stream<PartySessionRow?> watchActiveSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNull() & t.deletedAt.isNull())
+        ..limit(1))
+      .watchSingleOrNull();
+
+  /// One-shot read of the current open session, or null.
+  Future<PartySessionRow?> getActiveSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNull() & t.deletedAt.isNull())
+        ..limit(1))
+      .getSingleOrNull();
+
+  Future<PartySessionRow?> getPartySessionById(String id) =>
+      (select(partySessions)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  Future<void> insertPartySession(PartySessionsCompanion companion) =>
+      into(partySessions).insert(companion);
+
+  /// Partial update of a session row (end it, toggle prices, edit tokens).
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updatePartySessionFields(
+    String id,
+    PartySessionsCompanion companion,
+  ) =>
+      (update(partySessions)..where((t) => t.id.equals(id))).write(companion);
+
+  // ---------------------------------------------------------------------------
+  // PartySessionPrice queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Live (non-deleted) price overrides for [sessionId].
+  Future<List<PartySessionPriceRow>> getSessionPrices(String sessionId) =>
+      (select(partySessionPrices)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            ))
+          .get();
+
+  Future<void> insertSessionPrice(PartySessionPricesCompanion companion) =>
+      into(partySessionPrices).insert(companion);
+
+  Future<void> updateSessionPriceById(
+    String id,
+    PartySessionPricesCompanion companion,
+  ) =>
+      (update(
+        partySessionPrices,
+      )..where((t) => t.id.equals(id)))
+          .write(companion);
+
+  // ---------------------------------------------------------------------------
+  // Meal queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  Future<void> insertMeal(MealsCompanion companion) =>
+      into(meals).insert(companion);
+
+  /// Reactive stream of live meals for [sessionId], oldest first.
+  Stream<List<MealRow>> watchSessionMeals(String sessionId) => (select(meals)
+        ..where(
+          (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+        )
+        ..orderBy([(t) => OrderingTerm.asc(t.eatenAt)]))
+      .watch();
+
+  // ---------------------------------------------------------------------------
+  // DrinkEntry — Party Session queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of live entries belonging to [sessionId], oldest first.
+  Stream<List<DrinkEntryRow>> watchSessionEntries(String sessionId) =>
+      (select(drinkEntries)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            )
+            ..orderBy([(t) => OrderingTerm.asc(t.consumedAt)]))
+          .watch();
+
+  /// Most recently consumed live alcoholic entry in [sessionId], or null if
+  /// none — used to compute the lazy 12h auto-end mark.
+  Future<DrinkEntryRow?> getLastAlcoholicEntryInSession(
+    String sessionId,
+    List<String> alcoholicTypes,
+  ) =>
+      (select(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.equals(sessionId) &
+                  t.deletedAt.isNull() &
+                  t.beverageType.isIn(alcoholicTypes),
+            )
+            ..orderBy([(t) => OrderingTerm.desc(t.consumedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// Live alcoholic entries with no session (orphans), for absorption.
+  Future<List<DrinkEntryRow>> getOrphanAlcoholicEntries(
+    List<String> alcoholicTypes,
+  ) =>
+      (select(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.isNull() &
+                  t.deletedAt.isNull() &
+                  t.beverageType.isIn(alcoholicTypes),
+            ))
+          .get();
+
+  /// Assigns [entryId] to [sessionId] (orphan absorption) and bumps
+  /// [updatedAtUtc] — the one spec-sanctioned side-effect mutation of a
+  /// [DrinkEntryRow] (data-model.md §Meal → Relationship to DrinkEntry).
+  Future<void> absorbOrphanEntry(
+    String entryId,
+    String sessionId,
+    DateTime updatedAtUtc,
+  ) =>
+      (update(drinkEntries)..where((t) => t.id.equals(entryId))).write(
+        DrinkEntriesCompanion(
+          partySessionId: Value(sessionId),
+          updatedAt: Value(updatedAtUtc),
+        ),
+      );
 }
 
 LazyDatabase _openConnection() {
