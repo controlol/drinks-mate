@@ -1,5 +1,4 @@
 import 'package:core/core.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/beverage_type.dart';
 import '../models/drink_icons.dart';
 import '../models/drink_preset.dart';
+import '../models/optional.dart';
 import '../repository/providers.dart';
 import '../widgets/tinted_icon.dart';
 
@@ -138,6 +138,10 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
       final abv = double.tryParse(_abvCtrl.text);
       if (abv == null || abv < 0) return false;
     }
+    if (_priceCtrl.text.isNotEmpty) {
+      final price = double.tryParse(_priceCtrl.text);
+      if (price == null || price < 0) return false;
+    }
     return true;
   }
 
@@ -153,7 +157,13 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
         _beverageType.isAlcoholic ? double.parse(_abvCtrl.text) : null;
     final priceMajor = double.tryParse(_priceCtrl.text);
     final priceMinor = priceMajor == null ? null : (priceMajor * 100).round();
-    final currency = priceMinor == null ? null : prefs?.currency;
+    // Preserve the preset's own currency on edit — only fall back to the
+    // user's current preference for a preset that never had a price before
+    // (Parity Rulebook §No FX conversion: never silently relabel a stored
+    // amount under a different currency).
+    final currency = priceMinor == null
+        ? null
+        : (widget.preset?.regularCurrency ?? prefs?.currency);
 
     try {
       if (_isEditing) {
@@ -161,9 +171,9 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
           id: widget.preset!.id,
           name: name,
           volumeMl: volumeMl,
-          abvPercent: Value(abvPercent),
-          regularPriceMinor: Value(priceMinor),
-          regularCurrency: Value(currency),
+          abvPercent: Optional.value(abvPercent),
+          regularPriceMinor: Optional.value(priceMinor),
+          regularCurrency: Optional.value(currency),
           iconKey: _iconKey,
           iconColor: _iconColor,
         );
@@ -270,6 +280,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
             key: const Key('preset_editor_price_field'),
             controller: _priceCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               labelText: 'Regular price (optional)',
               prefixText: _currency != null ? '$_currency ' : null,
@@ -326,6 +337,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
   }
 
   String? get _currency =>
+      widget.preset?.regularCurrency ??
       ref.watch(userPreferencesProvider).valueOrNull?.currency;
 
   List<String> _colorOptions() {

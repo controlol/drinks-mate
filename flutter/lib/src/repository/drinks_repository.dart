@@ -7,6 +7,7 @@ import '../models/beverage_type.dart';
 import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
+import '../models/optional.dart';
 
 /// Repository seam — the only way widgets touch persisted drink data (D2).
 ///
@@ -124,13 +125,17 @@ class DrinksRepository {
 
   /// Updates mutable fields of an existing preset.
   ///
-  /// Only fields with a non-absent [Value] are written; omitted fields retain
+  /// Only fields with a present [Optional] are written; omitted fields retain
   /// their current values (no snapshot-immutability breach — [DrinkEntry] rows
   /// are never touched).
   ///
   /// For nullable fields ([abvPercent], [regularPriceMinor], [regularCurrency])
-  /// use [Value.absent] (the default) to leave the field unchanged,
-  /// [Value(someValue)] to set it, and [Value(null)] to clear it to null.
+  /// use [Optional.absent] (the default) to leave the field unchanged,
+  /// [Optional.value] with a non-null argument to set it, and
+  /// [Optional.value] with `null` to clear it. [Optional] is this
+  /// repository's own present/absent wrapper — never Drift's `Value` — so
+  /// callers (including widgets) don't need a `package:drift` import
+  /// (D2: "Drift types never reach widgets").
   ///
   /// Validates [name] via [validatePresetName] when provided; throws
   /// [ArgumentError] on failure. Throws [StateError] if [id] does not exist.
@@ -138,9 +143,9 @@ class DrinksRepository {
     required String id,
     String? name,
     int? volumeMl,
-    Value<double?> abvPercent = const Value.absent(),
-    Value<int?> regularPriceMinor = const Value.absent(),
-    Value<String?> regularCurrency = const Value.absent(),
+    Optional<double?> abvPercent = const Optional.absent(),
+    Optional<int?> regularPriceMinor = const Optional.absent(),
+    Optional<String?> regularCurrency = const Optional.absent(),
     String? iconKey,
     String? iconColor,
   }) async {
@@ -152,7 +157,7 @@ class DrinksRepository {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
     }
     DrinkPresetRow? existing;
-    if (abvPercent.present) {
+    if (abvPercent.isPresent) {
       existing = await _db.getPresetById(id);
       if (existing != null) {
         final storedType = BeverageType.fromStored(existing.beverageType);
@@ -168,13 +173,13 @@ class DrinksRepository {
         }
       }
     }
-    if (regularPriceMinor.present || regularCurrency.present) {
+    if (regularPriceMinor.isPresent || regularCurrency.isPresent) {
       existing ??= await _db.getPresetById(id);
       if (existing != null) {
-        final effectivePrice = regularPriceMinor.present
+        final effectivePrice = regularPriceMinor.isPresent
             ? regularPriceMinor.value
             : existing.regularPriceMinor;
-        final effectiveCurrency = regularCurrency.present
+        final effectiveCurrency = regularCurrency.isPresent
             ? regularCurrency.value
             : existing.regularCurrency;
         if (effectivePrice != null && effectiveCurrency == null) {
@@ -190,9 +195,15 @@ class DrinksRepository {
       DrinkPresetsCompanion(
         name: name != null ? Value(name) : const Value.absent(),
         volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-        abvPercent: abvPercent,
-        regularPriceMinor: regularPriceMinor,
-        regularCurrency: regularCurrency,
+        abvPercent: abvPercent.isPresent
+            ? Value(abvPercent.value)
+            : const Value.absent(),
+        regularPriceMinor: regularPriceMinor.isPresent
+            ? Value(regularPriceMinor.value)
+            : const Value.absent(),
+        regularCurrency: regularCurrency.isPresent
+            ? Value(regularCurrency.value)
+            : const Value.absent(),
         iconKey: iconKey != null ? Value(iconKey) : const Value.absent(),
         iconColor: iconColor != null ? Value(iconColor) : const Value.absent(),
         updatedAt: Value(now),

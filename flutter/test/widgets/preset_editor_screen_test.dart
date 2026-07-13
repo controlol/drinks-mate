@@ -14,10 +14,13 @@
 //     including sortOrder computed from the current preset count.
 //  7. Save in edit mode pre-fills fields from the passed-in preset and calls
 //     updatePreset with the edited fields.
-//  8. Price field: empty -> Value(null)/Value(null); "2.50" -> Value(250) and
-//     Value(<prefs.currency>) (edit mode, which is where the screen actually
-//     wraps these in Value(...) — see PresetEditorScreen._save).
+//  8. Price field: empty -> Optional.value(null)/Optional.value(null);
+//     "2.50" -> Optional.value(250) and the preset's OWN currency if it
+//     already had one (never the user's current preference — Parity
+//     Rulebook §No FX conversion), falling back to the preference only for
+//     a preset that never had a price before.
 //
+
 // Fake-repo pattern mirrors manage_drinks_screen_test.dart: a real
 // AppDatabase(NativeDatabase.memory()) is passed to the super constructor,
 // but createPreset/updatePreset are overridden to *record* their arguments
@@ -35,11 +38,11 @@
 
 // Hide isNull/isNotNull — drift.dart's query-builder matchers collide with
 // package:matcher's (via flutter_test) identically-named test matchers.
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -69,9 +72,9 @@ typedef _UpdateArgs = ({
   String id,
   String? name,
   int? volumeMl,
-  Value<double?> abvPercent,
-  Value<int?> regularPriceMinor,
-  Value<String?> regularCurrency,
+  Optional<double?> abvPercent,
+  Optional<int?> regularPriceMinor,
+  Optional<String?> regularCurrency,
   String? iconKey,
   String? iconColor,
 });
@@ -137,9 +140,9 @@ class _FakeDrinksRepo extends DrinksRepository {
     required String id,
     String? name,
     int? volumeMl,
-    Value<double?> abvPercent = const Value.absent(),
-    Value<int?> regularPriceMinor = const Value.absent(),
-    Value<String?> regularCurrency = const Value.absent(),
+    Optional<double?> abvPercent = const Optional.absent(),
+    Optional<int?> regularPriceMinor = const Optional.absent(),
+    Optional<String?> regularCurrency = const Optional.absent(),
     String? iconKey,
     String? iconColor,
   }) async {
@@ -192,6 +195,19 @@ DrinkPreset _editPreset() => const DrinkPreset(
       abvPercent: 5.0,
       regularPriceMinor: 450,
       regularCurrency: 'EUR',
+      iconKey: 'bottle',
+      iconColor: '#111111',
+      isUserCreated: true,
+      isHidden: false,
+      sortOrder: 2,
+    );
+
+DrinkPreset _editPresetWithoutPrice() => const DrinkPreset(
+      id: 'preset-1',
+      name: 'Craft Lager',
+      beverageType: BeverageType.beer,
+      volumeMl: 330,
+      abvPercent: 5.0,
       iconKey: 'bottle',
       iconColor: '#111111',
       isUserCreated: true,
@@ -599,22 +615,23 @@ void main() {
     expect(args!.id, 'preset-1');
     expect(args.name, 'Craft Lager Deluxe');
     expect(args.volumeMl, 500);
-    expect(args.abvPercent, const Value(4.5));
+    expect(args.abvPercent, const Optional.value(4.5));
     expect(args.iconKey, 'bottle');
     expect(args.iconColor, '#111111');
     // Price field untouched ('4.50') -> re-parsed to 450, currency from
     // current prefs (EUR here, matching the fixture preset's own currency).
     // Source: preset_editor_screen.dart _save — regularPriceMinor/
     // regularCurrency are always recomputed from _priceCtrl/prefs.currency.
-    expect(args.regularPriceMinor, const Value(450));
-    expect(args.regularCurrency, const Value('EUR'));
+    expect(args.regularPriceMinor, const Optional.value(450));
+    expect(args.regularCurrency, const Optional.value('EUR'));
   });
 
   // -------------------------------------------------------------------------
-  // 8. Price field: empty -> Value(null); "2.50" -> Value(250)/Value(currency)
+  // 8. Price field: empty -> Optional.value(null); "2.50" -> Optional.value(250)/Optional.value(currency)
   // -------------------------------------------------------------------------
 
-  testWidgets('edit mode: empty price field saves Value(null)/Value(null)',
+  testWidgets(
+      'edit mode: empty price field saves Optional.value(null)/Optional.value(null)',
       (tester) async {
     final repo = _FakeDrinksRepo();
     final container = await _buildContainer(repo: repo, prefs: _prefs());
@@ -633,13 +650,18 @@ void main() {
 
     final args = repo.lastUpdateArgs;
     expect(args, isNotNull);
-    expect(args!.regularPriceMinor, const Value(null));
-    expect(args.regularCurrency, const Value(null));
+    expect(args!.regularPriceMinor, const Optional.value(null));
+    expect(args.regularCurrency, const Optional.value(null));
   });
 
   testWidgets(
-      'edit mode: "2.50" price field saves Value(250) and '
-      'Value(<prefs.currency>)', (tester) async {
+      'edit mode: "2.50" price field saves Optional.value(250) and '
+      "preserves the preset's own currency (not the user's current "
+      'preference)', (tester) async {
+    // _editPreset() already has regularCurrency 'EUR'; prefs here is 'USD'
+    // to prove the preset's own currency wins — Parity Rulebook §No FX
+    // conversion: editing price must never silently relabel stored money
+    // under a different currency.
     final repo = _FakeDrinksRepo();
     final container = await _buildContainer(
       repo: repo,
@@ -660,7 +682,34 @@ void main() {
 
     final args = repo.lastUpdateArgs;
     expect(args, isNotNull);
-    expect(args!.regularPriceMinor, const Value(250));
-    expect(args.regularCurrency, const Value('USD'));
+    expect(args!.regularPriceMinor, const Optional.value(250));
+    expect(args.regularCurrency, const Optional.value('EUR'));
+  });
+
+  testWidgets(
+      'edit mode: adding a price to a preset with no prior price falls back '
+      "to the user's current currency preference", (tester) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      prefs: _prefs(currency: 'GBP'),
+    );
+    addTearDown(container.dispose);
+    final preset = _editPresetWithoutPrice();
+    await _pumpScreen(tester, container, preset: preset);
+
+    await tester.enterText(
+      find.byKey(const Key('preset_editor_price_field')),
+      '3.00',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('preset_editor_save_button')));
+    await tester.pump();
+
+    final args = repo.lastUpdateArgs;
+    expect(args, isNotNull);
+    expect(args!.regularPriceMinor, const Optional.value(300));
+    expect(args.regularCurrency, const Optional.value('GBP'));
   });
 }

@@ -1,10 +1,10 @@
 import 'package:core/core.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/drink_preset.dart';
+import '../models/optional.dart';
 import '../repository/providers.dart';
 import '../utils/color_utils.dart';
 
@@ -131,9 +131,9 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
           await repo.updatePreset(
             id: preset.id,
             name: result.name,
-            abvPercent: Value(result.abvPercent),
-            regularPriceMinor: Value(result.priceMinor),
-            regularCurrency: Value(result.currency),
+            abvPercent: Optional.value(result.abvPercent),
+            regularPriceMinor: Optional.value(result.priceMinor),
+            regularCurrency: Optional.value(result.currency),
           );
           final updated = await repo.getPresetById(preset.id) ?? preset;
           await repo.logDrink(
@@ -478,6 +478,10 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
       final abv = double.tryParse(_abvCtrl.text);
       if (abv == null || abv < 0) return false;
     }
+    if (_priceCtrl.text.isNotEmpty) {
+      final price = double.tryParse(_priceCtrl.text);
+      if (price == null || price < 0) return false;
+    }
     return true;
   }
 
@@ -599,6 +603,7 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
+                    onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
                       labelText: 'Price (optional)',
                       border: OutlineInputBorder(),

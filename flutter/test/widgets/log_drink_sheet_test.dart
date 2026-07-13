@@ -35,11 +35,11 @@
 // that triggers it, or it would observe AsyncLoading and compute sortOrder
 // from an empty list regardless of the fixture.
 
-import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -65,9 +65,9 @@ typedef _LogDrinkCall = ({
 typedef _UpdatePresetCall = ({
   String id,
   String? name,
-  Value<double?> abvPercent,
-  Value<int?> regularPriceMinor,
-  Value<String?> regularCurrency,
+  Optional<double?> abvPercent,
+  Optional<int?> regularPriceMinor,
+  Optional<String?> regularCurrency,
 });
 
 typedef _CreatePresetCall = ({
@@ -128,9 +128,9 @@ class _FakeDrinksRepo extends DrinksRepository {
     required String id,
     String? name,
     int? volumeMl,
-    Value<double?> abvPercent = const Value.absent(),
-    Value<int?> regularPriceMinor = const Value.absent(),
-    Value<String?> regularCurrency = const Value.absent(),
+    Optional<double?> abvPercent = const Optional.absent(),
+    Optional<int?> regularPriceMinor = const Optional.absent(),
+    Optional<String?> regularCurrency = const Optional.absent(),
     String? iconKey,
     String? iconColor,
   }) async {
@@ -651,9 +651,9 @@ void main() {
       final update = repo.updatePresetCalls.single;
       expect(update.id, 'preset-beer');
       expect(update.name, 'Craft Lager Deluxe');
-      expect(update.abvPercent, const Value(6.5));
-      expect(update.regularPriceMinor, const Value(525));
-      expect(update.regularCurrency, const Value('EUR'));
+      expect(update.abvPercent, const Optional.value(6.5));
+      expect(update.regularPriceMinor, const Optional.value(525));
+      expect(update.regularCurrency, const Optional.value('EUR'));
 
       expect(repo.logDrinkCalls, hasLength(1));
       // logDrink is called against the refetched (edited) preset, not raw

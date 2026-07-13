@@ -6,6 +6,7 @@ import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -493,7 +494,8 @@ void main() {
         final id = await _createUserPreset(repo, name: 'Green Tea');
 
         expect(
-          () => repo.updatePreset(id: id, abvPercent: const Value(0.5)),
+          () =>
+              repo.updatePreset(id: id, abvPercent: const Optional.value(0.5)),
           throwsA(isA<ArgumentError>()),
         );
       },
@@ -504,7 +506,7 @@ void main() {
       // non-alcoholic presets; Value(null) should be idempotent and not throw.
       final id = await _createUserPreset(repo, name: 'Still Water');
 
-      await repo.updatePreset(id: id, abvPercent: const Value(null));
+      await repo.updatePreset(id: id, abvPercent: const Optional.value(null));
 
       final presets = await repo.watchAllPresets().first;
       final updated = presets.firstWhere((p) => p.id == id);
@@ -521,7 +523,7 @@ void main() {
         expect(
           () => repo.updatePreset(
             id: id,
-            regularPriceMinor: const Value(300),
+            regularPriceMinor: const Optional.value(300),
             // regularCurrency absent — effective currency = null on existing row
           ),
           throwsA(isA<ArgumentError>()),
@@ -557,7 +559,8 @@ void main() {
         );
 
         expect(
-          () => repo.updatePreset(id: id, abvPercent: const Value(null)),
+          () =>
+              repo.updatePreset(id: id, abvPercent: const Optional.value(null)),
           throwsA(isA<ArgumentError>()),
         );
       },
