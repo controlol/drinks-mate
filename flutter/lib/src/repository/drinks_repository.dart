@@ -273,22 +273,37 @@ class DrinksRepository {
   /// even though the drink is never attached to a session. A future session's
   /// orphan absorption reads this stored value, so it must reflect the
   /// user's actual entry, not just the preset default.
-  /// [name], [priceMinor], and [currency] override the preset default —
-  /// the S2 Advanced editor's "Confirm" path (user-experience.md §S2):
-  /// "logs the drink with the entered values for this entry only. The
-  /// underlying preset is unchanged." Passing these does not write to the
-  /// [DrinkPreset] row; callers that want the preset itself updated must
-  /// call [updatePreset] first and pass the refreshed preset in.
+  /// [name] and [abvPercent] override the preset default when non-null.
+  /// [priceMinor] and [currency] override the preset default — the S2
+  /// Advanced editor's "Confirm" path (user-experience.md §S2): "logs the
+  /// drink with the entered values for this entry only. The underlying
+  /// preset is unchanged." Use [Optional.absent] (the default) to fall back
+  /// to the preset's stored price/currency, or [Optional.value] — including
+  /// `Optional.value(null)` to explicitly log this entry with no price —
+  /// to override it for this entry only. Passing these does not write to
+  /// the [DrinkPreset] row; callers that want the preset itself updated
+  /// must call [updatePreset] first and pass the refreshed preset in.
   /// [consumedAt] defaults to now.
+  ///
+  /// Throws [ArgumentError] if the effective price is non-null while the
+  /// effective currency is null (data-model.md `DrinkEntry.currency`:
+  /// "Required when priceMinor is set").
   Future<void> logDrink({
     required DrinkPreset preset,
     String? name,
     int? volumeMl,
     double? abvPercent,
-    int? priceMinor,
-    String? currency,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
     DateTime? consumedAt,
   }) async {
+    final effectivePriceMinor =
+        priceMinor.isPresent ? priceMinor.value : preset.regularPriceMinor;
+    final effectiveCurrency =
+        currency.isPresent ? currency.value : preset.regularCurrency;
+    if (effectivePriceMinor != null && effectiveCurrency == null) {
+      throw ArgumentError('currency is required when priceMinor is set');
+    }
     final now = DateTime.now().toUtc();
     final consumed = consumedAt?.toUtc() ?? now;
     final companion = DrinkEntriesCompanion.insert(
@@ -297,8 +312,8 @@ class DrinksRepository {
       beverageType: preset.beverageType.stored,
       volumeMl: volumeMl ?? preset.volumeMl,
       abvPercent: Value(abvPercent ?? preset.abvPercent),
-      priceMinor: Value(priceMinor ?? preset.regularPriceMinor),
-      currency: Value(currency ?? preset.regularCurrency),
+      priceMinor: Value(effectivePriceMinor),
+      currency: Value(effectiveCurrency),
       iconKey: Value(preset.iconKey),
       iconColor: Value(preset.iconColor),
       consumedAt: consumed,

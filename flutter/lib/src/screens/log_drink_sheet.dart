@@ -54,12 +54,12 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
 
   Future<void> _confirm() async {
     if (_submitting) return;
-    _submitting = true;
 
     final preset = _selected;
     if (preset == null) return;
     final volume = int.tryParse(_volumeCtrl.text);
     if (volume == null || volume <= 0) return;
+    _submitting = true;
 
     // C6: close immediately; write settles in background.
     final repo = ref.read(drinksRepositoryProvider);
@@ -102,10 +102,10 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     _AdvancedEditResult result,
   ) async {
     if (_submitting) return;
-    _submitting = true;
 
     final volume = int.tryParse(_volumeCtrl.text);
     if (volume == null || volume <= 0) return;
+    _submitting = true;
 
     // C6: close immediately; writes settle in background.
     final repo = ref.read(drinksRepositoryProvider);
@@ -121,8 +121,11 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
             name: result.name,
             volumeMl: volume,
             abvPercent: result.abvPercent,
-            priceMinor: result.priceMinor,
-            currency: result.currency,
+            // Explicit Optional.value (not the Optional.absent default) so
+            // a cleared price field logs this entry with no price instead
+            // of silently falling back to the preset's stored price.
+            priceMinor: Optional.value(result.priceMinor),
+            currency: Optional.value(result.currency),
             consumedAt: _consumedAt,
           );
         case _AdvancedAction.saveAndConfirm:

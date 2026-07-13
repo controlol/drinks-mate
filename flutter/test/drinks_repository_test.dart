@@ -880,6 +880,147 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // Group 9b: logDrink — name/priceMinor/currency entry-only overrides
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository — logDrink name/priceMinor/currency overrides', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    Future<DrinkEntryRow> loggedRow() async {
+      final rows = await db.select(db.drinkEntries).get();
+      return rows.single;
+    }
+
+    test(
+      'priceMinor/currency absent falls back to the preset\'s stored price',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(preset: preset);
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, 450);
+        expect(entry.currency, 'EUR');
+      },
+    );
+
+    test(
+      'Optional.value(null) priceMinor/currency logs this entry with no '
+      'price, without touching the preset\'s stored price (S2 Advanced '
+      '"Confirm" — entry-only, preset unchanged)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(
+          preset: preset,
+          priceMinor: const Optional.value(null),
+          currency: const Optional.value(null),
+        );
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, isNull);
+        expect(entry.currency, isNull);
+
+        // The preset's own stored price must be untouched.
+        final row = await db.getPresetById(preset.id);
+        expect(row!.regularPriceMinor, 450);
+        expect(row.regularCurrency, 'EUR');
+      },
+    );
+
+    test(
+      'Optional.value with an explicit priceMinor/currency overrides the '
+      "preset's stored price for this entry only",
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(
+          preset: preset,
+          priceMinor: const Optional.value(999),
+          currency: const Optional.value('USD'),
+        );
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, 999);
+        expect(entry.currency, 'USD');
+      },
+    );
+
+    test(
+      'effective priceMinor non-null with effective currency null throws '
+      'ArgumentError (data-model.md: currency required when priceMinor is '
+      'set)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Free Water',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+
+        expect(
+          () => repo.logDrink(
+            preset: preset,
+            priceMinor: const Optional.value(300),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('name override is written to the logged entry', () async {
+      final presetId = await _createUserPreset(repo, name: 'Original Name');
+      final preset = (await repo.watchAllPresets().first)
+          .firstWhere((p) => p.id == presetId);
+
+      await repo.logDrink(preset: preset, name: 'Entry-only Name');
+
+      final entry = await loggedRow();
+      expect(entry.name, 'Entry-only Name');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Group 10: watchTodayTotalMl — boundary hour parameter
   // -------------------------------------------------------------------------
 

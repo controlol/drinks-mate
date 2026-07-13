@@ -505,4 +505,54 @@ void main() {
     // at the oldIndex" — unlike the deprecated onReorder).
     expect(repo.reorderCalls.last, ['p2', 'p3', 'p1']);
   });
+
+  testWidgets(
+    'dragging a row when an alcoholic preset is hidden by Party Mode '
+    "filtering keeps the hidden preset's absolute position instead of "
+    'pushing it to the tail of sortOrder (regression: reorderPresets '
+    'appends any id not passed in after the full passed-in list, so '
+    'passing only the visible subset would silently move every hidden '
+    'alcoholic preset on every reorder)',
+    (tester) async {
+      final presets = [
+        _preset(id: 'p1', name: 'Preset One', sortOrder: 1),
+        _preset(
+          id: 'alc',
+          name: 'Hidden Beer',
+          beverageType: BeverageType.beer,
+          sortOrder: 2,
+        ),
+        _preset(id: 'p2', name: 'Preset Two', sortOrder: 3),
+        _preset(id: 'p3', name: 'Preset Three', sortOrder: 4),
+      ];
+      // Party Mode off (default _prefs()) — 'alc' is filtered out of the
+      // visible list entirely, but must still appear in reorderPresets'
+      // orderedIds at its original relative position.
+      final repo = _FakeDrinksRepo(presets);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
+
+      final handle = find.descendant(
+        of: find.byKey(const ValueKey('p1')),
+        matching: find.byIcon(Icons.drag_handle),
+      );
+      expect(handle, findsOneWidget);
+
+      // Drag p1 (visible index 0) past p2 and p3, landing it last among the
+      // visible rows -> visible order becomes [p2, p3, p1].
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveBy(const Offset(0, 500));
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(repo.reorderCalls, isNotEmpty);
+      // 'alc' must stay interleaved at its original absolute position
+      // (between p1 and p2 in allPresets) — not appended after the
+      // reordered visible subset as ['p2', 'p3', 'p1', 'alc'] would be.
+      expect(repo.reorderCalls.last, ['p2', 'alc', 'p3', 'p1']);
+    },
+  );
 }

@@ -196,10 +196,22 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
       setState(() => _saving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save preset: $e')),
+          SnackBar(
+              content: Text('Could not save preset: ${_friendlyError(e)}')),
         );
       }
     }
+  }
+
+  /// Maps a caught exception to a user-facing message instead of
+  /// interpolating it verbatim — the repository only ever throws
+  /// [ArgumentError]/[StateError] validation failures here, but mapping
+  /// known types (rather than trusting `toString()`) keeps a future
+  /// exception type from silently leaking more detail than intended.
+  String _friendlyError(Object error) {
+    if (error is ArgumentError) return error.message.toString();
+    if (error is StateError) return error.message;
+    return 'Please try again.';
   }
 
   @override

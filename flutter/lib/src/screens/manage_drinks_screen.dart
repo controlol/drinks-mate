@@ -41,12 +41,8 @@ class ManageDrinksScreen extends ConsumerWidget {
           return ReorderableListView.builder(
             buildDefaultDragHandles: false,
             itemCount: presets.length,
-            onReorderItem: (oldIndex, newIndex) => _onReorder(
-              ref,
-              presets,
-              oldIndex,
-              newIndex,
-            ),
+            onReorderItem: (oldIndex, newIndex) =>
+                _onReorder(ref, allPresets, presets, oldIndex, newIndex),
             itemBuilder: (context, index) => _PresetTile(
               key: ValueKey(presets[index].id),
               preset: presets[index],
@@ -61,21 +57,25 @@ class ManageDrinksScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton(
         key: const Key('manage_drinks_add_fab'),
         onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => const PresetEditorScreen(),
-          ),
+          MaterialPageRoute<void>(builder: (_) => const PresetEditorScreen()),
         ),
         child: const Icon(Icons.add),
       ),
     );
   }
 
-  /// [reorderPresets] takes ids in final order; other non-deleted presets
-  /// (e.g. alcoholic ones hidden by the Party Mode filter) keep their
-  /// relative order and are appended after, so reordering this filtered
-  /// subset is safe.
+  /// [reorderPresets] appends any id *not* passed in after the entire
+  /// passed-in list (AppDatabase.reorderPresets: "finalOrder = [...orderedIds,
+  /// ...remainingIds]"), so passing only the Party-Mode-filtered [presets]
+  /// subset would push every hidden alcoholic preset to the tail of
+  /// [allPresets]'s sortOrder on every reorder. Instead, this builds the
+  /// *complete* [allPresets] id list: filtered-out presets keep their
+  /// absolute position, and filtered-in ones are replaced in place with
+  /// their new drag order — so `orderedIds` covers every non-deleted preset
+  /// and `remainingIds` is always empty.
   void _onReorder(
     WidgetRef ref,
+    List<DrinkPreset> allPresets,
     List<DrinkPreset> presets,
     int oldIndex,
     int newIndex,
@@ -83,9 +83,15 @@ class ManageDrinksScreen extends ConsumerWidget {
     final reordered = [...presets];
     final moved = reordered.removeAt(oldIndex);
     reordered.insert(newIndex, moved);
-    ref
-        .read(drinksRepositoryProvider)
-        .reorderPresets(reordered.map((p) => p.id).toList());
+    final newOrderIds = reordered.map((p) => p.id).toList();
+
+    final visibleIds = presets.map((p) => p.id).toSet();
+    var i = 0;
+    final finalIds = [
+      for (final preset in allPresets)
+        if (visibleIds.contains(preset.id)) newOrderIds[i++] else preset.id,
+    ];
+    ref.read(drinksRepositoryProvider).reorderPresets(finalIds);
   }
 }
 

@@ -47,6 +47,7 @@ import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/meal.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/party_session_price.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
@@ -174,8 +175,8 @@ class _FakeDrinksRepo extends DrinksRepository {
     String? name,
     int? volumeMl,
     double? abvPercent,
-    int? priceMinor,
-    String? currency,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
     DateTime? consumedAt,
   }) async {
     logDrinkCalls.add((presetId: preset.id, abvPercent: abvPercent));
