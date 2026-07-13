@@ -1,3 +1,5 @@
+import 'package:core/core.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -76,6 +78,99 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     }
   }
 
+  /// Opens the S2 Advanced editor (user-experience.md §S2: "an additional
+  /// editor for name, ABV (alcoholic drinks only), and price").
+  Future<void> _openAdvanced() async {
+    final preset = _selected;
+    if (preset == null) return;
+    final result = await showModalBottomSheet<_AdvancedEditResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _AdvancedEditorSheet(preset: preset),
+    );
+    // "Back" — discard, stay in phase 2.
+    if (result == null || !mounted) return;
+    await _applyAdvancedResult(preset, result);
+  }
+
+  /// Executes one of the three S2 Advanced exit paths (user-experience.md
+  /// §S2). Snapshot-immutability (data-model.md §Snapshot semantics): only
+  /// [DrinksRepository.updatePreset]/[createPreset] touch the preset row;
+  /// existing [DrinkEntry] rows are never modified.
+  Future<void> _applyAdvancedResult(
+    DrinkPreset preset,
+    _AdvancedEditResult result,
+  ) async {
+    if (_submitting) return;
+    _submitting = true;
+
+    final volume = int.tryParse(_volumeCtrl.text);
+    if (volume == null || volume <= 0) return;
+
+    // C6: close immediately; writes settle in background.
+    final repo = ref.read(drinksRepositoryProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    try {
+      switch (result.action) {
+        case _AdvancedAction.confirmOnly:
+          // "Confirm — logs the drink with the entered values for this
+          // entry only. The underlying preset is unchanged."
+          await repo.logDrink(
+            preset: preset,
+            name: result.name,
+            volumeMl: volume,
+            abvPercent: result.abvPercent,
+            priceMinor: result.priceMinor,
+            currency: result.currency,
+            consumedAt: _consumedAt,
+          );
+        case _AdvancedAction.saveAndConfirm:
+          // "Save and confirm — writes the advanced values back to the
+          // preset (overwriting it), then logs the drink."
+          await repo.updatePreset(
+            id: preset.id,
+            name: result.name,
+            abvPercent: Value(result.abvPercent),
+            regularPriceMinor: Value(result.priceMinor),
+            regularCurrency: Value(result.currency),
+          );
+          final updated = await repo.getPresetById(preset.id) ?? preset;
+          await repo.logDrink(
+            preset: updated,
+            volumeMl: volume,
+            consumedAt: _consumedAt,
+          );
+        case _AdvancedAction.saveAsCopyAndConfirm:
+          // "Save as copy and confirm — creates a new preset with the
+          // advanced values ..., then logs the drink against the new
+          // preset."
+          final existingCount =
+              ref.read(allPresetsProvider).valueOrNull?.length ?? 0;
+          final copy = await repo.createPreset(
+            name: result.newPresetName ?? result.name,
+            beverageType: preset.beverageType,
+            volumeMl: volume,
+            abvPercent: result.abvPercent,
+            regularPriceMinor: result.priceMinor,
+            regularCurrency: result.currency,
+            iconKey: preset.iconKey,
+            iconColor: preset.iconColor,
+            sortOrder: existingCount + 1,
+          );
+          await repo.logDrink(
+            preset: copy,
+            volumeMl: volume,
+            consumedAt: _consumedAt,
+          );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Failed to log drink')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -92,6 +187,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
               onTimeChanged: (dt) => setState(() => _consumedAt = dt),
               onBack: _back,
               onConfirm: _confirm,
+              onAdvanced: _openAdvanced,
             ),
     );
   }
@@ -171,6 +267,7 @@ class _ConfirmPhase extends StatelessWidget {
     required this.onTimeChanged,
     required this.onBack,
     required this.onConfirm,
+    required this.onAdvanced,
   });
 
   final DrinkPreset preset;
@@ -179,6 +276,7 @@ class _ConfirmPhase extends StatelessWidget {
   final ValueChanged<DateTime> onTimeChanged;
   final VoidCallback onBack;
   final VoidCallback onConfirm;
+  final VoidCallback onAdvanced;
 
   @override
   Widget build(BuildContext context) {
@@ -232,9 +330,22 @@ class _ConfirmPhase extends StatelessWidget {
             16,
             MediaQuery.of(context).padding.bottom + 16,
           ),
-          child: FilledButton(
-            onPressed: onConfirm,
-            child: const Text('Confirm'),
+          child: Row(
+            children: [
+              OutlinedButton(
+                key: const Key('log_drink_advanced_button'),
+                onPressed: onAdvanced,
+                child: const Text('Advanced'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  key: const Key('log_drink_confirm_button'),
+                  onPressed: onConfirm,
+                  child: const Text('Confirm'),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -272,6 +383,274 @@ class _TimeButton extends StatelessWidget {
           onChanged(updated);
         }
       },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// S2 Advanced editor — name, ABV (alcoholic only), price
+// ---------------------------------------------------------------------------
+
+/// The three exit paths of the Advanced editor (user-experience.md §S2).
+/// "Back" is not represented here — it pops the sheet with a null result.
+enum _AdvancedAction { confirmOnly, saveAndConfirm, saveAsCopyAndConfirm }
+
+/// Result of the Advanced editor — the edited values plus which of the three
+/// save paths the user chose.
+class _AdvancedEditResult {
+  const _AdvancedEditResult({
+    required this.action,
+    required this.name,
+    this.abvPercent,
+    this.priceMinor,
+    this.currency,
+    this.newPresetName,
+  });
+
+  final _AdvancedAction action;
+  final String name;
+  final double? abvPercent;
+  final int? priceMinor;
+  final String? currency;
+
+  /// User-confirmed name for the new preset — only set for
+  /// [_AdvancedAction.saveAsCopyAndConfirm].
+  final String? newPresetName;
+}
+
+/// user-experience.md §S2 Advanced editor: "an additional editor for name,
+/// ABV (alcoholic drinks only), and price ... the icon and colour are not
+/// editable here."
+class _AdvancedEditorSheet extends ConsumerStatefulWidget {
+  const _AdvancedEditorSheet({required this.preset});
+
+  final DrinkPreset preset;
+
+  @override
+  ConsumerState<_AdvancedEditorSheet> createState() =>
+      _AdvancedEditorSheetState();
+}
+
+class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _abvCtrl;
+  late final TextEditingController _priceCtrl;
+  String? _nameError;
+
+  bool get _isAlcoholic => widget.preset.beverageType.isAlcoholic;
+
+  @override
+  void initState() {
+    super.initState();
+    final preset = widget.preset;
+    _nameCtrl = TextEditingController(text: preset.name);
+    _abvCtrl = TextEditingController(text: preset.abvPercent?.toString() ?? '');
+    _priceCtrl = TextEditingController(
+      text: preset.regularPriceMinor != null
+          ? (preset.regularPriceMinor! / 100).toStringAsFixed(2)
+          : '',
+    );
+    _nameError = _validateName(_nameCtrl.text);
+    _nameCtrl.addListener(_onNameChanged);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.removeListener(_onNameChanged);
+    _nameCtrl.dispose();
+    _abvCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onNameChanged() =>
+      setState(() => _nameError = _validateName(_nameCtrl.text));
+
+  String? _validateName(String value) {
+    if (value.isEmpty) return 'Name is required';
+    final result = validatePresetName(value);
+    return result.isValid ? null : result.error;
+  }
+
+  bool get _canConfirm {
+    if (_nameError != null) return false;
+    if (_isAlcoholic) {
+      final abv = double.tryParse(_abvCtrl.text);
+      if (abv == null || abv < 0) return false;
+    }
+    return true;
+  }
+
+  double? get _abvPercent =>
+      _isAlcoholic ? double.tryParse(_abvCtrl.text) : null;
+
+  int? get _priceMinor {
+    final major = double.tryParse(_priceCtrl.text);
+    return major == null ? null : (major * 100).round();
+  }
+
+  String? get _currency {
+    if (_priceMinor == null) return null;
+    return widget.preset.regularCurrency ??
+        ref.read(userPreferencesProvider).valueOrNull?.currency;
+  }
+
+  Future<void> _finish(_AdvancedAction action) async {
+    if (!_canConfirm) return;
+    String? newPresetName;
+    if (action == _AdvancedAction.saveAsCopyAndConfirm) {
+      newPresetName = await _promptCopyName();
+      if (newPresetName == null || !mounted) return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pop(
+      _AdvancedEditResult(
+        action: action,
+        name: _nameCtrl.text,
+        abvPercent: _abvPercent,
+        priceMinor: _priceMinor,
+        currency: _currency,
+        newPresetName: newPresetName,
+      ),
+    );
+  }
+
+  /// "Save as copy and confirm ... the user is asked to confirm the new
+  /// name" (user-experience.md §S2). Returns null if the user cancels.
+  Future<String?> _promptCopyName() {
+    final ctrl = TextEditingController(text: '${_nameCtrl.text} (copy)');
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New preset name'),
+        content: TextField(
+          key: const Key('advanced_editor_copy_name_field'),
+          controller: ctrl,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            key: const Key('advanced_editor_copy_cancel_button'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('advanced_editor_copy_confirm_button'),
+            onPressed: () => Navigator.of(context).pop(ctrl.text),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _SheetHandle(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Advanced',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  TextField(
+                    key: const Key('advanced_editor_name_field'),
+                    controller: _nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Name',
+                      border: const OutlineInputBorder(),
+                      errorText: _nameError,
+                    ),
+                  ),
+                  if (_isAlcoholic) ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const Key('advanced_editor_abv_field'),
+                      controller: _abvCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'ABV',
+                        suffixText: '%',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    key: const Key('advanced_editor_price_field'),
+                    controller: _priceCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Price (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                MediaQuery.of(context).padding.bottom + 16,
+              ),
+              child: Row(
+                children: [
+                  TextButton(
+                    key: const Key('advanced_editor_back_button'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Back'),
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<_AdvancedAction>(
+                    key: const Key('advanced_editor_menu_button'),
+                    enabled: _canConfirm,
+                    onSelected: _finish,
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: _AdvancedAction.saveAndConfirm,
+                        child: Text('Save and confirm'),
+                      ),
+                      PopupMenuItem(
+                        value: _AdvancedAction.saveAsCopyAndConfirm,
+                        child: Text('Save as copy and confirm'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    key: const Key('advanced_editor_confirm_button'),
+                    onPressed: _canConfirm
+                        ? () => _finish(_AdvancedAction.confirmOnly)
+                        : null,
+                    child: const Text('Confirm'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
