@@ -254,6 +254,17 @@ jobs:
 
             Do not open a PR with failing checks or unresolved spec-auditor findings.
 
+            Regardless of whether your own `gh pr create` above succeeds:
+            before you finish, ALWAYS write the PR title (one line) to
+            `$RUNNER_TEMP/pr_title.txt` and the PR body (the same markdown
+            you passed to `--body`) to `$RUNNER_TEMP/pr_body.md`. A step later
+            in this job reads these as a fallback and opens the PR itself
+            with a freshly minted credential if your own attempt didn't go
+            through — this covers the case where a long implementation run
+            outlives the ~1-hour lifetime of the token you were given. Do
+            this even on the fast path where `gh pr create` already worked;
+            the fallback step is a no-op when a PR already exists.
+
             Before you finish, leave exactly one comment on the issue
             (`gh issue comment ${{ needs.select.outputs.issue }}`) reporting the
             outcome:
@@ -323,6 +334,96 @@ jobs:
             echo "::warning::Failed to push $branch; recovery step could not save this run's work."
           fi
 
+      # The token claude-code-action mints at step start is a GitHub App
+      # installation token, valid for exactly 1 hour (GitHub's own limit,
+      # non-renewable) — regardless of when in the step it's actually used.
+      # A long implementation run can easily outlive that: issue #26/PR #65
+      # took ~1h16m to reach `gh pr create`, hit "HTTP 401: Bad credentials",
+      # and only got a PR opened by falling back mid-session to the bare
+      # workflow GITHUB_TOKEN — which authored the PR as github-actions[bot]
+      # instead of claude[bot] and tripped GitHub's native "approve workflow
+      # run" gate on the resulting CI run (see docs/agentic-workflow.md's
+      # "Require approval for all outside collaborators" note), stalling it
+      # at zero jobs until a maintainer clicked approve.
+      #
+      # Fix: don't reuse a token that's been sitting around for however long
+      # the agent's session took. If no PR exists yet for this branch, open
+      # one here with a token minted seconds ago. No-ops on the common path
+      # where the agent's own `gh pr create` already succeeded.
+      - name: Check whether a PR still needs opening
+        if: success()
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          branch=$(git branch --show-current)
+          if [ "$branch" = "main" ] || [ -z "$branch" ]; then
+            echo "No working branch checked out; nothing to open a PR for."
+            exit 0
+          fi
+
+          ahead=$(git rev-list --count origin/main.."$branch" 2>/dev/null || echo 0)
+          if [ "$ahead" -eq 0 ]; then
+            echo "Branch $branch has no commits ahead of main; nothing to do."
+            exit 0
+          fi
+
+          existing=$(gh pr list --repo "$REPO" --head "$branch" --state open \
+            --json number --jq '.[0].number // ""')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for $branch; agent's own gh pr create succeeded."
+            exit 0
+          fi
+
+          echo "No open PR for $branch yet — will open one with a freshly minted token."
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+      # Same App used by review-remediation.yml to escape the GITHUB_TOKEN
+      # loop-prevention gate (see docs/agentic-workflow.md §2a). Its PRs are
+      # trusted the same way as claude[bot]'s — see ci.yml's review/security
+      # `if:` gates and this file's "Promote claim on success" step below.
+      # ASSUMPTION (unverified as of writing — this path has never fired):
+      # the App's slug is `controlol-auth`, inferred from its bot login
+      # already listed in every `allowed_bots` input in this repo. Confirm
+      # via Settings → Integrations → GitHub Apps the first time this runs.
+      - name: Generate App token
+        if: success() && steps.check.outputs.needed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Open PR with a fresh token (fallback)
+        if: success() && steps.check.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ needs.select.outputs.issue }}
+          BRANCH: ${{ steps.check.outputs.branch }}
+        run: |
+          set -euo pipefail
+
+          title_file="$RUNNER_TEMP/pr_title.txt"
+          body_file="$RUNNER_TEMP/pr_body.md"
+          if [ -s "$title_file" ]; then
+            title=$(head -1 "$title_file")
+          else
+            title="claude/issue-$ISSUE: automated implementation"
+          fi
+          if [ ! -s "$body_file" ]; then
+            echo "_Opened by the fresh-token fallback step — the agent's own \`gh pr create\` did not complete, most likely because its token expired mid-run. Closes #$ISSUE._" \
+              > "$body_file"
+          fi
+
+          gh pr create --repo "$REPO" --head "$BRANCH" --base main \
+            --title "$title" --body-file "$body_file"
+          gh pr merge "$BRANCH" --repo "$REPO" --auto --squash || true
+
       # The Claude Code step exiting 0 only means the SDK session didn't crash —
       # it does NOT mean a PR was opened (the agent may have concluded no change
       # was needed, hit a wall, or otherwise stopped short). Check for a matching
@@ -362,14 +463,16 @@ jobs:
           # "Closes #N" reference in the body, since the agent isn't guaranteed
           # to have followed the branch-naming convention exactly.
           #
-          # SECURITY: also require the PR be authored by the dispatcher's own
-          # bot (app/claude — the same actor review-remediation.yml already
-          # trusts). Without this, the body-text match alone would let ANY
-          # open PR — including an untrusted fork PR an attacker opens with
-          # "Closes #N" in the body — get `agent-ok` auto-applied below, which
-          # is the trust gate ci.yml's review/security jobs use to decide
-          # whether to run the secret-bearing Claude Code Action against a
-          # PR's (fully attacker-controlled, for a fork) diff/description.
+          # SECURITY: also require the PR be authored by one of the two
+          # trusted dispatcher identities — app/claude (the agent's own
+          # `gh pr create`) or app/controlol-auth (the fresh-token fallback
+          # step above, same App review-remediation.yml already trusts).
+          # Without this, the body-text match alone would let ANY open PR —
+          # including an untrusted fork PR an attacker opens with "Closes #N"
+          # in the body — get `agent-ok` auto-applied below, which is the
+          # trust gate ci.yml's review/security jobs use to decide whether to
+          # run the secret-bearing Claude Code Action against a PR's (fully
+          # attacker-controlled, for a fork) diff/description.
           #
           # NOTE: `gh ... --jq` takes exactly one expression argument — it
           # does NOT support a leading `--arg name value` pair the way the
@@ -379,7 +482,7 @@ jobs:
               --json number,headRefName,body,author \
             | jq -r --arg issue "$ISSUE" \
               '.[] | select(
-                  (.author.login == "app/claude") and (
+                  ((.author.login == "app/claude") or (.author.login == "app/controlol-auth")) and (
                     (.headRefName == ("claude/issue-" + $issue)) or
                     (.headRefName | startswith("claude/issue-" + $issue + "-")) or
                     ((.body // "") | test("\\b(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\\s+#" + $issue + "\\b"; "i"))
