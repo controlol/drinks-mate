@@ -205,7 +205,8 @@ class _HistoryBody extends ConsumerWidget {
                         buckets: maxBacAsync.valueOrNull ??
                             totals
                                 .map(
-                                    (b) => BacDailyBucket(dayStart: b.dayStart))
+                                  (b) => BacDailyBucket(dayStart: b.dayStart),
+                                )
                                 .toList(),
                         dayStarts: totals.map((b) => b.dayStart).toList(),
                         sessions: sessions,
@@ -410,7 +411,15 @@ class _HydrationChart extends StatelessWidget {
               maxY: maxY <= 0 ? 1 : maxY,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
-              barTouchData: barTouchDataForDayTap(onDayTap),
+              barTouchData: barTouchDataForDayTap(
+                onDayTap,
+                touchExtraThreshold: fullColumnTouchExtraThreshold(
+                  barWidth: barWidth,
+                  bucketCount: buckets.length,
+                  chartWidth: constraints.maxWidth,
+                  leftReservedSize: 44,
+                ),
+              ),
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
               extraLinesData: ExtraLinesData(
@@ -540,7 +549,15 @@ class _DrinksPerDayChart extends StatelessWidget {
               maxY: maxY,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
-              barTouchData: barTouchDataForDayTap(onDayTap),
+              barTouchData: barTouchDataForDayTap(
+                onDayTap,
+                touchExtraThreshold: fullColumnTouchExtraThreshold(
+                  barWidth: barWidth,
+                  bucketCount: buckets.length,
+                  chartWidth: constraints.maxWidth,
+                  leftReservedSize: 32,
+                ),
+              ),
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
@@ -595,11 +612,7 @@ class _DrinksPerDayChart extends StatelessWidget {
 /// Shared bottom-axis day label — used by every History day-bar chart
 /// (hydration, drinks, alcoholic drinks, max BAC) so all four stay aligned
 /// on the same day index → date mapping.
-Widget dayLabel(
-  List<DateTime> dayStarts,
-  double value,
-  HistoryRangeMode mode,
-) {
+Widget dayLabel(List<DateTime> dayStarts, double value, HistoryRangeMode mode) {
   final index = value.round();
   if (index < 0 || index >= dayStarts.length) return const SizedBox.shrink();
   final day = dayStarts[index];
@@ -617,20 +630,23 @@ Widget dayLabel(
 /// chart uses this so a tap on any bar (including a transparent
 /// no-session/no-bar rod) navigates to that day.
 ///
+/// [touchExtraThreshold] must be [fullColumnTouchExtraThreshold] (or
+/// equivalent) rather than fl_chart's tiny `EdgeInsets.all(4)` default — see
+/// that function's doc for why a zero-height rod is otherwise only tappable
+/// within an ~8px strip at the baseline.
+///
 /// [getTooltipItem] optionally renders a tooltip on touch before the tap-up
 /// navigates away (used by the max-BAC chart for its mmol/L secondary value
 /// — features.md F4: "mmol/L shown alongside in tooltips"); charts that
 /// don't need one get a fully transparent, content-free tooltip.
 BarTouchData barTouchDataForDayTap(
   ValueChanged<int> onDayTap, {
-  BarTooltipItem? Function(
-    BarChartGroupData,
-    int,
-    BarChartRodData,
-    int,
-  )? getTooltipItem,
+  required EdgeInsets touchExtraThreshold,
+  BarTooltipItem? Function(BarChartGroupData, int, BarChartRodData, int)?
+      getTooltipItem,
 }) {
   return BarTouchData(
+    touchExtraThreshold: touchExtraThreshold,
     touchTooltipData: BarTouchTooltipData(
       getTooltipColor: (_) => Colors.transparent,
       // Suppress fl_chart's default y-value tooltip text when the caller
@@ -645,6 +661,43 @@ BarTouchData barTouchDataForDayTap(
       final index = response?.spot?.touchedBarGroupIndex;
       if (index != null) onDayTap(index);
     },
+  );
+}
+
+/// Widens a bar's tap target to its entire day column, not just its own
+/// rendered rod.
+///
+/// fl_chart 0.68.0's `BarChartPainter.handleTouch` hit-tests a bar against
+/// `[barTopY, barBotY]` of its *rendered* rod, padded only by
+/// `BarTouchData.touchExtraThreshold` (default `EdgeInsets.all(4)`). For a
+/// rod with `toY: 0` (every no-session max-BAC bar, and every zero-count day
+/// on the drinks/alcoholic-drinks charts), `barTopY == barBotY ==` the y=0
+/// baseline pixel, so only an ~8px strip at the very bottom of the chart is
+/// tappable. The `spaceAround` gaps between bars (see fl_chart's
+/// `BarChartDataExtension.calculateGroupsX`) are dead zones too, for every
+/// bar regardless of height.
+///
+/// Since [BarChartAlignment.spaceAround] spaces every group evenly across
+/// the plot width (`(index + 0.5) * plotWidth / bucketCount`, in the same
+/// pixel space fl_chart hit-tests against), a horizontal threshold of
+/// `pitch/2 - barWidth/2` extends each bar's hit box to exactly the midpoint
+/// with its neighbours — covering the full column with no overlap. A large
+/// vertical threshold makes the column tappable at any height, not just
+/// near a rendered (possibly zero-height) rod.
+EdgeInsets fullColumnTouchExtraThreshold({
+  required double barWidth,
+  required int bucketCount,
+  required double chartWidth,
+  required double leftReservedSize,
+}) {
+  final plotWidth = math.max(chartWidth - leftReservedSize, 0.0);
+  final pitch = bucketCount == 0 ? 0.0 : plotWidth / bucketCount;
+  final horizontalSlack = math.max((pitch - barWidth) / 2, 0.0);
+  return EdgeInsets.only(
+    left: horizontalSlack,
+    right: horizontalSlack,
+    // Comfortably exceeds this app's fixed 220px chart height (_ChartCard).
+    top: 1000,
   );
 }
 
@@ -743,7 +796,15 @@ class _AlcoholicDrinksPerDayChart extends StatelessWidget {
               maxY: maxY,
               minY: 0,
               alignment: BarChartAlignment.spaceAround,
-              barTouchData: barTouchDataForDayTap(onDayTap),
+              barTouchData: barTouchDataForDayTap(
+                onDayTap,
+                touchExtraThreshold: fullColumnTouchExtraThreshold(
+                  barWidth: barWidth,
+                  bucketCount: buckets.length,
+                  chartWidth: constraints.maxWidth,
+                  leftReservedSize: 32,
+                ),
+              ),
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
               rangeAnnotations: sessionOverlayAnnotations(
@@ -854,6 +915,12 @@ class _MaxBacChart extends StatelessWidget {
               alignment: BarChartAlignment.spaceAround,
               barTouchData: barTouchDataForDayTap(
                 onDayTap,
+                touchExtraThreshold: fullColumnTouchExtraThreshold(
+                  barWidth: barWidth,
+                  bucketCount: buckets.length,
+                  chartWidth: constraints.maxWidth,
+                  leftReservedSize: 40,
+                ),
                 // features.md F4: "g/L ... with ... mmol/L shown alongside
                 // in tooltips" — no-session (null) days have nothing to
                 // show, so their transparent rod gets no tooltip.
@@ -865,10 +932,7 @@ class _MaxBacChart extends StatelessWidget {
                   return BarTooltipItem(
                     '${value.toStringAsFixed(2)} g/L\n'
                     '≈ ${gPerLToMmol(value).toStringAsFixed(2)} mmol/L',
-                    TextStyle(
-                      color: colorScheme.onSurface,
-                      fontSize: 11,
-                    ),
+                    TextStyle(color: colorScheme.onSurface, fontSize: 11),
                   );
                 },
               ),
@@ -931,7 +995,13 @@ class _MaxBacChart extends StatelessWidget {
               barGroups: [
                 for (var i = 0; i < buckets.length; i++)
                   _bacBarGroup(
-                      i, buckets[i], capGPerL, barWidth, accent, colorScheme),
+                    i,
+                    buckets[i],
+                    capGPerL,
+                    barWidth,
+                    accent,
+                    colorScheme,
+                  ),
               ],
             ),
           );

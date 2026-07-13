@@ -59,10 +59,13 @@ class HistoryDayScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               _DayTotalsHeader(
-                  hydrationMl: hydrationMl, goalMl: goalMl, fmt: fmt),
+                hydrationMl: hydrationMl,
+                goalMl: goalMl,
+                fmt: fmt,
+              ),
               for (final summary in summaries) ...[
                 const SizedBox(height: 12),
-                _SessionSummaryCard(summary: summary, fmt: fmt),
+                _SessionSummaryCard(summary: summary),
               ],
               const SizedBox(height: 20),
               Text('Drinks', style: Theme.of(context).textTheme.titleMedium),
@@ -132,16 +135,12 @@ class _DayTotalsHeader extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _SessionSummaryCard extends StatelessWidget {
-  const _SessionSummaryCard({required this.summary, required this.fmt});
+  const _SessionSummaryCard({required this.summary});
 
   final SessionDaySummary summary;
-  final FormatService? fmt;
 
   @override
   Widget build(BuildContext context) {
-    final volumeText =
-        fmt?.formatLargeVolume(summary.totalAlcoholMl.toDouble()) ??
-            '${summary.totalAlcoholMl} ml';
     final peakBac = summary.peakBacGPerL;
 
     return Semantics(
@@ -169,7 +168,8 @@ class _SessionSummaryCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text('Duration: ${_formatDuration(summary.duration)}'),
-              Text('Alcohol logged: $volumeText'),
+              Text('Alcoholic drinks: ${summary.totalAlcoholicDrinks}'),
+              Text('Meals logged: ${summary.mealsLoggedCount}'),
               if (peakBac != null)
                 Text(
                   'Peak estimated BAC: ${peakBac.toStringAsFixed(2)} g/L '

@@ -98,14 +98,17 @@ Widget _buildScreen({
 }) {
   return ProviderScope(
     overrides: [
-      userPreferencesProvider
-          .overrideWith((_) => Stream.value(prefs ?? _makePrefs())),
+      userPreferencesProvider.overrideWith(
+        (_) => Stream.value(prefs ?? _makePrefs()),
+      ),
       // Deterministic, locale-independent raw-value fallback strings.
       formatServiceProvider.overrideWithValue(null),
-      historyDayEntriesProvider
-          .overrideWith((ref, key) => Stream.value(entries)),
-      historyDaySessionSummariesProvider
-          .overrideWith((ref, key) => Future.value(summaries)),
+      historyDayEntriesProvider.overrideWith(
+        (ref, key) => Stream.value(entries),
+      ),
+      historyDaySessionSummariesProvider.overrideWith(
+        (ref, key) => Future.value(summaries),
+      ),
     ],
     child: MaterialApp(
       home: HistoryDayScreen(dayStart: _dayStart, dayEnd: _dayEnd),
@@ -118,73 +121,72 @@ void main() {
   // 1. Entry list rendering
   // -------------------------------------------------------------------------
 
+  testWidgets('renders one tile per entry with name, volume, and time text', (
+    tester,
+  ) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 30),
+        name: 'Lager',
+      ),
+      _entry(
+        id: 'e2',
+        beverageType: BeverageType.water,
+        volumeMl: 250,
+        consumedAt: DateTime.utc(2026, 6, 22, 8, 0),
+        name: 'Water',
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(entries: entries));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Lager'), findsOneWidget);
+    expect(find.text('Water'), findsOneWidget);
+    // Times shown in local time — entries are UTC here and the test
+    // environment is UTC by default, so 20:30/08:00 local == UTC. Match
+    // the full subtitle text (not a bare "330 ml"/"250 ml" substring),
+    // since the hydration header above also renders a bare volume value
+    // that can coincidentally match one of these.
+    expect(find.text('330 ml · 20:30'), findsOneWidget);
+    expect(find.text('250 ml · 08:00'), findsOneWidget);
+    expect(find.byType(ListTile), findsNWidgets(2));
+  });
+
   testWidgets(
-    'renders one tile per entry with name, volume, and time text',
-    (tester) async {
-      final entries = [
-        _entry(
-          id: 'e1',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          consumedAt: DateTime.utc(2026, 6, 22, 20, 30),
-          name: 'Lager',
-        ),
-        _entry(
-          id: 'e2',
-          beverageType: BeverageType.water,
-          volumeMl: 250,
-          consumedAt: DateTime.utc(2026, 6, 22, 8, 0),
-          name: 'Water',
-        ),
-      ];
+      'entry order follows the provider (newest-first, per '
+      'watchDayEntries\' contract) rather than being re-sorted by the screen', (
+    tester,
+  ) async {
+    final entries = [
+      _entry(
+        id: 'newest',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        name: 'Newest',
+      ),
+      _entry(
+        id: 'oldest',
+        beverageType: BeverageType.water,
+        volumeMl: 250,
+        consumedAt: DateTime.utc(2026, 6, 22, 8, 0),
+        name: 'Oldest',
+      ),
+    ];
 
-      await tester.pumpWidget(_buildScreen(entries: entries));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(entries: entries));
+    await tester.pump();
+    await tester.pump();
 
-      expect(find.text('Lager'), findsOneWidget);
-      expect(find.text('Water'), findsOneWidget);
-      // Times shown in local time — entries are UTC here and the test
-      // environment is UTC by default, so 20:30/08:00 local == UTC. Match
-      // the full subtitle text (not a bare "330 ml"/"250 ml" substring),
-      // since the hydration header above also renders a bare volume value
-      // that can coincidentally match one of these.
-      expect(find.text('330 ml · 20:30'), findsOneWidget);
-      expect(find.text('250 ml · 08:00'), findsOneWidget);
-      expect(find.byType(ListTile), findsNWidgets(2));
-    },
-  );
-
-  testWidgets(
-    'entry order follows the provider (newest-first, per '
-    'watchDayEntries\' contract) rather than being re-sorted by the screen',
-    (tester) async {
-      final entries = [
-        _entry(
-          id: 'newest',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
-          name: 'Newest',
-        ),
-        _entry(
-          id: 'oldest',
-          beverageType: BeverageType.water,
-          volumeMl: 250,
-          consumedAt: DateTime.utc(2026, 6, 22, 8, 0),
-          name: 'Oldest',
-        ),
-      ];
-
-      await tester.pumpWidget(_buildScreen(entries: entries));
-      await tester.pump();
-      await tester.pump();
-
-      final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
-      expect((tiles[0].title as Text).data, 'Newest');
-      expect((tiles[1].title as Text).data, 'Oldest');
-    },
-  );
+    final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
+    expect((tiles[0].title as Text).data, 'Newest');
+    expect((tiles[1].title as Text).data, 'Oldest');
+  });
 
   // -------------------------------------------------------------------------
   // 2. Empty state
@@ -202,38 +204,39 @@ void main() {
     },
   );
 
-  testWidgets(
-    'does NOT show the empty state when at least one entry exists',
-    (tester) async {
-      final entries = [
-        _entry(
-          id: 'e1',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
-          name: 'Water',
-        ),
-      ];
+  testWidgets('does NOT show the empty state when at least one entry exists', (
+    tester,
+  ) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Water',
+      ),
+    ];
 
-      await tester.pumpWidget(_buildScreen(entries: entries));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(entries: entries));
+    await tester.pump();
+    await tester.pump();
 
-      expect(find.text('No drinks logged this day'), findsNothing);
-    },
-  );
+    expect(find.text('No drinks logged this day'), findsNothing);
+  });
 
   // -------------------------------------------------------------------------
   // 3. Session summary card
   // -------------------------------------------------------------------------
 
   testWidgets(
-    'session summary card shows duration, alcohol volume, and peak BAC',
+    'session summary card shows duration, alcoholic drinks, meals logged, '
+    'and peak BAC',
     (tester) async {
       final summary = SessionDaySummary(
         session: _session(),
         duration: const Duration(hours: 3, minutes: 15),
-        totalAlcoholMl: 660,
+        totalAlcoholicDrinks: 3,
+        mealsLoggedCount: 1,
         peakBacGPerL: 0.234,
       );
 
@@ -243,7 +246,8 @@ void main() {
 
       expect(find.text('Party session'), findsOneWidget);
       expect(find.text('Duration: 3h 15m'), findsOneWidget);
-      expect(find.text('Alcohol logged: 660 ml'), findsOneWidget);
+      expect(find.text('Alcoholic drinks: 3'), findsOneWidget);
+      expect(find.text('Meals logged: 1'), findsOneWidget);
       expect(
         find.text('Peak estimated BAC: 0.23 g/L (≈ 5.08 mmol/L) — estimate'),
         findsOneWidget,
@@ -252,24 +256,24 @@ void main() {
   );
 
   testWidgets(
-    'peak BAC line is omitted when peakBacGPerL is null (incomplete '
-    'profile), but duration/volume still show',
-    (tester) async {
-      final summary = SessionDaySummary(
-        session: _session(),
-        duration: const Duration(hours: 1),
-        totalAlcoholMl: 330,
-      );
+      'peak BAC line is omitted when peakBacGPerL is null (incomplete '
+      'profile), but duration/drinks/meals still show', (tester) async {
+    final summary = SessionDaySummary(
+      session: _session(),
+      duration: const Duration(hours: 1),
+      totalAlcoholicDrinks: 2,
+      mealsLoggedCount: 0,
+    );
 
-      await tester.pumpWidget(_buildScreen(summaries: [summary]));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(summaries: [summary]));
+    await tester.pump();
+    await tester.pump();
 
-      expect(find.text('Duration: 1h 0m'), findsOneWidget);
-      expect(find.text('Alcohol logged: 330 ml'), findsOneWidget);
-      expect(find.textContaining('Peak estimated BAC'), findsNothing);
-    },
-  );
+    expect(find.text('Duration: 1h 0m'), findsOneWidget);
+    expect(find.text('Alcoholic drinks: 2'), findsOneWidget);
+    expect(find.text('Meals logged: 0'), findsOneWidget);
+    expect(find.textContaining('Peak estimated BAC'), findsNothing);
+  });
 
   testWidgets(
     'renders one summary card per session (multiple sessions overlapping '
@@ -279,13 +283,15 @@ void main() {
         SessionDaySummary(
           session: _session(id: 's1'),
           duration: const Duration(hours: 1),
-          totalAlcoholMl: 330,
+          totalAlcoholicDrinks: 2,
+          mealsLoggedCount: 0,
           peakBacGPerL: 0.1,
         ),
         SessionDaySummary(
           session: _session(id: 's2'),
           duration: const Duration(hours: 2),
-          totalAlcoholMl: 500,
+          totalAlcoholicDrinks: 4,
+          mealsLoggedCount: 1,
           peakBacGPerL: 0.2,
         ),
       ];
@@ -300,8 +306,9 @@ void main() {
     },
   );
 
-  testWidgets('no session summary card when there are no sessions that day',
-      (tester) async {
+  testWidgets('no session summary card when there are no sessions that day', (
+    tester,
+  ) async {
     await tester.pumpWidget(_buildScreen());
     await tester.pump();
     await tester.pump();

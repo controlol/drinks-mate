@@ -52,7 +52,12 @@ List<BacDailyBucket> computeMaxBacPerDay({
     while (day.isBefore(rangeEnd)) {
       buckets.add(BacDailyBucket(dayStart: day));
       day = DateTime(
-          day.year, day.month, day.day + 1, boundaryHour, boundaryMinute);
+        day.year,
+        day.month,
+        day.day + 1,
+        boundaryHour,
+        boundaryMinute,
+      );
     }
     return buckets;
   }
@@ -126,7 +131,9 @@ SessionDaySummary buildSessionDaySummary({
             !e.consumedAt.isBefore(dayStart) && e.consumedAt.isBefore(dayEnd),
       )
       .toList();
-  final totalAlcoholMl = dayEntries.fold(0, (sum, e) => sum + e.volumeMl);
+  final dayMeals = sessionMeals
+      .where((m) => !m.eatenAt.isBefore(dayStart) && m.eatenAt.isBefore(dayEnd))
+      .toList();
 
   final peakBac = _maxBacForWindow(
     windowStart: dayStart,
@@ -142,7 +149,8 @@ SessionDaySummary buildSessionDaySummary({
   return SessionDaySummary(
     session: session,
     duration: duration,
-    totalAlcoholMl: totalAlcoholMl,
+    totalAlcoholicDrinks: dayEntries.length,
+    mealsLoggedCount: dayMeals.length,
     peakBacGPerL: peakBac,
   );
 }
@@ -195,8 +203,12 @@ double? _maxBacForWindow({
       // Ensure the overlap's end instant (e.g. session end, or the window
       // boundary) is always sampled even when the interval doesn't divide
       // the overlap evenly.
-      final gPerL =
-          _sampleAt(overlapEnd, profile, sessionEntries, sessionMeals);
+      final gPerL = _sampleAt(
+        overlapEnd,
+        profile,
+        sessionEntries,
+        sessionMeals,
+      );
       if (gPerL > windowMax!) windowMax = gPerL;
     }
   }

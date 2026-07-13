@@ -19,8 +19,9 @@
 //      `_maxBacForWindow`: "that still counts as 'a session was here'").
 //   6. `profile == null` / `profile.birthDate == null` -> graceful nulls,
 //      never a throw.
-//   7. `buildSessionDaySummary`'s `duration`/`totalAlcoholMl` are clipped to
-//      `[dayStart, dayEnd)`, not the session's full lifetime.
+//   7. `buildSessionDaySummary`'s `duration`/`totalAlcoholicDrinks`/
+//      `mealsLoggedCount` are clipped to `[dayStart, dayEnd)`, not the
+//      session's full lifetime.
 //
 // The final group is a regression test for a fixed bug where sampling an
 // early grid point counted not-yet-consumed drinks at their full undecayed
@@ -88,6 +89,22 @@ DrinkEntry _entry({
     abvPercent: abvPercent,
     partySessionId: partySessionId,
     consumedAt: consumedAt,
+    createdAt: _epoch,
+    updatedAt: _epoch,
+  );
+}
+
+Meal _meal({
+  required String id,
+  required DateTime eatenAt,
+  required String partySessionId,
+  MealSize size = MealSize.medium,
+}) {
+  return Meal(
+    id: id,
+    partySessionId: partySessionId,
+    size: size,
+    eatenAt: eatenAt,
     createdAt: _epoch,
     updatedAt: _epoch,
   );
@@ -177,55 +194,53 @@ void main() {
 
   group('computeMaxBacPerDay — null vs 0.0 vs real value per day', () {
     test(
-      'day with the drink shows the peak; a later day the session still '
-      "touches but has fully decayed shows 0.0; a day after the session "
-      'ended shows null',
-      () {
-        final rangeStart = DateTime.utc(2026, 7, 1, 5, 0);
-        final rangeEnd = DateTime.utc(2026, 7, 4, 5, 0); // 3 day-windows
+        'day with the drink shows the peak; a later day the session still '
+        "touches but has fully decayed shows 0.0; a day after the session "
+        'ended shows null', () {
+      final rangeStart = DateTime.utc(2026, 7, 1, 5, 0);
+      final rangeEnd = DateTime.utc(2026, 7, 4, 5, 0); // 3 day-windows
 
-        // Session starts exactly when the two beers are drunk (so day 1's
-        // first grid sample, at overlapStart == session.startedAt ==
-        // consumedAt, captures the undecayed combined peak exactly) and ends
-        // mid-morning on day 2 (so day 2 is touched, day 3 is not).
-        final session = _session(
-          id: 's1',
-          startedAt: consumedAt,
-          endedAt: DateTime.utc(2026, 7, 2, 10, 0),
-        );
-        final entries = [
-          _entry(id: 'e1', consumedAt: consumedAt, partySessionId: 's1'),
-          _entry(id: 'e2', consumedAt: consumedAt, partySessionId: 's1'),
-        ];
+      // Session starts exactly when the two beers are drunk (so day 1's
+      // first grid sample, at overlapStart == session.startedAt ==
+      // consumedAt, captures the undecayed combined peak exactly) and ends
+      // mid-morning on day 2 (so day 2 is touched, day 3 is not).
+      final session = _session(
+        id: 's1',
+        startedAt: consumedAt,
+        endedAt: DateTime.utc(2026, 7, 2, 10, 0),
+      );
+      final entries = [
+        _entry(id: 'e1', consumedAt: consumedAt, partySessionId: 's1'),
+        _entry(id: 'e2', consumedAt: consumedAt, partySessionId: 's1'),
+      ];
 
-        final buckets = computeMaxBacPerDay(
-          rangeStart: rangeStart,
-          rangeEnd: rangeEnd,
-          boundaryHour: 5,
-          sessions: [session],
-          alcoholicEntries: entries,
-          meals: const [],
-          profile: _profile(),
-          now: DateTime.utc(2026, 7, 4, 5, 0),
-        );
+      final buckets = computeMaxBacPerDay(
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        boundaryHour: 5,
+        sessions: [session],
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: _profile(),
+        now: DateTime.utc(2026, 7, 4, 5, 0),
+      );
 
-        expect(buckets, hasLength(3));
+      expect(buckets, hasLength(3));
 
-        // Day 1 [Jul 1 05:00, Jul 2 05:00): overlapStart == consumedAt.
-        expect(buckets[0].dayStart, DateTime.utc(2026, 7, 1, 5, 0));
-        expect(buckets[0].maxGPerL, closeTo(twoBeerInitial, 0.001));
+      // Day 1 [Jul 1 05:00, Jul 2 05:00): overlapStart == consumedAt.
+      expect(buckets[0].dayStart, DateTime.utc(2026, 7, 1, 5, 0));
+      expect(buckets[0].maxGPerL, closeTo(twoBeerInitial, 0.001));
 
-        // Day 2 [Jul 2 05:00, Jul 3 05:00): the session still touches (ends
-        // 10:00 that day), but day 2's own window starts ~17h after
-        // consumedAt — long past elimination (~0.360/0.15 =~ 2.4h) — a real,
-        // sampled zero, not "no session" (features.md F4).
-        expect(buckets[1].maxGPerL, 0.0);
+      // Day 2 [Jul 2 05:00, Jul 3 05:00): the session still touches (ends
+      // 10:00 that day), but day 2's own window starts ~17h after
+      // consumedAt — long past elimination (~0.360/0.15 =~ 2.4h) — a real,
+      // sampled zero, not "no session" (features.md F4).
+      expect(buckets[1].maxGPerL, 0.0);
 
-        // Day 3 [Jul 3 05:00, Jul 4 05:00): the session ended the day
-        // before — no overlap at all — must be null, not 0.0.
-        expect(buckets[2].maxGPerL, isNull);
-      },
-    );
+      // Day 3 [Jul 3 05:00, Jul 4 05:00): the session ended the day
+      // before — no overlap at all — must be null, not 0.0.
+      expect(buckets[2].maxGPerL, isNull);
+    });
 
     test(
       "a session whose endedAt is EXACTLY a day's start does NOT count as "
@@ -424,104 +439,100 @@ void main() {
 
   group('computeMaxBacPerDay — now clamp', () {
     test(
-      'an active (endedAt == null) session never makes a day fully after '
-      '`now` non-null — the day has not "happened yet"',
-      () {
-        final day1Start = DateTime.utc(2026, 7, 20, 5, 0);
-        final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
-        final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
-        final rangeEnd = DateTime.utc(2026, 7, 23, 5, 0);
+        'an active (endedAt == null) session never makes a day fully after '
+        '`now` non-null — the day has not "happened yet"', () {
+      final day1Start = DateTime.utc(2026, 7, 20, 5, 0);
+      final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
+      final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
+      final rangeEnd = DateTime.utc(2026, 7, 23, 5, 0);
 
-        final earlyDrink = DateTime.utc(2026, 7, 20, 6, 0);
-        final session = _session(id: 's1', startedAt: day1Start);
-        final entries = [
-          _entry(id: 'e1', consumedAt: earlyDrink, partySessionId: 's1'),
-        ];
-        // "now" is partway through day 2 — the session is still active.
-        final now = DateTime.utc(2026, 7, 21, 12, 0);
+      final earlyDrink = DateTime.utc(2026, 7, 20, 6, 0);
+      final session = _session(id: 's1', startedAt: day1Start);
+      final entries = [
+        _entry(id: 'e1', consumedAt: earlyDrink, partySessionId: 's1'),
+      ];
+      // "now" is partway through day 2 — the session is still active.
+      final now = DateTime.utc(2026, 7, 21, 12, 0);
 
-        final buckets = computeMaxBacPerDay(
-          rangeStart: day1Start,
-          rangeEnd: rangeEnd,
-          boundaryHour: 5,
-          sessions: [session],
-          alcoholicEntries: entries,
-          meals: const [],
-          profile: _profile(),
-          now: now,
-        );
+      final buckets = computeMaxBacPerDay(
+        rangeStart: day1Start,
+        rangeEnd: rangeEnd,
+        boundaryHour: 5,
+        sessions: [session],
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: _profile(),
+        now: now,
+      );
 
-        expect(buckets, hasLength(3));
-        // computeMaxBacPerDay reconstructs each subsequent day's dayStart via
-        // a local-time `DateTime(...)` constructor regardless of whether
-        // `rangeStart` was UTC or local (matching real callers, whose
-        // `rangeStart` comes from `DateTime.now()`-based local day-window
-        // helpers) — compare by instant (`isAtSameMomentAs`), not `==`,
-        // since `==` also requires matching `isUtc` flags.
-        expect(buckets[0].dayStart.isAtSameMomentAs(day1Start), isTrue);
-        expect(buckets[1].dayStart.isAtSameMomentAs(day2Start), isTrue);
-        expect(buckets[2].dayStart.isAtSameMomentAs(day3Start), isTrue);
-        // Day 1 touches (fully decayed by day1's own end, but the peak
-        // early in the day is still found).
-        expect(buckets[0].maxGPerL, isNotNull);
-        // Day 2 (contains `now`) touches — sampling is clamped at `now`,
-        // not day2's end. The single old drink has long since decayed to 0
-        // by day2's start (~30h after `earlyDrink`), and since the model's
-        // per-sample contribution never increases with time once elapsed
-        // (it only decays or stays flat), the day-2 max equals the value at
-        // day2's own start — still a real, sampled 0.0.
-        expect(buckets[1].maxGPerL, 0.0);
-        // Day 3 is entirely *after* `now` — the active session's future is
-        // unknowable, so this day must read null (no session "yet"), not a
-        // bar extrapolated from an ongoing session with no defined end.
-        expect(
-          buckets[2].maxGPerL,
-          isNull,
-          reason: 'sampling must never run past `now` into an active '
-              "session's unknowable future (history_bac_service.dart "
-              'touchesWindow uses sessionEnd = endedAt ?? now)',
-        );
-      },
-    );
+      expect(buckets, hasLength(3));
+      // computeMaxBacPerDay reconstructs each subsequent day's dayStart via
+      // a local-time `DateTime(...)` constructor regardless of whether
+      // `rangeStart` was UTC or local (matching real callers, whose
+      // `rangeStart` comes from `DateTime.now()`-based local day-window
+      // helpers) — compare by instant (`isAtSameMomentAs`), not `==`,
+      // since `==` also requires matching `isUtc` flags.
+      expect(buckets[0].dayStart.isAtSameMomentAs(day1Start), isTrue);
+      expect(buckets[1].dayStart.isAtSameMomentAs(day2Start), isTrue);
+      expect(buckets[2].dayStart.isAtSameMomentAs(day3Start), isTrue);
+      // Day 1 touches (fully decayed by day1's own end, but the peak
+      // early in the day is still found).
+      expect(buckets[0].maxGPerL, isNotNull);
+      // Day 2 (contains `now`) touches — sampling is clamped at `now`,
+      // not day2's end. The single old drink has long since decayed to 0
+      // by day2's start (~30h after `earlyDrink`), and since the model's
+      // per-sample contribution never increases with time once elapsed
+      // (it only decays or stays flat), the day-2 max equals the value at
+      // day2's own start — still a real, sampled 0.0.
+      expect(buckets[1].maxGPerL, 0.0);
+      // Day 3 is entirely *after* `now` — the active session's future is
+      // unknowable, so this day must read null (no session "yet"), not a
+      // bar extrapolated from an ongoing session with no defined end.
+      expect(
+        buckets[2].maxGPerL,
+        isNull,
+        reason: 'sampling must never run past `now` into an active '
+            "session's unknowable future (history_bac_service.dart "
+            'touchesWindow uses sessionEnd = endedAt ?? now)',
+      );
+    });
 
     test(
-      'a session that touches a window per its own start/end bounds, but '
-      'whose actual overlap the `now` clamp collapses to nothing, still '
-      'floors the bucket at 0.0 rather than leaving it null',
-      () {
-        // Source: history_bac_service.dart _maxBacForWindow — "A session
-        // touches this window (per the check above) even if `now` clamps
-        // the sampled slice to zero width — that still counts as 'a session
-        // was here', so the running max is floored at 0.0 rather than left
-        // null."
-        final dayStart = DateTime.utc(2026, 7, 5, 5, 0);
-        final dayEnd = DateTime.utc(2026, 7, 6, 5, 0);
-        final now = DateTime.utc(2026, 7, 5, 10, 0);
-        // The session "starts" after `now` (a degenerate, clock-skew-style
-        // input — never produced by normal session-start flow, but not
-        // rejected by the type system either) so its window still overlaps
-        // `[dayStart, dayEnd)` per the coarse start/end check, yet the
-        // `now`-clamped actual overlap is empty.
-        final session = _session(
-          id: 's1',
-          startedAt: DateTime.utc(2026, 7, 5, 12, 0),
-        );
+        'a session that touches a window per its own start/end bounds, but '
+        'whose actual overlap the `now` clamp collapses to nothing, still '
+        'floors the bucket at 0.0 rather than leaving it null', () {
+      // Source: history_bac_service.dart _maxBacForWindow — "A session
+      // touches this window (per the check above) even if `now` clamps
+      // the sampled slice to zero width — that still counts as 'a session
+      // was here', so the running max is floored at 0.0 rather than left
+      // null."
+      final dayStart = DateTime.utc(2026, 7, 5, 5, 0);
+      final dayEnd = DateTime.utc(2026, 7, 6, 5, 0);
+      final now = DateTime.utc(2026, 7, 5, 10, 0);
+      // The session "starts" after `now` (a degenerate, clock-skew-style
+      // input — never produced by normal session-start flow, but not
+      // rejected by the type system either) so its window still overlaps
+      // `[dayStart, dayEnd)` per the coarse start/end check, yet the
+      // `now`-clamped actual overlap is empty.
+      final session = _session(
+        id: 's1',
+        startedAt: DateTime.utc(2026, 7, 5, 12, 0),
+      );
 
-        final buckets = computeMaxBacPerDay(
-          rangeStart: dayStart,
-          rangeEnd: dayEnd,
-          boundaryHour: 5,
-          sessions: [session],
-          alcoholicEntries: const [],
-          meals: const [],
-          profile: _profile(),
-          now: now,
-        );
+      final buckets = computeMaxBacPerDay(
+        rangeStart: dayStart,
+        rangeEnd: dayEnd,
+        boundaryHour: 5,
+        sessions: [session],
+        alcoholicEntries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: now,
+      );
 
-        expect(buckets, hasLength(1));
-        expect(buckets[0].maxGPerL, 0.0);
-      },
-    );
+      expect(buckets, hasLength(1));
+      expect(buckets[0].maxGPerL, 0.0);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -530,49 +541,47 @@ void main() {
 
   group('computeMaxBacPerDay — 15-minute grid sampling', () {
     test(
-      'a non-15-minute-aligned overlap samples the same grid the '
-      'implementation uses, always including the overlap end point',
-      () {
-        final dayStart = DateTime.utc(2026, 7, 12, 5, 0);
-        final dayEnd = DateTime.utc(2026, 7, 13, 5, 0);
-        // Deliberately not aligned to :00/:15/:30/:45 and not a multiple of
-        // 15 minutes apart, per the grid's "starts at the overlap start, not
-        // calendar-aligned" contract.
-        final sessionStart = DateTime.utc(2026, 7, 12, 6, 7);
-        final sessionEnd = DateTime.utc(2026, 7, 12, 9, 52);
-        final session = _session(
-          id: 's1',
-          startedAt: sessionStart,
-          endedAt: sessionEnd,
-        );
-        final entries = [
-          _entry(id: 'e1', consumedAt: sessionStart, partySessionId: 's1'),
-        ];
-        final profile = _profile();
+        'a non-15-minute-aligned overlap samples the same grid the '
+        'implementation uses, always including the overlap end point', () {
+      final dayStart = DateTime.utc(2026, 7, 12, 5, 0);
+      final dayEnd = DateTime.utc(2026, 7, 13, 5, 0);
+      // Deliberately not aligned to :00/:15/:30/:45 and not a multiple of
+      // 15 minutes apart, per the grid's "starts at the overlap start, not
+      // calendar-aligned" contract.
+      final sessionStart = DateTime.utc(2026, 7, 12, 6, 7);
+      final sessionEnd = DateTime.utc(2026, 7, 12, 9, 52);
+      final session = _session(
+        id: 's1',
+        startedAt: sessionStart,
+        endedAt: sessionEnd,
+      );
+      final entries = [
+        _entry(id: 'e1', consumedAt: sessionStart, partySessionId: 's1'),
+      ];
+      final profile = _profile();
 
-        final expected = _simulateGridMax(
-          overlapStart: sessionStart,
-          overlapEnd: sessionEnd,
-          entries: entries,
-          meals: const [],
-          profile: profile,
-        );
+      final expected = _simulateGridMax(
+        overlapStart: sessionStart,
+        overlapEnd: sessionEnd,
+        entries: entries,
+        meals: const [],
+        profile: profile,
+      );
 
-        final buckets = computeMaxBacPerDay(
-          rangeStart: dayStart,
-          rangeEnd: dayEnd,
-          boundaryHour: 5,
-          sessions: [session],
-          alcoholicEntries: entries,
-          meals: const [],
-          profile: profile,
-          now: dayEnd,
-        );
+      final buckets = computeMaxBacPerDay(
+        rangeStart: dayStart,
+        rangeEnd: dayEnd,
+        boundaryHour: 5,
+        sessions: [session],
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: profile,
+        now: dayEnd,
+      );
 
-        expect(buckets, hasLength(1));
-        expect(buckets[0].maxGPerL, closeTo(expected, 1e-9));
-      },
-    );
+      expect(buckets, hasLength(1));
+      expect(buckets[0].maxGPerL, closeTo(expected, 1e-9));
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -585,92 +594,104 @@ void main() {
     final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
 
     test(
-      'a session spanning midnight gets a shorter, correctly-clipped '
-      'duration on each day it touches',
-      () {
-        final session = _session(
-          id: 's1',
-          startedAt: DateTime.utc(2026, 7, 20, 22, 0),
-          endedAt: DateTime.utc(2026, 7, 21, 8, 0),
-        );
+        'a session spanning midnight gets a shorter, correctly-clipped '
+        'duration on each day it touches', () {
+      final session = _session(
+        id: 's1',
+        startedAt: DateTime.utc(2026, 7, 20, 22, 0),
+        endedAt: DateTime.utc(2026, 7, 21, 8, 0),
+      );
 
-        final day1Summary = buildSessionDaySummary(
-          session: session,
-          dayStart: day1Start,
-          dayEnd: day2Start,
-          entries: const [],
-          meals: const [],
-          profile: _profile(),
-          now: day2Start,
-        );
-        final day2Summary = buildSessionDaySummary(
-          session: session,
-          dayStart: day2Start,
-          dayEnd: day3Start,
-          entries: const [],
-          meals: const [],
-          profile: _profile(),
-          now: day3Start,
-        );
+      final day1Summary = buildSessionDaySummary(
+        session: session,
+        dayStart: day1Start,
+        dayEnd: day2Start,
+        entries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: day2Start,
+      );
+      final day2Summary = buildSessionDaySummary(
+        session: session,
+        dayStart: day2Start,
+        dayEnd: day3Start,
+        entries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: day3Start,
+      );
 
-        // Day 1: 22:00 -> day1's own end (05:00) = 7h.
-        expect(day1Summary.duration, const Duration(hours: 7));
-        // Day 2: day2's start (05:00) -> session end (08:00) = 3h.
-        expect(day2Summary.duration, const Duration(hours: 3));
-      },
-    );
+      // Day 1: 22:00 -> day1's own end (05:00) = 7h.
+      expect(day1Summary.duration, const Duration(hours: 7));
+      // Day 2: day2's start (05:00) -> session end (08:00) = 3h.
+      expect(day2Summary.duration, const Duration(hours: 3));
+    });
 
     test(
-      "totalAlcoholMl sums only that day's entries for the session, "
-      "excluding entries on other days and (per the session's own "
-      "unclipped entries list) counting entries even after the session's "
-      'own endedAt if their consumedAt still falls in the day window',
-      () {
-        final session = _session(
-          id: 's1',
-          startedAt: day2Start,
-          endedAt: DateTime.utc(2026, 7, 21, 7, 0),
-        );
-        final entries = [
-          // Within the session's active window AND day 2.
-          _entry(
-            id: 'e1',
-            consumedAt: DateTime.utc(2026, 7, 21, 6, 0),
-            volumeMl: 250,
-            partySessionId: 's1',
-          ),
-          // After the session's own endedAt (07:00), but still same
-          // partySessionId and still within day 2's window — the
-          // implementation filters by day window only, not by the
-          // session's own start/end, for this sum.
-          _entry(
-            id: 'e2',
-            consumedAt: DateTime.utc(2026, 7, 21, 9, 0),
-            volumeMl: 330,
-            partySessionId: 's1',
-          ),
-          // The previous day — excluded from day 2's total.
-          _entry(
-            id: 'e3',
-            consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
-            volumeMl: 500,
-            partySessionId: 's1',
-          ),
-        ];
+        "totalAlcoholicDrinks counts only that day's entries for the "
+        "session, excluding entries on other days and (per the session's "
+        "own unclipped entries list) counting entries even after the "
+        "session's own endedAt if their consumedAt still falls in the day "
+        'window', () {
+      final session = _session(
+        id: 's1',
+        startedAt: day2Start,
+        endedAt: DateTime.utc(2026, 7, 21, 7, 0),
+      );
+      final entries = [
+        // Within the session's active window AND day 2.
+        _entry(
+          id: 'e1',
+          consumedAt: DateTime.utc(2026, 7, 21, 6, 0),
+          volumeMl: 250,
+          partySessionId: 's1',
+        ),
+        // After the session's own endedAt (07:00), but still same
+        // partySessionId and still within day 2's window — the
+        // implementation filters by day window only, not by the
+        // session's own start/end, for this count.
+        _entry(
+          id: 'e2',
+          consumedAt: DateTime.utc(2026, 7, 21, 9, 0),
+          volumeMl: 330,
+          partySessionId: 's1',
+        ),
+        // The previous day — excluded from day 2's total.
+        _entry(
+          id: 'e3',
+          consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
+          volumeMl: 500,
+          partySessionId: 's1',
+        ),
+      ];
+      final meals = [
+        // Within day 2 — counted.
+        _meal(
+          id: 'm1',
+          eatenAt: DateTime.utc(2026, 7, 21, 6, 30),
+          partySessionId: 's1',
+        ),
+        // The previous day — excluded from day 2's count.
+        _meal(
+          id: 'm2',
+          eatenAt: DateTime.utc(2026, 7, 20, 23, 0),
+          partySessionId: 's1',
+        ),
+      ];
 
-        final summary = buildSessionDaySummary(
-          session: session,
-          dayStart: day2Start,
-          dayEnd: day3Start,
-          entries: entries,
-          meals: const [],
-          profile: _profile(),
-          now: day3Start,
-        );
+      final summary = buildSessionDaySummary(
+        session: session,
+        dayStart: day2Start,
+        dayEnd: day3Start,
+        entries: entries,
+        meals: meals,
+        profile: _profile(),
+        now: day3Start,
+      );
 
-        expect(summary.totalAlcoholMl, 250 + 330);
-      },
-    );
+      expect(summary.totalAlcoholicDrinks, 2);
+      expect(summary.mealsLoggedCount, 1);
+    });
 
     test('peakBacGPerL reflects only that day\'s sampled window', () {
       // Single dose, consumed exactly at the session/day start so the
@@ -699,59 +720,55 @@ void main() {
     });
 
     test(
-      'profile == null -> peakBacGPerL is null but duration/totalAlcoholMl '
-      'are still computed correctly (no throw)',
-      () {
-        final session = _session(
-          id: 's1',
-          startedAt: day2Start,
-          endedAt: day2Start.add(const Duration(hours: 2)),
-        );
-        final entries = [
-          _entry(
-            id: 'e1',
-            consumedAt: day2Start,
-            volumeMl: 250,
-            partySessionId: 's1',
-          ),
-        ];
+        'profile == null -> peakBacGPerL is null but '
+        'duration/totalAlcoholicDrinks are still computed correctly (no '
+        'throw)', () {
+      final session = _session(
+        id: 's1',
+        startedAt: day2Start,
+        endedAt: day2Start.add(const Duration(hours: 2)),
+      );
+      final entries = [
+        _entry(
+          id: 'e1',
+          consumedAt: day2Start,
+          volumeMl: 250,
+          partySessionId: 's1',
+        ),
+      ];
 
-        final summary = buildSessionDaySummary(
-          session: session,
-          dayStart: day2Start,
-          dayEnd: day3Start,
-          entries: entries,
-          meals: const [],
-          profile: null,
-          now: day2Start.add(const Duration(hours: 2)),
-        );
+      final summary = buildSessionDaySummary(
+        session: session,
+        dayStart: day2Start,
+        dayEnd: day3Start,
+        entries: entries,
+        meals: const [],
+        profile: null,
+        now: day2Start.add(const Duration(hours: 2)),
+      );
 
-        expect(summary.peakBacGPerL, isNull);
-        expect(summary.duration, const Duration(hours: 2));
-        expect(summary.totalAlcoholMl, 250);
-      },
-    );
+      expect(summary.peakBacGPerL, isNull);
+      expect(summary.duration, const Duration(hours: 2));
+      expect(summary.totalAlcoholicDrinks, 1);
+    });
 
-    test(
-      'profile.birthDate == null -> peakBacGPerL is null, no throw',
-      () {
-        final session = _session(
-          id: 's1',
-          startedAt: day2Start,
-          endedAt: day2Start.add(const Duration(hours: 2)),
-        );
-        final summary = buildSessionDaySummary(
-          session: session,
-          dayStart: day2Start,
-          dayEnd: day3Start,
-          entries: const [],
-          meals: const [],
-          profile: _profile(birthDate: null),
-          now: day2Start.add(const Duration(hours: 2)),
-        );
-        expect(summary.peakBacGPerL, isNull);
-      },
-    );
+    test('profile.birthDate == null -> peakBacGPerL is null, no throw', () {
+      final session = _session(
+        id: 's1',
+        startedAt: day2Start,
+        endedAt: day2Start.add(const Duration(hours: 2)),
+      );
+      final summary = buildSessionDaySummary(
+        session: session,
+        dayStart: day2Start,
+        dayEnd: day3Start,
+        entries: const [],
+        meals: const [],
+        profile: _profile(birthDate: null),
+        now: day2Start.add(const Duration(hours: 2)),
+      );
+      expect(summary.peakBacGPerL, isNull);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -760,50 +777,48 @@ void main() {
 
   group('computeMaxBacPerDay — multi-drink over-reporting regression', () {
     test(
-      'two drinks 3 hours apart (first fully eliminated before the second) '
-      'reports a peak near the higher single-dose value (~0.180 g/L), not '
-      'the sum of both undecayed doses (~0.359 g/L)',
-      () {
-        // Regression test for a fixed bug: `_maxBacForWindow` used to sample
-        // `t = overlapStart` (before the session's later drinks were even
-        // logged) while passing the session's *entire* entry list to
-        // `estimateSessionBac`. Since `estimateSessionBac` clamps
-        // `hoursSince` to >= 0 (bac_estimator.dart, "Clamp to >=0" comment),
-        // a not-yet-consumed drink counted at its full undecayed
-        // `bacInitial` instead of 0, so this scenario used to report
-        // ~0.359 g/L (both drinks "already peaked" simultaneously) instead
-        // of the true peak of ~0.180 g/L (the first drink alone, fully
-        // eliminated ~1h12m before the second is even drunk at +3h). Fixed
-        // by filtering each sample to `consumedAt <= t` (`_sampleAt`).
-        final rangeStart = DateTime.utc(2026, 7, 1, 5, 0);
-        final rangeEnd = DateTime.utc(2026, 7, 2, 5, 0);
-        final sessionStart = DateTime.utc(2026, 7, 1, 20, 0);
-        final drink1At = DateTime.utc(2026, 7, 1, 20, 5);
-        final drink2At = DateTime.utc(2026, 7, 1, 23, 0); // +3h
-        final session = _session(
-          id: 's1',
-          startedAt: sessionStart,
-          endedAt: DateTime.utc(2026, 7, 2, 1, 0),
-        );
-        final entries = [
-          _entry(id: 'e1', consumedAt: drink1At, partySessionId: 's1'),
-          _entry(id: 'e2', consumedAt: drink2At, partySessionId: 's1'),
-        ];
+        'two drinks 3 hours apart (first fully eliminated before the second) '
+        'reports a peak near the higher single-dose value (~0.180 g/L), not '
+        'the sum of both undecayed doses (~0.359 g/L)', () {
+      // Regression test for a fixed bug: `_maxBacForWindow` used to sample
+      // `t = overlapStart` (before the session's later drinks were even
+      // logged) while passing the session's *entire* entry list to
+      // `estimateSessionBac`. Since `estimateSessionBac` clamps
+      // `hoursSince` to >= 0 (bac_estimator.dart, "Clamp to >=0" comment),
+      // a not-yet-consumed drink counted at its full undecayed
+      // `bacInitial` instead of 0, so this scenario used to report
+      // ~0.359 g/L (both drinks "already peaked" simultaneously) instead
+      // of the true peak of ~0.180 g/L (the first drink alone, fully
+      // eliminated ~1h12m before the second is even drunk at +3h). Fixed
+      // by filtering each sample to `consumedAt <= t` (`_sampleAt`).
+      final rangeStart = DateTime.utc(2026, 7, 1, 5, 0);
+      final rangeEnd = DateTime.utc(2026, 7, 2, 5, 0);
+      final sessionStart = DateTime.utc(2026, 7, 1, 20, 0);
+      final drink1At = DateTime.utc(2026, 7, 1, 20, 5);
+      final drink2At = DateTime.utc(2026, 7, 1, 23, 0); // +3h
+      final session = _session(
+        id: 's1',
+        startedAt: sessionStart,
+        endedAt: DateTime.utc(2026, 7, 2, 1, 0),
+      );
+      final entries = [
+        _entry(id: 'e1', consumedAt: drink1At, partySessionId: 's1'),
+        _entry(id: 'e2', consumedAt: drink2At, partySessionId: 's1'),
+      ];
 
-        final buckets = computeMaxBacPerDay(
-          rangeStart: rangeStart,
-          rangeEnd: rangeEnd,
-          boundaryHour: 5,
-          sessions: [session],
-          alcoholicEntries: entries,
-          meals: const [],
-          profile: _profile(),
-          now: rangeEnd,
-        );
+      final buckets = computeMaxBacPerDay(
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        boundaryHour: 5,
+        sessions: [session],
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: _profile(),
+        now: rangeEnd,
+      );
 
-        expect(buckets, hasLength(1));
-        expect(buckets[0].maxGPerL, closeTo(oneBeerInitial, 0.01));
-      },
-    );
+      expect(buckets, hasLength(1));
+      expect(buckets[0].maxGPerL, closeTo(oneBeerInitial, 0.01));
+    });
   });
 }

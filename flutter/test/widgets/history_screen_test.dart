@@ -40,6 +40,7 @@ import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
+import 'package:drinks_mate/src/screens/history_day_screen.dart';
 import 'package:drinks_mate/src/screens/history_screen.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -185,8 +186,9 @@ Widget _buildScreen({
   return ProviderScope(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(repo),
-      userPreferencesProvider
-          .overrideWith((_) => Stream.value(prefs ?? _makePrefs())),
+      userPreferencesProvider.overrideWith(
+        (_) => Stream.value(prefs ?? _makePrefs()),
+      ),
       // formatServiceProvider is Provider<FormatService?> — pass null so
       // charts fall back to their raw-value label strings (deterministic,
       // locale-independent).
@@ -196,12 +198,22 @@ Widget _buildScreen({
       // widget-test environment, so every test overrides them directly —
       // defaulting to empty/no-session for the pre-#26 tests, and to
       // caller-supplied fixtures for the #26 tests below.
-      historySessionsInRangeProvider
-          .overrideWith((ref, key) => Stream.value(sessions)),
-      historyAlcoholicDrinksPerDayProvider
-          .overrideWith((ref, key) => Stream.value(alcoholicCounts)),
-      historyMaxBacPerDayProvider
-          .overrideWith((ref, key) => Future.value(maxBacBuckets)),
+      historySessionsInRangeProvider.overrideWith(
+        (ref, key) => Stream.value(sessions),
+      ),
+      historyAlcoholicDrinksPerDayProvider.overrideWith(
+        (ref, key) => Stream.value(alcoholicCounts),
+      ),
+      historyMaxBacPerDayProvider.overrideWith(
+        (ref, key) => Future.value(maxBacBuckets),
+      ),
+      // Same rationale — the day drill-down (HistoryDayScreen) reads these
+      // two on navigation; default to empty so a tap-to-drilldown test
+      // doesn't need a real AppDatabase either.
+      historyDayEntriesProvider.overrideWith((ref, key) => Stream.value([])),
+      historyDaySessionSummariesProvider.overrideWith(
+        (ref, key) => Future.value([]),
+      ),
     ],
     child: const MaterialApp(home: HistoryScreen()),
   );
@@ -306,8 +318,9 @@ void main() {
     'tapping the back chevron re-subscribes with a range exactly 7 days '
     'earlier (weekly mode) and enables the forward chevron',
     (tester) async {
-      final repo =
-          _FakeRepo(totals: _week([500, 500, 500, 500, 500, 500, 500]));
+      final repo = _FakeRepo(
+        totals: _week([500, 500, 500, 500, 500, 500, 500]),
+      );
 
       await tester.pumpWidget(_buildScreen(repo: repo));
       await tester.pump();
@@ -350,8 +363,9 @@ void main() {
     'tapping forward after paging back returns to the original (offset 0) '
     'period',
     (tester) async {
-      final repo =
-          _FakeRepo(totals: _week([500, 500, 500, 500, 500, 500, 500]));
+      final repo = _FakeRepo(
+        totals: _week([500, 500, 500, 500, 500, 500, 500]),
+      );
 
       await tester.pumpWidget(_buildScreen(repo: repo));
       await tester.pump();
@@ -391,108 +405,101 @@ void main() {
   // 4. Weekly/Monthly toggle
   // -------------------------------------------------------------------------
 
-  testWidgets(
-    'switching to Monthly resets paging back to the current period',
-    (tester) async {
-      final repo =
-          _FakeRepo(totals: _week([500, 500, 500, 500, 500, 500, 500]));
+  testWidgets('switching to Monthly resets paging back to the current period', (
+    tester,
+  ) async {
+    final repo = _FakeRepo(totals: _week([500, 500, 500, 500, 500, 500, 500]));
 
-      await tester.pumpWidget(_buildScreen(repo: repo));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(repo: repo));
+    await tester.pump();
+    await tester.pump();
 
-      // Page back once (weekly offset 1) — forward chevron becomes enabled.
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.chevron_left));
-      await tester.pump();
-      await tester.pump();
-      expect(
-        tester
-            .widget<IconButton>(
-              find.widgetWithIcon(IconButton, Icons.chevron_right),
-            )
-            .onPressed,
-        isNotNull,
-      );
+    // Page back once (weekly offset 1) — forward chevron becomes enabled.
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.chevron_left));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.chevron_right),
+          )
+          .onPressed,
+      isNotNull,
+    );
 
-      // Switch to Monthly via the SegmentedButton.
-      await tester.tap(find.text('Monthly'));
-      await tester.pump();
-      await tester.pump();
+    // Switch to Monthly via the SegmentedButton.
+    await tester.tap(find.text('Monthly'));
+    await tester.pump();
+    await tester.pump();
 
-      // Offset must have reset to 0 — forward chevron disabled again.
-      expect(
-        tester
-            .widget<IconButton>(
-              find.widgetWithIcon(IconButton, Icons.chevron_right),
-            )
-            .onPressed,
-        isNull,
-        reason: 'Switching range mode must reset paging to the current '
-            'period (history_screen.dart _setMode)',
-      );
-    },
-  );
+    // Offset must have reset to 0 — forward chevron disabled again.
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.chevron_right),
+          )
+          .onPressed,
+      isNull,
+      reason: 'Switching range mode must reset paging to the current '
+          'period (history_screen.dart _setMode)',
+    );
+  });
 
-  testWidgets(
-    'Monthly range renders a 30-bar chart without throwing',
-    (tester) async {
-      final totals = _month(30);
-      final counts = _month(30, fillValue: 2);
-      final repo = _FakeRepo(totals: totals, counts: counts);
+  testWidgets('Monthly range renders a 30-bar chart without throwing', (
+    tester,
+  ) async {
+    final totals = _month(30);
+    final counts = _month(30, fillValue: 2);
+    final repo = _FakeRepo(totals: totals, counts: counts);
 
-      await tester.pumpWidget(_buildScreen(repo: repo));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(repo: repo));
+    await tester.pump();
+    await tester.pump();
 
-      await tester.tap(find.text('Monthly'));
-      await tester.pump();
-      await tester.pump();
+    await tester.tap(find.text('Monthly'));
+    await tester.pump();
+    await tester.pump();
 
-      expect(tester.takeException(), isNull);
-      final hydrationChart =
-          tester.widget<BarChart>(find.byType(BarChart).at(0));
-      expect(hydrationChart.data.barGroups.length, equals(30));
-    },
-  );
+    expect(tester.takeException(), isNull);
+    final hydrationChart = tester.widget<BarChart>(find.byType(BarChart).at(0));
+    expect(hydrationChart.data.barGroups.length, equals(30));
+  });
 
   // -------------------------------------------------------------------------
   // 5. Non-colour below-goal signal
   // -------------------------------------------------------------------------
 
   testWidgets(
-    'below-goal hydration bar has a non-BorderSide.none border; '
-    'at-or-above-goal bar does not',
-    (tester) async {
-      // dailyGoalMl = 2000 (see _makePrefs). Bucket 0 (500 ml) is below goal;
-      // bucket 1 (2500 ml) is at/above goal.
-      final totals = _week([500, 2500, 0, 0, 0, 0, 0]);
-      final repo = _FakeRepo(totals: totals);
+      'below-goal hydration bar has a non-BorderSide.none border; '
+      'at-or-above-goal bar does not', (tester) async {
+    // dailyGoalMl = 2000 (see _makePrefs). Bucket 0 (500 ml) is below goal;
+    // bucket 1 (2500 ml) is at/above goal.
+    final totals = _week([500, 2500, 0, 0, 0, 0, 0]);
+    final repo = _FakeRepo(totals: totals);
 
-      await tester.pumpWidget(_buildScreen(repo: repo, prefs: _makePrefs()));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildScreen(repo: repo, prefs: _makePrefs()));
+    await tester.pump();
+    await tester.pump();
 
-      final hydrationChart =
-          tester.widget<BarChart>(find.byType(BarChart).at(0));
-      final belowGoalRod = hydrationChart.data.barGroups[0].barRods.single;
-      final atGoalRod = hydrationChart.data.barGroups[1].barRods.single;
+    final hydrationChart = tester.widget<BarChart>(find.byType(BarChart).at(0));
+    final belowGoalRod = hydrationChart.data.barGroups[0].barRods.single;
+    final atGoalRod = hydrationChart.data.barGroups[1].barRods.single;
 
-      // Source: history_screen.dart _HydrationChart._barGroup — Parity
-      // Rulebook §Non-colour-signal rules: "History bar below daily goal:
-      // Non-colour pattern/marker in addition to colour".
-      expect(
-        belowGoalRod.borderSide,
-        isNot(equals(BorderSide.none)),
-        reason: 'Below-goal bars must carry a visible border as the '
-            'non-colour signal',
-      );
-      expect(
-        atGoalRod.borderSide,
-        equals(BorderSide.none),
-        reason: 'At/above-goal bars must not carry the below-goal border',
-      );
-    },
-  );
+    // Source: history_screen.dart _HydrationChart._barGroup — Parity
+    // Rulebook §Non-colour-signal rules: "History bar below daily goal:
+    // Non-colour pattern/marker in addition to colour".
+    expect(
+      belowGoalRod.borderSide,
+      isNot(equals(BorderSide.none)),
+      reason: 'Below-goal bars must carry a visible border as the '
+          'non-colour signal',
+    );
+    expect(
+      atGoalRod.borderSide,
+      equals(BorderSide.none),
+      reason: 'At/above-goal bars must not carry the below-goal border',
+    );
+  });
 
   // -------------------------------------------------------------------------
   // 6. Alcohol section conditional visibility (issue #26)
@@ -590,8 +597,9 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      final alcoholicChart =
-          tester.widget<BarChart>(find.byType(BarChart).at(2));
+      final alcoholicChart = tester.widget<BarChart>(
+        find.byType(BarChart).at(2),
+      );
       expect(alcoholicChart.data.barGroups.length, equals(7));
       for (var i = 0; i < alcoholicCounts.length; i++) {
         expect(
@@ -615,53 +623,51 @@ void main() {
   // 7. Max-BAC chart: cap reference line + above/below-cap border
   // -------------------------------------------------------------------------
 
-  testWidgets(
-    'cap HorizontalLine is present when bacCapGramsPerL is set',
-    (tester) async {
-      _growSurfaceForAlcoholSection(tester);
-      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
-      final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
-      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+  testWidgets('cap HorizontalLine is present when bacCapGramsPerL is set', (
+    tester,
+  ) async {
+    _growSurfaceForAlcoholSection(tester);
+    final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+    final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
+    final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
 
-      await tester.pumpWidget(
-        _buildScreen(
-          repo: repo,
-          prefs: _makePrefs(bacCapGramsPerL: 0.5),
-          sessions: [session],
-          maxBacBuckets: maxBacBuckets,
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(
+      _buildScreen(
+        repo: repo,
+        prefs: _makePrefs(bacCapGramsPerL: 0.5),
+        sessions: [session],
+        maxBacBuckets: maxBacBuckets,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
 
-      final withCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
-      expect(withCap.data.extraLinesData.horizontalLines, hasLength(1));
-    },
-  );
+    final withCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
+    expect(withCap.data.extraLinesData.horizontalLines, hasLength(1));
+  });
 
-  testWidgets(
-    'cap HorizontalLine is absent when bacCapGramsPerL is null',
-    (tester) async {
-      _growSurfaceForAlcoholSection(tester);
-      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
-      final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
-      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+  testWidgets('cap HorizontalLine is absent when bacCapGramsPerL is null', (
+    tester,
+  ) async {
+    _growSurfaceForAlcoholSection(tester);
+    final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+    final maxBacBuckets = _bacWeek([0.2, null, null, null, null, null, null]);
+    final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
 
-      await tester.pumpWidget(
-        _buildScreen(
-          repo: repo,
-          prefs: _makePrefs(),
-          sessions: [session],
-          maxBacBuckets: maxBacBuckets,
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(
+      _buildScreen(
+        repo: repo,
+        prefs: _makePrefs(),
+        sessions: [session],
+        maxBacBuckets: maxBacBuckets,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
 
-      final withoutCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
-      expect(withoutCap.data.extraLinesData.horizontalLines, isEmpty);
-    },
-  );
+    final withoutCap = tester.widget<BarChart>(find.byType(BarChart).at(3));
+    expect(withoutCap.data.extraLinesData.horizontalLines, isEmpty);
+  });
 
   testWidgets(
     'at/above-cap bar has a non-BorderSide.none border; below-cap bar does '
@@ -711,6 +717,54 @@ void main() {
     },
   );
 
+  testWidgets(
+    'tapping a session-touched but fully-decayed (0.0) BAC bar mid-column '
+    'opens the day drill-down, not just an ~8px strip at the zero baseline '
+    "(fl_chart 0.68.0's BarChartPainter.handleTouch only hit-tests a rod's "
+    'own rendered pixel bounds by default)',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final session = _session(startedAt: DateTime(2026, 6, 22, 20, 0));
+      // Bucket 2 (Wednesday): the session touched it (band present) but its
+      // sampled BAC fully decayed to 0.0 — a real zero-height bar, distinct
+      // from the null/no-session case.
+      final maxBacBuckets = _bacWeek([0.5, 0.3, 0.0, null, null, null, null]);
+      final repo = _FakeRepo(totals: _week([0, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: [session],
+          maxBacBuckets: maxBacBuckets,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final chartFinder = find.byType(BarChart).at(3);
+      final topLeft = tester.getTopLeft(chartFinder);
+      final size = tester.getSize(chartFinder);
+
+      // Source: history_screen.dart _MaxBacChart's leftTitles reservedSize
+      // (40) plus fl_chart's spaceAround column formula (groupsX[i] =
+      // (i + 0.5) * plotWidth / bucketCount — see fl_chart's
+      // BarChartDataExtension.calculateGroupsX).
+      const leftReservedSize = 40.0;
+      const bucketCount = 7;
+      final plotWidth = size.width - leftReservedSize;
+      final columnCenterX =
+          leftReservedSize + (2 + 0.5) * plotWidth / bucketCount;
+      // Mid-height of the chart — well above the zero baseline, which was
+      // the only tappable area before this fix.
+      final midHeightY = size.height * 0.3;
+
+      await tester.tapAt(topLeft + Offset(columnCenterX, midHeightY));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HistoryDayScreen), findsOneWidget);
+    },
+  );
+
   // -------------------------------------------------------------------------
   // 8. Session overlay band
   // -------------------------------------------------------------------------
@@ -743,8 +797,9 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      final alcoholicChart =
-          tester.widget<BarChart>(find.byType(BarChart).at(2));
+      final alcoholicChart = tester.widget<BarChart>(
+        find.byType(BarChart).at(2),
+      );
       final maxBacChart = tester.widget<BarChart>(find.byType(BarChart).at(3));
 
       expect(

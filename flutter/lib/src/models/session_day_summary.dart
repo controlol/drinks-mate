@@ -6,12 +6,13 @@ import 'party_session.dart';
 /// Every metric here is clipped to the day-window, not the session's full
 /// lifetime — a session spanning midnight produces one [SessionDaySummary]
 /// per day it touches, each describing only that day's slice (duration
-/// within the day, alcohol logged that day, peak BAC sampled that day).
+/// within the day, drinks/meals logged that day, peak BAC sampled that day).
 class SessionDaySummary {
   const SessionDaySummary({
     required this.session,
     required this.duration,
-    required this.totalAlcoholMl,
+    required this.totalAlcoholicDrinks,
+    required this.mealsLoggedCount,
     this.peakBacGPerL,
   });
 
@@ -20,8 +21,14 @@ class SessionDaySummary {
   /// This session's active time within the day-window.
   final Duration duration;
 
-  /// Sum of alcoholic [volumeMl] logged within the day-window.
-  final int totalAlcoholMl;
+  /// Count of alcoholic entries logged within the day-window (features.md
+  /// F4: "total alcoholic drinks" — a count, matching the sibling
+  /// "Alcoholic drinks per day" chart's count semantics, not a volume).
+  final int totalAlcoholicDrinks;
+
+  /// Count of meals logged within the day-window (features.md F4: "meals
+  /// logged").
+  final int mealsLoggedCount;
 
   /// Peak estimated BAC sampled within the day-window, or null when the
   /// user's profile is incomplete (birthDate missing) and no estimate could
