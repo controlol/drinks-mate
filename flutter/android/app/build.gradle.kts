@@ -1,8 +1,25 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Release signing: locally, read android/key.properties (gitignored) pointing
+// at a keystore file; in CI, fall back to ANDROID_* env vars (build-apk.yml
+// decodes the ANDROID_KEYSTORE_BASE64 secret to a file and sets these).
+// Keeping the release key stable across builds is required — Android refuses
+// to install an "update" whose APK is signed with a different key than the
+// one already on device.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun signingProp(propertiesKey: String, envKey: String): String? =
+    keystoreProperties.getProperty(propertiesKey) ?: System.getenv(envKey)
 
 android {
     namespace = "com.controlol.drinks_mate"
@@ -26,11 +43,28 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = signingProp("storeFile", "ANDROID_KEYSTORE_PATH")
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+                storePassword = signingProp("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = signingProp("keyAlias", "ANDROID_KEY_ALIAS")
+                keyPassword = signingProp("keyPassword", "ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Falls back to the debug key (and `flutter run --release` still
+            // works) when no release signing material is configured, e.g. a
+            // contributor's machine without key.properties.
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
