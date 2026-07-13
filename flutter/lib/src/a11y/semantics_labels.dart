@@ -76,6 +76,13 @@ abstract final class SemanticsLabels {
   // '${SemanticsLabels.historyHydrationChartPrefix}2 of 7 days below goal'.
   static const String historyHydrationChartPrefix = 'Hydration per day chart. ';
   static const String historyDrinksChartPrefix = 'Drinks per day chart. ';
+  static const String historyAlcoholicDrinksChartPrefix =
+      'Alcoholic drinks per day chart. ';
+  static const String historyMaxBacChartPrefix =
+      'Maximum estimated BAC per day chart — this is an estimate only. ';
+  static const String historySessionSummaryCard = 'Party session summary';
+  static const String historyDayEntryList = 'Drinks logged this day';
+  static const String historyDayEmptyState = 'No drinks logged this day';
 
   // ---------------------------------------------------------------------------
   // Navigation & global chrome

@@ -1927,4 +1927,239 @@ void main() {
       },
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // History — alcohol charts + day drill-down (issue #26)
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.watchAlcoholicDrinksPerDay', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    final rangeStart = DateTime(2026, 6, 22, 5, 0); // Mon 05:00
+    final rangeEnd = DateTime(2026, 6, 26, 5, 0); // Fri 05:00
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    /// Inserts a live alcoholic [DrinkEntry] directly at the DB layer with
+    /// [partySessionId] set — `DrinksRepository.logDrink()` never sets this
+    /// column (only `PartySessionRepository.logAlcoholicDrink()` does), so
+    /// this mirrors `party_session_repository_test.dart`'s `_insertOrphanDrink`
+    /// helper but with a session attached. No `PartySession` row needs to
+    /// actually exist — the column has no FK constraint at the DB layer.
+    Future<void> insertSessionDrink({
+      required DateTime consumedAt,
+      String sessionId = 'session-1',
+      int volumeMl = 330,
+      String id = 'session-drink-1',
+    }) async {
+      final now = DateTime.now().toUtc();
+      await db.insertDrinkEntry(
+        DrinkEntriesCompanion.insert(
+          id: id,
+          beverageType: BeverageType.beer.stored,
+          volumeMl: volumeMl,
+          abvPercent: const Value(5.0),
+          partySessionId: Value(sessionId),
+          consumedAt: consumedAt,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    test(
+      'counts only entries with a non-null partySessionId, zero-filling '
+      'days with none, ordered oldest-first',
+      () async {
+        await insertSessionDrink(
+          id: 'e1',
+          consumedAt: DateTime(2026, 6, 22, 20, 0),
+        );
+        await insertSessionDrink(
+          id: 'e2',
+          consumedAt: DateTime(2026, 6, 22, 21, 0),
+        );
+        await insertSessionDrink(
+          id: 'e3',
+          consumedAt: DateTime(2026, 6, 24, 20, 0),
+        );
+
+        final buckets = await repo
+            .watchAlcoholicDrinksPerDay(
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+            )
+            .first;
+
+        expect(buckets.length, equals(4));
+        expect(
+          buckets.map((b) => b.value).toList(),
+          equals([2, 0, 1, 0]),
+        );
+      },
+    );
+
+    test(
+      'excludes non-alcoholic entries and orphaned alcoholic entries '
+      '(partySessionId == null)',
+      () async {
+        // Non-alcoholic, via the normal logDrink path.
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 22, 8, 0),
+        );
+        // Orphaned alcoholic drink — logDrink() never sets partySessionId.
+        const beerPreset = DrinkPreset(
+          id: 'test-beer-preset-alcoholic-counts',
+          name: 'Test Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 99,
+        );
+        await repo.logDrink(
+          preset: beerPreset,
+          consumedAt: DateTime(2026, 6, 22, 20, 0),
+        );
+
+        final buckets = await repo
+            .watchAlcoholicDrinksPerDay(
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+            )
+            .first;
+
+        expect(
+          buckets.every((b) => b.value == 0),
+          isTrue,
+          reason: 'Only entries with partySessionId set count toward the '
+              'alcoholic-drinks-per-day chart (F4/#26)',
+        );
+      },
+    );
+
+    test('excludes soft-deleted entries', () async {
+      await insertSessionDrink(consumedAt: DateTime(2026, 6, 22, 8, 0));
+
+      final before = await repo
+          .watchAlcoholicDrinksPerDay(
+              rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(before.first.value, equals(1));
+
+      await repo.deleteDrinkEntry('session-drink-1');
+
+      final after = await repo
+          .watchAlcoholicDrinksPerDay(
+              rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
+      expect(after.first.value, equals(0));
+    });
+
+    test(
+      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+      'is excluded (half-open [rangeStart, rangeEnd))',
+      () async {
+        await insertSessionDrink(id: 'e1', consumedAt: rangeStart);
+        await insertSessionDrink(id: 'e2', consumedAt: rangeEnd);
+
+        final buckets = await repo
+            .watchAlcoholicDrinksPerDay(
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+            )
+            .first;
+
+        expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
+        expect(buckets.first.value, equals(1));
+      },
+    );
+  });
+
+  group('DrinksRepository.watchDayEntries', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    final dayStart = DateTime(2026, 6, 22, 5, 0);
+    final dayEnd = DateTime(2026, 6, 23, 5, 0);
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'returns both hydration and alcoholic entries within the day window, '
+      'newest-first',
+      () async {
+        await repo.logDrink(
+          preset: _waterPreset,
+          consumedAt: DateTime(2026, 6, 22, 8, 0),
+        );
+        const beerPreset = DrinkPreset(
+          id: 'test-beer-preset-day-entries',
+          name: 'Test Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 99,
+        );
+        await repo.logDrink(
+          preset: beerPreset,
+          consumedAt: DateTime(2026, 6, 22, 20, 0),
+        );
+
+        final entries = await repo.watchDayEntries(dayStart, dayEnd).first;
+
+        expect(entries, hasLength(2));
+        // Newest-first: the 20:00 beer before the 08:00 water.
+        expect(entries[0].beverageType, BeverageType.beer);
+        expect(entries[1].beverageType, BeverageType.water);
+      },
+    );
+
+    test('excludes entries outside the day window', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 21, 20, 0), // previous day
+      );
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 23, 6, 0), // next day
+      );
+
+      final entries = await repo.watchDayEntries(dayStart, dayEnd).first;
+
+      expect(entries, isEmpty);
+    });
+
+    test('excludes soft-deleted entries', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+      final rows = await db.select(db.drinkEntries).get();
+      await repo.deleteDrinkEntry(rows.single.id);
+
+      final entries = await repo.watchDayEntries(dayStart, dayEnd).first;
+
+      expect(entries, isEmpty);
+    });
+  });
 }

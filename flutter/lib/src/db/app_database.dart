@@ -799,6 +799,78 @@ class AppDatabase extends _$AppDatabase {
           updatedAt: Value(updatedAtUtc),
         ),
       );
+
+  // ---------------------------------------------------------------------------
+  // History — alcohol charts + day drill-down (issue #26)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of live sessions whose window `[startedAt, endedAt)`
+  /// overlaps `[startUtc, endUtc)`, ordered by [startedAt]. An active session
+  /// (`endedAt IS NULL`) is treated as open-ended — it overlaps any window
+  /// that starts before "now" could reach, so it's included whenever
+  /// `startedAt < endUtc`.
+  Stream<List<PartySessionRow>> watchSessionsOverlapping(
+    DateTime startUtc,
+    DateTime endUtc,
+  ) {
+    return (select(partySessions)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.startedAt.isSmallerThanValue(endUtc) &
+                (t.endedAt.isNull() | t.endedAt.isBiggerThanValue(startUtc)),
+          )
+          ..orderBy([(t) => OrderingTerm.asc(t.startedAt)]))
+        .watch();
+  }
+
+  /// Live [DrinkEntryRow]s belonging to any of [sessionIds] — feeds BAC-peak
+  /// sampling (F4/#26), which needs each session's *full* entry list
+  /// regardless of the day/range being sampled (a drink just before the
+  /// sampled window can still contribute decayed BAC into it).
+  Future<List<DrinkEntryRow>> getEntriesForSessions(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return [];
+    return (select(drinkEntries)
+          ..where(
+            (t) => t.partySessionId.isIn(sessionIds) & t.deletedAt.isNull(),
+          ))
+        .get();
+  }
+
+  /// Live [MealRow]s belonging to any of [sessionIds] — see
+  /// [getEntriesForSessions].
+  Future<List<MealRow>> getMealsForSessions(List<String> sessionIds) async {
+    if (sessionIds.isEmpty) return [];
+    return (select(meals)
+          ..where(
+            (t) => t.partySessionId.isIn(sessionIds) & t.deletedAt.isNull(),
+          ))
+        .get();
+  }
+
+  /// Reactive stream of `(consumedAt, volumeMl)` pairs for live alcoholic
+  /// entries (`partySessionId IS NOT NULL`) within `[startUtc, endUtc)` —
+  /// feeds the "alcoholic drinks per day" chart (F4/#26). [volumeMl] is
+  /// unused by the count bucketing but kept for signature symmetry with
+  /// [watchEntriesInWindow].
+  Stream<List<(DateTime, int)>> watchPartySessionEntriesInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+  ) {
+    final query = select(drinkEntries)
+      ..where(
+        (t) =>
+            t.deletedAt.isNull() &
+            t.partySessionId.isNotNull() &
+            t.consumedAt.isBiggerOrEqualValue(startUtc) &
+            t.consumedAt.isSmallerThanValue(endUtc),
+      );
+    return query.watch().map(
+          (rows) => rows.map((r) => (r.consumedAt, r.volumeMl)).toList(),
+        );
+  }
 }
 
 LazyDatabase _openConnection() {
