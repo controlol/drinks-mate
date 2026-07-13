@@ -369,17 +369,17 @@ class DrinksRepository {
         .toList();
     return _db
         .watchEntriesInWindow(
-          sevenDaysAgoStart.toUtc(),
-          todayStart.toUtc(),
-          nonAlcoholicTypes,
-        )
+      sevenDaysAgoStart.toUtc(),
+      todayStart.toUtc(),
+      nonAlcoholicTypes,
+    )
         .map((entries) {
-          var totalMl = 0;
-          for (final (_, volumeMl) in entries) {
-            totalMl += volumeMl;
-          }
-          return totalMl / 7.0;
-        });
+      var totalMl = 0;
+      for (final (_, volumeMl) in entries) {
+        totalMl += volumeMl;
+      }
+      return totalMl / 7.0;
+    });
   }
 
   /// Reactive stream of how many of the last 7 completed day windows met the
@@ -407,21 +407,21 @@ class DrinksRepository {
         .toList();
     return _db
         .watchEntriesInWindow(
-          sevenDaysAgoStart.toUtc(),
-          todayStart.toUtc(),
-          nonAlcoholicTypes,
-        )
+      sevenDaysAgoStart.toUtc(),
+      todayStart.toUtc(),
+      nonAlcoholicTypes,
+    )
         .map((entries) {
-          final byDay = <DateTime, int>{};
-          for (final (consumedAt, volumeMl) in entries) {
-            final dayStart = dayWindow(
-              now: consumedAt.toLocal(),
-              boundaryHour: boundaryHour,
-            ).$1;
-            byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
-          }
-          return byDay.values.where((total) => total >= dailyGoalMl).length;
-        });
+      final byDay = <DateTime, int>{};
+      for (final (consumedAt, volumeMl) in entries) {
+        final dayStart = dayWindow(
+          now: consumedAt.toLocal(),
+          boundaryHour: boundaryHour,
+        ).$1;
+        byDay[dayStart] = (byDay[dayStart] ?? 0) + volumeMl;
+      }
+      return byDay.values.where((total) => total >= dailyGoalMl).length;
+    });
   }
 
   /// One-shot count of how many days in the current ISO week (Monday–Sunday,
@@ -671,39 +671,39 @@ class DrinksRepository {
   // ---------------------------------------------------------------------------
 
   static DrinkPreset _rowToPreset(DrinkPresetRow row) => DrinkPreset(
-    id: row.id,
-    name: row.name,
-    beverageType: BeverageType.fromStored(row.beverageType),
-    volumeMl: row.volumeMl,
-    abvPercent: row.abvPercent,
-    regularPriceMinor: row.regularPriceMinor,
-    regularCurrency: row.regularCurrency,
-    iconKey: row.iconKey,
-    iconColor: row.iconColor,
-    isUserCreated: row.isUserCreated,
-    isHidden: row.isHidden,
-    sortOrder: row.sortOrder,
-  );
+        id: row.id,
+        name: row.name,
+        beverageType: BeverageType.fromStored(row.beverageType),
+        volumeMl: row.volumeMl,
+        abvPercent: row.abvPercent,
+        regularPriceMinor: row.regularPriceMinor,
+        regularCurrency: row.regularCurrency,
+        iconKey: row.iconKey,
+        iconColor: row.iconColor,
+        isUserCreated: row.isUserCreated,
+        isHidden: row.isHidden,
+        sortOrder: row.sortOrder,
+      );
 
   static DrinkEntry _rowToEntry(DrinkEntryRow row) => DrinkEntry(
-    id: row.id,
-    name: row.name,
-    beverageType: BeverageType.fromStored(row.beverageType),
-    volumeMl: row.volumeMl,
-    abvPercent: row.abvPercent,
-    priceMinor: row.priceMinor,
-    currency: row.currency,
-    priceTokens: row.priceTokens,
-    tokenValueMinor: row.tokenValueMinor,
-    tokenValueCurrency: row.tokenValueCurrency,
-    iconKey: row.iconKey,
-    iconColor: row.iconColor,
-    partySessionId: row.partySessionId,
-    consumedAt: row.consumedAt,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    deletedAt: row.deletedAt,
-  );
+        id: row.id,
+        name: row.name,
+        beverageType: BeverageType.fromStored(row.beverageType),
+        volumeMl: row.volumeMl,
+        abvPercent: row.abvPercent,
+        priceMinor: row.priceMinor,
+        currency: row.currency,
+        priceTokens: row.priceTokens,
+        tokenValueMinor: row.tokenValueMinor,
+        tokenValueCurrency: row.tokenValueCurrency,
+        iconKey: row.iconKey,
+        iconColor: row.iconColor,
+        partySessionId: row.partySessionId,
+        consumedAt: row.consumedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+      );
 
   // ---------------------------------------------------------------------------
   // Validation helpers
