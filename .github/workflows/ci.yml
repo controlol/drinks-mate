@@ -166,6 +166,7 @@ jobs:
             github.event.pull_request.author_association == 'OWNER' ||
             github.event.pull_request.user.login == 'claude[bot]' ||
             github.event.pull_request.user.login == 'github-actions[bot]' ||
+            github.event.pull_request.user.login == 'controlol-auth[bot]' ||
             (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
             contains(github.event.pull_request.labels.*.name, 'agent-ok')
           )
@@ -279,6 +280,7 @@ jobs:
             github.event.pull_request.author_association == 'OWNER' ||
             github.event.pull_request.user.login == 'claude[bot]' ||
             github.event.pull_request.user.login == 'github-actions[bot]' ||
+            github.event.pull_request.user.login == 'controlol-auth[bot]' ||
             (github.event.action == 'labeled' && github.event.label.name == 'agent-ok') ||
             contains(github.event.pull_request.labels.*.name, 'agent-ok')
           )
@@ -299,7 +301,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
-          allowed_bots: "github-actions[bot],claude[bot]"
+          allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
           prompt: |
             Perform a security review of PR #${{ inputs.pr_number || github.event.pull_request.number }}
             in ${{ github.repository }}. This is a Flutter/Dart mobile app with a
