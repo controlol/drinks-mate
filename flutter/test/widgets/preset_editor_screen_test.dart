@@ -313,34 +313,36 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'create mode shows "Add drink" title and Save is disabled until name '
-      'and volume are valid', (tester) async {
-    final repo = _FakeDrinksRepo();
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'create mode shows "Add drink" title and Save is disabled until name '
+    'and volume are valid',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    expect(find.text('Add drink'), findsOneWidget);
-    // Empty name -> _nameError = 'Name is required' set in initState.
-    // Source: preset_editor_screen.dart _validateName.
-    expect(_saveButton(tester).onPressed, isNull);
+      expect(find.text('Add drink'), findsOneWidget);
+      // Empty name -> _nameError = 'Name is required' set in initState.
+      // Source: preset_editor_screen.dart _validateName.
+      expect(_saveButton(tester).onPressed, isNull);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_name_field')),
-      'Cola',
-    );
-    await tester.pump();
-    // Name valid but volume still empty -> Save still disabled.
-    expect(_saveButton(tester).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_name_field')),
+        'Cola',
+      );
+      await tester.pump();
+      // Name valid but volume still empty -> Save still disabled.
+      expect(_saveButton(tester).onPressed, isNull);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_volume_field')),
-      '330',
-    );
-    await tester.pump();
-    // Water (non-alcoholic) requires no ABV -> Save now enabled.
-    expect(_saveButton(tester).onPressed, isNotNull);
-  });
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_volume_field')),
+        '330',
+      );
+      await tester.pump();
+      // Water (non-alcoholic) requires no ABV -> Save now enabled.
+      expect(_saveButton(tester).onPressed, isNotNull);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 2. Name validation
@@ -408,57 +410,56 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'selecting an alcoholic type reveals the ABV field and gates Save on '
-      'it; switching back to non-alcoholic hides it again', (tester) async {
-    final repo = _FakeDrinksRepo();
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'selecting an alcoholic type reveals the ABV field and gates Save on '
+    'it; switching back to non-alcoholic hides it again',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    // Source: preset_editor_screen.dart — ABV field only built
-    // `if (_beverageType.isAlcoholic)`; initial type is BeverageType.water.
-    expect(
-      find.byKey(const Key('preset_editor_abv_field')),
-      findsNothing,
-    );
+      // Source: preset_editor_screen.dart — ABV field only built
+      // `if (_beverageType.isAlcoholic)`; initial type is BeverageType.water.
+      expect(find.byKey(const Key('preset_editor_abv_field')), findsNothing);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_name_field')),
-      'Craft Lager',
-    );
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_volume_field')),
-      '330',
-    );
-    await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_name_field')),
+        'Craft Lager',
+      );
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_volume_field')),
+        '330',
+      );
+      await tester.pump();
 
-    // DropdownButtonFormField's overlay menu is driven through onChanged
-    // directly rather than tapping the popup route — the popup only builds
-    // items near the current scroll offset, which made tapping a specific
-    // item's Text flaky once the selection had already moved away from the
-    // top of the list (e.g. re-opening the menu after Beer was selected).
-    _selectBeverageType(tester, BeverageType.beer);
-    await tester.pump();
+      // DropdownButtonFormField's overlay menu is driven through onChanged
+      // directly rather than tapping the popup route — the popup only builds
+      // items near the current scroll offset, which made tapping a specific
+      // item's Text flaky once the selection had already moved away from the
+      // top of the list (e.g. re-opening the menu after Beer was selected).
+      _selectBeverageType(tester, BeverageType.beer);
+      await tester.pump();
 
-    expect(find.byKey(const Key('preset_editor_abv_field')), findsOneWidget);
-    // Name + volume valid, but ABV empty for an alcoholic type -> Save
-    // disabled (preset_editor_screen.dart _canSave).
-    expect(_saveButton(tester).onPressed, isNull);
+      expect(find.byKey(const Key('preset_editor_abv_field')), findsOneWidget);
+      // Name + volume valid, but ABV empty for an alcoholic type -> Save
+      // disabled (preset_editor_screen.dart _canSave).
+      expect(_saveButton(tester).onPressed, isNull);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_abv_field')),
-      '5.0',
-    );
-    await tester.pump();
-    expect(_saveButton(tester).onPressed, isNotNull);
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_abv_field')),
+        '5.0',
+      );
+      await tester.pump();
+      expect(_saveButton(tester).onPressed, isNotNull);
 
-    // Switch back to a non-alcoholic type -> ABV field is hidden again.
-    _selectBeverageType(tester, BeverageType.water);
-    await tester.pump();
+      // Switch back to a non-alcoholic type -> ABV field is hidden again.
+      _selectBeverageType(tester, BeverageType.water);
+      await tester.pump();
 
-    expect(find.byKey(const Key('preset_editor_abv_field')), findsNothing);
-    expect(_saveButton(tester).onPressed, isNotNull);
-  });
+      expect(find.byKey(const Key('preset_editor_abv_field')), findsNothing);
+      expect(_saveButton(tester).onPressed, isNotNull);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 4. Icon picker round-trip
@@ -489,28 +490,58 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'tapping a colour swatch selects it and the hex reaches createPreset '
-      'on save', (tester) async {
+    'tapping a colour swatch selects it and the hex reaches createPreset '
+    'on save',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
+
+      // Water's default colour swatch (#3b82f6) is first/selected initially.
+      expect(_swatchBorderColor(tester, '#3b82f6'), isNot(Colors.transparent));
+      expect(_swatchBorderColor(tester, '#15803d'), Colors.transparent);
+
+      await tester.tap(find.byKey(const Key('preset_editor_color_#15803d')));
+      await tester.pump();
+
+      expect(_swatchBorderColor(tester, '#15803d'), isNot(Colors.transparent));
+      expect(_swatchBorderColor(tester, '#3b82f6'), Colors.transparent);
+
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_name_field')),
+        'Cola',
+      );
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_volume_field')),
+        '330',
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('preset_editor_save_button')));
+      await tester.pump();
+
+      expect(repo.lastCreateArgs?.iconColor, '#15803d');
+    },
+  );
+
+  testWidgets(
+      'typing a valid custom hex colour and tapping Save directly (no '
+      'keyboard submit) applies the typed colour', (tester) async {
+    // Regression: _onCustomColorSubmitted previously only fired from
+    // onSubmitted/onEditingComplete (keyboard submit), so tapping Save
+    // right after typing a valid hex silently discarded it in favour of
+    // whichever swatch/default was selected before.
     final repo = _FakeDrinksRepo();
     final container = await _buildContainer(repo: repo);
     addTearDown(container.dispose);
     await _pumpScreen(tester, container);
 
-    // Water's default colour swatch (#3b82f6) is first/selected initially.
-    expect(
-      _swatchBorderColor(tester, '#3b82f6'),
-      isNot(Colors.transparent),
+    await tester.enterText(
+      find.byKey(const Key('preset_editor_custom_color_field')),
+      '15803d',
     );
-    expect(_swatchBorderColor(tester, '#15803d'), Colors.transparent);
-
-    await tester.tap(find.byKey(const Key('preset_editor_color_#15803d')));
     await tester.pump();
-
-    expect(
-      _swatchBorderColor(tester, '#15803d'),
-      isNot(Colors.transparent),
-    );
-    expect(_swatchBorderColor(tester, '#3b82f6'), Colors.transparent);
 
     await tester.enterText(
       find.byKey(const Key('preset_editor_name_field')),
@@ -522,6 +553,7 @@ void main() {
     );
     await tester.pump();
 
+    // No onSubmitted/onEditingComplete triggered — straight to Save.
     await tester.tap(find.byKey(const Key('preset_editor_save_button')));
     await tester.pump();
 
@@ -534,8 +566,9 @@ void main() {
 
   testWidgets(
       'save in create mode calls createPreset with the expected args, '
-      'including sortOrder derived from the current preset count',
-      (tester) async {
+      'including sortOrder derived from the current preset count', (
+    tester,
+  ) async {
     final repo = _FakeDrinksRepo(
       presets: [_existingPreset('p1', 1), _existingPreset('p2', 2)],
     );
@@ -631,28 +664,29 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'edit mode: empty price field saves Optional.value(null)/Optional.value(null)',
-      (tester) async {
-    final repo = _FakeDrinksRepo();
-    final container = await _buildContainer(repo: repo, prefs: _prefs());
-    addTearDown(container.dispose);
-    final preset = _editPreset();
-    await _pumpScreen(tester, container, preset: preset);
+    'edit mode: empty price field saves Optional.value(null)/Optional.value(null)',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(repo: repo, prefs: _prefs());
+      addTearDown(container.dispose);
+      final preset = _editPreset();
+      await _pumpScreen(tester, container, preset: preset);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_price_field')),
-      '',
-    );
-    await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_price_field')),
+        '',
+      );
+      await tester.pump();
 
-    await tester.tap(find.byKey(const Key('preset_editor_save_button')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('preset_editor_save_button')));
+      await tester.pump();
 
-    final args = repo.lastUpdateArgs;
-    expect(args, isNotNull);
-    expect(args!.regularPriceMinor, const Optional.value(null));
-    expect(args.regularCurrency, const Optional.value(null));
-  });
+      final args = repo.lastUpdateArgs;
+      expect(args, isNotNull);
+      expect(args!.regularPriceMinor, const Optional.value(null));
+      expect(args.regularCurrency, const Optional.value(null));
+    },
+  );
 
   testWidgets(
       'edit mode: "2.50" price field saves Optional.value(250) and '
@@ -687,29 +721,31 @@ void main() {
   });
 
   testWidgets(
-      'edit mode: adding a price to a preset with no prior price falls back '
-      "to the user's current currency preference", (tester) async {
-    final repo = _FakeDrinksRepo();
-    final container = await _buildContainer(
-      repo: repo,
-      prefs: _prefs(currency: 'GBP'),
-    );
-    addTearDown(container.dispose);
-    final preset = _editPresetWithoutPrice();
-    await _pumpScreen(tester, container, preset: preset);
+    'edit mode: adding a price to a preset with no prior price falls back '
+    "to the user's current currency preference",
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        prefs: _prefs(currency: 'GBP'),
+      );
+      addTearDown(container.dispose);
+      final preset = _editPresetWithoutPrice();
+      await _pumpScreen(tester, container, preset: preset);
 
-    await tester.enterText(
-      find.byKey(const Key('preset_editor_price_field')),
-      '3.00',
-    );
-    await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('preset_editor_price_field')),
+        '3.00',
+      );
+      await tester.pump();
 
-    await tester.tap(find.byKey(const Key('preset_editor_save_button')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('preset_editor_save_button')));
+      await tester.pump();
 
-    final args = repo.lastUpdateArgs;
-    expect(args, isNotNull);
-    expect(args!.regularPriceMinor, const Optional.value(300));
-    expect(args.regularCurrency, const Optional.value('GBP'));
-  });
+      final args = repo.lastUpdateArgs;
+      expect(args, isNotNull);
+      expect(args!.regularPriceMinor, const Optional.value(300));
+      expect(args.regularCurrency, const Optional.value('GBP'));
+    },
+  );
 }

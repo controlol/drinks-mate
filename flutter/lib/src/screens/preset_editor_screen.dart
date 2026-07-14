@@ -197,7 +197,8 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Could not save preset: ${_friendlyError(e)}')),
+            content: Text('Could not save preset: ${_friendlyError(e)}'),
+          ),
         );
       }
     }
@@ -339,6 +340,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
               prefixText: '#',
               border: OutlineInputBorder(),
             ),
+            onChanged: _onCustomColorSubmitted,
             onSubmitted: _onCustomColorSubmitted,
             onEditingComplete: () =>
                 _onCustomColorSubmitted(_customColorCtrl.text),
