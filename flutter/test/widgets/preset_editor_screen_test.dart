@@ -80,10 +80,15 @@ typedef _UpdateArgs = ({
 });
 
 class _FakeDrinksRepo extends DrinksRepository {
-  _FakeDrinksRepo({this.presets = const []})
+  _FakeDrinksRepo({this.presets = const [], this.nextSortOrderValue = 1})
       : super(AppDatabase(NativeDatabase.memory()));
 
   final List<DrinkPreset> presets;
+
+  /// Stubbed [nextSortOrder] return value — the real implementation queries
+  /// `MAX(sortOrder)` against the DB this fake never populates, so it can't
+  /// be exercised through the real method here.
+  final int nextSortOrderValue;
 
   _CreateArgs? lastCreateArgs;
   _UpdateArgs? lastUpdateArgs;
@@ -95,6 +100,9 @@ class _FakeDrinksRepo extends DrinksRepository {
 
   @override
   Stream<List<DrinkPreset>> watchAllPresets() => Stream.value(presets);
+
+  @override
+  Future<int> nextSortOrder() async => nextSortOrderValue;
 
   @override
   Future<DrinkPreset> createPreset({
@@ -567,11 +575,12 @@ void main() {
 
   testWidgets(
       'save in create mode calls createPreset with the expected args, '
-      'including sortOrder derived from the current preset count', (
+      'including sortOrder from repo.nextSortOrder()', (
     tester,
   ) async {
     final repo = _FakeDrinksRepo(
       presets: [_existingPreset('p1', 1), _existingPreset('p2', 2)],
+      nextSortOrderValue: 3,
     );
     final container = await _buildContainer(repo: repo);
     addTearDown(container.dispose);
@@ -598,8 +607,7 @@ void main() {
     expect(args.iconKey, 'glass');
     expect(args.iconColor, '#3b82f6');
     // Source: preset_editor_screen.dart _save — create-mode `sortOrder:
-    // existing.length + 1`, with `existing` read from allPresetsProvider
-    // (2 fixture presets here).
+    // await repo.nextSortOrder()`.
     expect(args.sortOrder, 3);
   });
 

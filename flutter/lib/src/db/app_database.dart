@@ -601,6 +601,22 @@ class AppDatabase extends _$AppDatabase {
   Future<void> insertPreset(DrinkPresetsCompanion companion) =>
       into(drinkPresets).insert(companion);
 
+  /// Highest [sortOrder] among non-deleted presets, or null if none exist.
+  ///
+  /// A `COUNT` of non-deleted presets is *not* a safe stand-in for this —
+  /// [softDeletePreset] leaves the row in place (only [deletedAt] is set), so
+  /// the count of live presets can be lower than the highest sortOrder still
+  /// in use. See [reorderPresets]'s doc comment for the same MAX-vs-COUNT
+  /// distinction.
+  Future<int?> getMaxPresetSortOrder() async {
+    final maxSortOrder = drinkPresets.sortOrder.max();
+    final query = selectOnly(drinkPresets)
+      ..addColumns([maxSortOrder])
+      ..where(drinkPresets.deletedAt.isNull());
+    final row = await query.getSingle();
+    return row.read(maxSortOrder);
+  }
+
   /// Partial update of a preset row. Only fields wrapped in [Value] are written.
   /// Returns the number of rows affected (0 if [id] not found).
   Future<int> updatePresetFields(String id, DrinkPresetsCompanion companion) =>

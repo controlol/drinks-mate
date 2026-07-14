@@ -148,8 +148,6 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
           // "Save as copy and confirm — creates a new preset with the
           // advanced values ..., then logs the drink against the new
           // preset."
-          final existingCount =
-              ref.read(allPresetsProvider).valueOrNull?.length ?? 0;
           final copy = await repo.createPreset(
             name: result.newPresetName ?? result.name,
             beverageType: preset.beverageType,
@@ -159,7 +157,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
             regularCurrency: result.currency,
             iconKey: preset.iconKey,
             iconColor: preset.iconColor,
-            sortOrder: existingCount + 1,
+            sortOrder: await repo.nextSortOrder(),
           );
           await repo.logDrink(
             preset: copy,

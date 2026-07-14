@@ -178,7 +178,6 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
           iconColor: _iconColor,
         );
       } else {
-        final existing = ref.read(allPresetsProvider).valueOrNull ?? [];
         await repo.createPreset(
           name: name,
           beverageType: _beverageType,
@@ -188,7 +187,7 @@ class _PresetEditorScreenState extends ConsumerState<PresetEditorScreen> {
           regularCurrency: currency,
           iconKey: _iconKey,
           iconColor: _iconColor,
-          sortOrder: existing.length + 1,
+          sortOrder: await repo.nextSortOrder(),
         );
       }
       if (mounted) Navigator.of(context).pop(true);

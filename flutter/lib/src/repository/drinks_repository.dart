@@ -58,6 +58,19 @@ class DrinksRepository {
   // Presets — write
   // ---------------------------------------------------------------------------
 
+  /// The [sortOrder] to use for a newly created preset: one greater than the
+  /// current maximum among non-deleted presets (1 if none exist).
+  ///
+  /// Callers must not derive this from a preset *count* — [deletePreset] is a
+  /// soft delete, so the count of live presets can be lower than the highest
+  /// sortOrder still in use, and a `count + 1` value can then collide with an
+  /// existing preset's sortOrder (undefined relative ordering, since
+  /// `ORDER BY sortOrder ASC` has no secondary tiebreaker).
+  Future<int> nextSortOrder() async {
+    final maxSortOrder = await _db.getMaxPresetSortOrder();
+    return (maxSortOrder ?? 0) + 1;
+  }
+
   /// Creates a new user-owned preset.
   ///
   /// Validates [name] via [validatePresetName]; throws [ArgumentError] on

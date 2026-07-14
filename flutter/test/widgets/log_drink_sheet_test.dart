@@ -83,12 +83,21 @@ typedef _CreatePresetCall = ({
 });
 
 class _FakeDrinksRepo extends DrinksRepository {
-  _FakeDrinksRepo({this.existingPresets = const []})
-      : super(AppDatabase(NativeDatabase.memory()));
+  _FakeDrinksRepo({
+    this.existingPresets = const [],
+    this.nextSortOrderValue = 1,
+  }) : super(AppDatabase(NativeDatabase.memory()));
 
-  /// Feeds allPresetsProvider (via watchAllPresets) — the "existing preset
-  /// count" saveAsCopyAndConfirm's sortOrder is derived from.
+  /// Feeds allPresetsProvider (via watchAllPresets).
   final List<DrinkPreset> existingPresets;
+
+  /// Stubbed [nextSortOrder] return value — the real implementation queries
+  /// `MAX(sortOrder)` against the DB this fake never populates, so it can't
+  /// be exercised through the real method here.
+  final int nextSortOrderValue;
+
+  @override
+  Future<int> nextSortOrder() async => nextSortOrderValue;
 
   /// What getPresetById returns after updatePreset — simulates the refetch
   /// in the "Save and confirm" path (log_drink_sheet.dart:
@@ -706,7 +715,10 @@ void main() {
       'calls createPreset then logDrink against the new preset, and '
       'never calls updatePreset',
       (tester) async {
-        final repo = _FakeDrinksRepo(existingPresets: const [_beerPreset]);
+        final repo = _FakeDrinksRepo(
+          existingPresets: const [_beerPreset],
+          nextSortOrderValue: 2,
+        );
         final container = await _buildContainer(
           repo: repo,
           visiblePresets: const [_beerPreset],
@@ -762,7 +774,7 @@ void main() {
         expect(create.abvPercent, 6.5);
         expect(create.regularPriceMinor, 525);
         expect(create.regularCurrency, 'EUR');
-        // sortOrder = existing preset count (1) + 1.
+        // sortOrder = repo.nextSortOrder() (stubbed to 2).
         expect(create.sortOrder, 2);
 
         expect(repo.logDrinkCalls, hasLength(1));

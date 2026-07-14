@@ -713,6 +713,64 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // Group 7b: nextSortOrder — MAX-based, not COUNT-based
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository — nextSortOrder', () {
+    test(
+        'returns one greater than the current max sortOrder among live '
+        'presets', () async {
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
+
+      await _createUserPreset(repo, name: 'Preset A', sortOrder: 1000);
+      await _createUserPreset(repo, name: 'Preset B', sortOrder: 1001);
+      await _createUserPreset(repo, name: 'Preset C', sortOrder: 1002);
+
+      expect(await repo.nextSortOrder(), 1003);
+    });
+
+    test(
+      'is not fooled by a live-preset count lower than the max sortOrder '
+      'after a soft-delete (regression: preset_editor_screen.dart and '
+      "log_drink_sheet.dart's create paths used to derive the next "
+      'sortOrder from the live preset *count*, which collided with an '
+      'existing preset once deletePreset — a soft delete — opened a gap)',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = DrinksRepository(db);
+
+        final idA =
+            await _createUserPreset(repo, name: 'Preset A', sortOrder: 1000);
+        final idB =
+            await _createUserPreset(repo, name: 'Preset B', sortOrder: 1001);
+        final idC =
+            await _createUserPreset(repo, name: 'Preset C', sortOrder: 1002);
+
+        await repo.deletePreset(idB);
+
+        // A naive `liveCount + 1` would now return 1002 (only 2 of the 3
+        // created presets are still live) — colliding with C.
+        expect(await repo.nextSortOrder(), 1003);
+
+        final idD = await _createUserPreset(
+          repo,
+          name: 'Preset D',
+          sortOrder: await repo.nextSortOrder(),
+        );
+
+        final all = await repo.watchAllPresets().first;
+        final sortOrderById = {for (final p in all) p.id: p.sortOrder};
+        expect(sortOrderById[idA], 1000);
+        expect(sortOrderById[idC], 1002);
+        expect(sortOrderById[idD], 1003);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // Group 8: reorderPresets — single-transaction bulk update
   // -------------------------------------------------------------------------
 
