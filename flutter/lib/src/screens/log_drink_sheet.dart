@@ -524,29 +524,45 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
 
   /// "Save as copy and confirm ... the user is asked to confirm the new
   /// name" (user-experience.md §S2). Returns null if the user cancels.
+  ///
+  /// The default `'$name (copy)'` value can itself exceed `validatePresetName`'s
+  /// 30-rune limit (a 24–30 char base name + " (copy)"), so this field is
+  /// live-validated the same way `_AdvancedEditorSheetState._validateName`
+  /// validates the main name field — `Create` is disabled until valid,
+  /// instead of letting an invalid name reach `repo.createPreset` only to
+  /// throw after the sheet has already been popped (C6).
   Future<String?> _promptCopyName() {
     final ctrl = TextEditingController(text: '${_nameCtrl.text} (copy)');
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New preset name'),
-        content: TextField(
-          key: const Key('advanced_editor_copy_name_field'),
-          controller: ctrl,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            key: const Key('advanced_editor_copy_cancel_button'),
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            key: const Key('advanced_editor_copy_confirm_button'),
-            onPressed: () => Navigator.of(context).pop(ctrl.text),
-            child: const Text('Create'),
-          ),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final error = _validateName(ctrl.text);
+          return AlertDialog(
+            title: const Text('New preset name'),
+            content: TextField(
+              key: const Key('advanced_editor_copy_name_field'),
+              controller: ctrl,
+              autofocus: true,
+              decoration: InputDecoration(errorText: error),
+              onChanged: (_) => setDialogState(() {}),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('advanced_editor_copy_cancel_button'),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                key: const Key('advanced_editor_copy_confirm_button'),
+                onPressed: error == null
+                    ? () => Navigator.of(context).pop(ctrl.text)
+                    : null,
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -287,7 +287,9 @@ class DrinksRepository {
   ///
   /// Throws [ArgumentError] if the effective price is non-null while the
   /// effective currency is null (data-model.md `DrinkEntry.currency`:
-  /// "Required when priceMinor is set").
+  /// "Required when priceMinor is set"), or if [name] fails
+  /// [validatePresetName] — the same rule `createPreset`/`updatePreset`
+  /// enforce, since `DrinkEntry.name` follows the same Parity Rulebook shape.
   Future<void> logDrink({
     required DrinkPreset preset,
     String? name,
@@ -297,6 +299,10 @@ class DrinksRepository {
     Optional<String?> currency = const Optional.absent(),
     DateTime? consumedAt,
   }) async {
+    if (name != null) {
+      _assertValidPresetName(name);
+      name = normalizeNfc(name);
+    }
     final effectivePriceMinor =
         priceMinor.isPresent ? priceMinor.value : preset.regularPriceMinor;
     final effectiveCurrency =
