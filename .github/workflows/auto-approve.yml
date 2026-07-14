@@ -1,9 +1,10 @@
-name: Auto-Approve Agent PRs
+name: Auto-Approve Trusted PRs
 
-# Automatically approves a claude/* PR once the CI workflow's four required
-# jobs (core, app, review, security) all pass. CI runs review/security as
-# jobs within itself (not separate workflows), so a single workflow_run
-# completion of "CI" already reflects the outcome of all four.
+# Automatically approves a PR from a trusted author (app/claude,
+# app/controlol-auth, or repo owner controlol) once the CI workflow's four
+# required jobs (core, app, review, security) all pass. CI runs review/
+# security as jobs within itself, so a single workflow_run completion of
+# "CI" already reflects the outcome of all four.
 #
 # Prerequisites (one-time setup):
 #   Settings → Actions → General → "Allow GitHub Actions to create and approve
@@ -20,11 +21,8 @@ on:
 
 jobs:
   approve:
-    # Only run for same-repo PRs. The claude[bot] author check inside the step
-    # is the real gate; the branch prefix here is a cheap pre-filter only.
-    if: |
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'claude/')
+    # Only run for same-repo PRs; the author check below is the real gate.
+    if: github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: read      # needed to query workflow run results
@@ -48,15 +46,18 @@ jobs:
             exit 0
           fi
 
-          # Only auto-approve PRs opened by the claude bot.
-          # gh uses GraphQL which returns the app slug as "app/claude".
+          # Only auto-approve PRs from trusted authors (app bots return
+          # "app/<slug>"; human accounts return their bare login).
           pr_author=$(gh pr view "$pr_number" --repo "$REPO" \
             --json author --jq '.author.login')
-          if [ "$pr_author" != "app/claude" ]; then
-            echo "PR #$pr_number not authored by app/claude (got: $pr_author) — skipping."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          case "$pr_author" in
+            app/claude|app/controlol-auth|controlol) ;;
+            *)
+              echo "PR #$pr_number not authored by a trusted identity (got: $pr_author) — skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
 
           # Skip if the bot already approved to avoid duplicate approvals.
           already=$(gh api "repos/$REPO/pulls/$pr_number/reviews" \
