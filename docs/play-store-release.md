@@ -119,9 +119,10 @@ different bar to promote out of it:
   already-uploaded `.aab`, no rebuild needed. Production rollout can be
   staged as a percentage and ramped up manually or on a schedule.
 - Release notes: Play Console has a per-track "what's new" field per release
-  (add `whatsnewDir` to the `r0adkll/upload-google-play` step, pointing at
-  `flutter/distribution/whatsnew/whatsnew-en-US`, if you want notes checked
-  into the repo instead of typed into the Console each time).
+  (add `whatsNewDirectory: flutter/distribution/whatsnew` to the
+  `r0adkll/upload-google-play` step — pointing at the *directory*, with a
+  `whatsnew-en-US` file inside it — if you want notes checked into the repo
+  instead of typed into the Console each time).
 
 ## Play Store: one-time setup
 
@@ -181,13 +182,20 @@ signing key.
 **The Play Developer API cannot create the first release for a package name
 it has never seen** — `release-play.yml` will fail on a brand-new app no
 matter how correctly it's configured. Build one AAB locally and upload it by
-hand through the Console once:
+hand through the Console once, using the same `versionCode` formula
+`release-play.yml` uses (`major*10000 + minor*100 + patch`) so the manual
+upload and every subsequent tagged release live on the same numbering
+scheme — e.g. for the `v0.1.0` tag that formula gives `100`:
 ```bash
 cd flutter
-flutter build appbundle --release
+flutter build appbundle --release --build-name=0.1.0 --build-number=100
 # Play Console → your app → Testing → Internal testing → Create release →
 # upload build/app/outputs/bundle/release/app-release.aab
 ```
+Because every tagged release after this one has a strictly higher
+`major*10000 + minor*100 + patch` value than `100`, `versionCode` is always
+strictly increasing from here on — no collision with this manual upload.
+
 After that upload, the package name exists in Play's system and every
 subsequent release can go through the API — i.e. through `release-play.yml`.
 
@@ -218,25 +226,39 @@ build off any branch, tag or no tag.)
    ([`docs/agentic-workflow.md`](./agentic-workflow.md)) and tag it as above
    if you also want it on Firebase.
 2. Publish a GitHub Release for that tag — this, not the tag push itself, is
-   what triggers `release-play.yml`:
+   what triggers `release-play.yml`. **Create/push the tag first (step 1),
+   then create the release against the existing tag**, rather than letting
+   `gh release create` mint the tag itself: if `gh release create` both
+   creates the tag and publishes the release in one call, it fires
+   `distribute-firebase.yml` (tag push) and `release-play.yml` (release
+   published) at the same moment, producing a redundant (harmless, but
+   pointless) Firebase build.
    ```bash
    gh release create v1.2.0 --title v1.2.0 --generate-notes --prerelease
    ```
    `release-play.yml` builds `app-release.aab` with `versionName=1.2.0` and a
-   `versionCode` derived from the GitHub Actions run number (guaranteed to
-   strictly increase, which is Play's only requirement for `versionCode`),
-   and uploads it to Play. **The track is derived from the release itself**:
-   mark it `--prerelease` for the `internal` track, or omit the flag for a
-   full release to go straight to `production`. There's no manual
-   `track` input — creating the right *kind* of GitHub Release is the whole
-   interface.
+   `versionCode` derived from the tag itself (`major*10000 + minor*100 +
+   patch`, e.g. `10200` for `v1.2.0` — strictly increasing with the version
+   and independent of CI run counters), and uploads it to Play. **The track
+   is derived from the release itself**: mark it `--prerelease` for the
+   `internal` track, or omit the flag for a full release to go straight to
+   `production`. There's no manual `track` input — creating the right *kind*
+   of GitHub Release is the whole interface. **Don't publish an `-rc` tag
+   (e.g. `v1.2.0-rc1`) as a GitHub Release and later `v1.2.0` itself** — the
+   `-rc` suffix is stripped before computing `versionCode`, so both would
+   compute the same value and Play requires `versionCode` to be unique
+   across every release.
 3. For an internal-track release: check it in Play Console, sanity-check on
    a real device via the track's opt-in link, then promote it to
    closed → open → production in the Console as it clears each bar (a
    Console action, no rebuild needed).
-4. Production releases go through Play's standard review before going live;
-   stage the rollout percentage in the Console if you want a ramp instead of
-   100% at once.
+4. Production releases go live as a **staged rollout at 10%** by default
+   (`release-play.yml` sets `status: inProgress`, `userFraction: 0.1`); ramp
+   it up to 100% manually in the Console once you're confident in the build.
+   Internal-track releases ship at 100% immediately (`status: completed`) —
+   there's no meaningful "stage" for a track that's already limited to 100
+   testers. Production releases also go through Play's standard review
+   before going live at all.
 
 ## Technical gap for the first Play release
 
@@ -262,8 +284,11 @@ from inside this repo.
   Developer API upload.
 - There was no versioning convention beyond hand-editing `version:` in
   `pubspec.yaml` (frozen at `0.1.0+1`). Both new workflows now derive
-  `versionName`/`versionCode` from a git tag/GitHub Release and the CI run
-  number instead.
+  `versionName` from a git tag/GitHub Release; `release-play.yml` derives
+  `versionCode` from the tag's semver (`major*10000 + minor*100 + patch`,
+  strictly increasing and independent of CI run counters), while
+  `distribute-firebase.yml` uses the CI run number since Firebase has no
+  Play-style strictly-increasing-versionCode requirement to satisfy.
 - There was no way to get a build to testers without either sideloading an
   APK by hand or going through Play at all. `distribute-firebase.yml` closes
   that gap independently of the Play Store work, and is scoped to a tag/

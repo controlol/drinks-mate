@@ -1,25 +1,9 @@
 # .github/workflows/release-play.yml
 #
-# Builds a signed Android App Bundle and uploads it to the Google Play
-# Console via the Play Developer API. Reuses the same release keystore and
-# ANDROID_* secrets as build-apk.yml (see RELEASE_SIGNING.md) rather than a
-# second keystore — one upload key, one place it's documented. See
-# docs/play-store-release.md for the one-time Play account/listing/service
-# account setup this additionally depends on.
-#
-# Triggered ONLY by publishing a GitHub Release, not by every tag push or
-# workflow_dispatch — cutting a Play release is a deliberate, reviewable act
-# distinct from tagging a build for Firebase App Distribution
-# (distribute-firebase.yml, which does trigger on a tag). The track is
-# derived from the release's "pre-release" flag rather than taken as an
-# input: mark the GitHub Release a pre-release to ship to the `internal`
-# Play track, or a full release to ship straight to `production`.
-#
-# LIMITATION: this cannot bootstrap the very first release. The Play
-# Developer API rejects uploads to a packageName the Play Console has never
-# seen, so the first .aab for a brand-new app listing must be uploaded by
-# hand through the Console UI. Publish a GitHub Release starting with the
-# second release. See the doc for the full first-release checklist.
+# Builds and uploads a signed AAB to the Play Console. Triggered only by
+# publishing a GitHub Release (not tag push/dispatch), so cutting a Play
+# release is a deliberate act. See docs/play-store-release.md for the
+# pipeline, track derivation, and first-release setup.
 on:
   release:
     types: [published]
@@ -48,17 +32,24 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ github.event.release.tag_name }}"
+          # versionCode = major*10000 + minor*100 + patch (minor/patch <
+          # 100, -rc suffix stripped) instead of github.run_number, which
+          # starts at 1 and collides with the manual first upload's
+          # versionCode 1 (docs/play-store-release.md step 5). Don't
+          # publish both an -rc tag and its final release: they'd compute
+          # the same versionCode.
+          name="${tag#v}"; name="${name%%-*}"
+          IFS=. read -r major minor patch <<< "$name"
           echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
-          # github.run_number is monotonically increasing for this workflow
-          # file, which is all Play requires of versionCode (strictly
-          # increasing per release). It resets only if the workflow file is
-          # renamed/recreated — acceptable for a low-frequency release job,
-          # but don't rename this file casually once releases are flowing.
-          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "build_number=$(( major*10000 + minor*100 + patch ))" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event.release.prerelease }}" = "true" ]; then
             echo "track=internal" >> "$GITHUB_OUTPUT"
+            echo "status=completed" >> "$GITHUB_OUTPUT"
+            echo "user_fraction=" >> "$GITHUB_OUTPUT"
           else
             echo "track=production" >> "$GITHUB_OUTPUT"
+            echo "status=inProgress" >> "$GITHUB_OUTPUT"
+            echo "user_fraction=0.1" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-java@v5
@@ -108,5 +99,6 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.controlol.drinks_mate
           releaseFiles: flutter/build/app/outputs/bundle/release/app-release.aab
-          track: ${{ steps.version.outputs.track }}
-          status: completed
+          tracks: ${{ steps.version.outputs.track }}
+          status: ${{ steps.version.outputs.status }}
+          userFraction: ${{ steps.version.outputs.user_fraction }}
