@@ -1,0 +1,118 @@
+# .github/workflows/release-play.yml
+#
+# Builds a signed Android App Bundle and uploads it to the Google Play
+# Console via the Play Developer API. See docs/play-store-release.md for the
+# one-time account/keystore/secret setup this depends on.
+#
+# Deliberately NOT wired to `push: [main]` — release cadence should be a
+# deliberate act (a version tag or a manual dispatch), not every merge. It's
+# inert without the secrets below: the "Decode signing keystore" step fails
+# fast with a clear message rather than silently building a debug-signed AAB.
+#
+# LIMITATION: this cannot bootstrap the very first release. The Play
+# Developer API rejects uploads to a packageName the Play Console has never
+# seen, so the first .aab for a brand-new app listing must be uploaded by
+# hand through the Console UI. Run this workflow starting with the second
+# release. See the doc for the full first-release checklist.
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play Console track to release to"
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: release-play-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build + upload signed AAB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            # Manual dispatch off a branch: keep versionName as pubspec.yaml's
+            # and only bump the build number, so ad-hoc dispatch runs don't
+            # need a tag to produce an installable, uniquely-numbered build.
+            name="$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          fi
+          echo "build_name=$name" >> "$GITHUB_OUTPUT"
+          # github.run_number is monotonically increasing for this workflow
+          # file, which is all Play requires of versionCode (strictly
+          # increasing per release). It resets only if the workflow file is
+          # renamed/recreated — acceptable for a low-frequency release job,
+          # but don't rename this file casually once releases are flowing.
+          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Decode signing keystore
+        env:
+          PLAY_KEYSTORE_BASE64: ${{ secrets.PLAY_KEYSTORE_BASE64 }}
+          PLAY_KEYSTORE_PASSWORD: ${{ secrets.PLAY_KEYSTORE_PASSWORD }}
+          PLAY_KEY_ALIAS: ${{ secrets.PLAY_KEY_ALIAS }}
+          PLAY_KEY_PASSWORD: ${{ secrets.PLAY_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${PLAY_KEYSTORE_BASE64:?PLAY_KEYSTORE_BASE64 secret is not set — see docs/play-store-release.md#one-time-setup}"
+          echo "$PLAY_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          cat > android/key.properties <<EOF
+          storePassword=$PLAY_KEYSTORE_PASSWORD
+          keyPassword=$PLAY_KEY_PASSWORD
+          keyAlias=$PLAY_KEY_ALIAS
+          storeFile=release.keystore
+          EOF
+
+      - name: Build signed App Bundle
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: drinks-mate-release-aab
+          path: flutter/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish to Play Console
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.controlol.drinks_mate
+          releaseFiles: flutter/build/app/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track || 'internal' }}
+          status: completed

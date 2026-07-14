@@ -31,7 +31,7 @@ This is a monorepo. Specs, code, and tooling are deliberately separated:
 | [`design/`](./design) | **What** the app does and **why** — product vision, UX, features, data model, notifications, the Party Session/BAC spec. The source of truth. |
 | [`engineering/`](./engineering) | **How** it's built — the Phase-1 constraints (C0–C6), the decision records (Flutter stack D1–D7), and the **[Parity Rulebook](./engineering/decisions/design-system.md#appendix--parity-rulebook)** (the canonical numeric/rounding/boundary spec). |
 | [`flutter/`](./flutter) | All application code: the Flutter app ([`flutter/lib`](./flutter/lib), [`flutter/test`](./flutter/test)) and the dependency-free pure-Dart [`flutter/packages/core`](./flutter/packages/core) package (BAC, hydration, pace, username). |
-| [`docs/`](./docs) | Engineering runbooks — see [`agentic-workflow.md`](./docs/agentic-workflow.md). |
+| [`docs/`](./docs) | Engineering runbooks — see [`agentic-workflow.md`](./docs/agentic-workflow.md) (agent/CI loop) and [`play-store-release.md`](./docs/play-store-release.md) (build → sign → Play Store). |
 | `.claude/`, `.github/`, `.mcp.json`, `.vscode/` | Agent/CI/editor tooling (see [The agentic workflow](#the-agentic-workflow)). |
 | [`CLAUDE.md`](./CLAUDE.md) | The agent guide: conventions and the definition of done. |
 
