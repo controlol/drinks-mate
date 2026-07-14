@@ -7,9 +7,10 @@
 //  2. Populated list shows preset name + volume for each preset.
 //  3. A hidden preset shows the visibility_off icon; a visible one does not.
 //  4. Party Mode gating: alcoholic presets render nowhere in the tree when
-//     bacCapGramsPerL is null; they render alongside everything else when it
-//     is set (features.md F14: "alcoholic presets visible only when Party
-//     Mode active").
+//     there is no active PartySession; they render alongside everything else
+//     when one is active (features.md F14: "alcoholic presets visible only
+//     when Party Mode active"; data-model.md §PartySession: "active" means
+//     `endedAt IS NULL`).
 //  5. Hide/unhide button calls hidePreset/unhidePreset with the preset id.
 //  6. Delete button only renders for isUserCreated presets; the confirm
 //     dialog gates deletePreset on tapping "Delete" (not "Cancel").
@@ -34,6 +35,7 @@ import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -101,8 +103,6 @@ DrinkPreset _preset({
   );
 }
 
-/// [bacCapGramsPerL] drives Party Mode gating
-/// (manage_drinks_screen.dart: `partyModeActive = bacCapGramsPerL != null`).
 UserPreferences _prefs({double? bacCapGramsPerL}) {
   final now = DateTime.utc(2026, 1, 1);
   return UserPreferences(
@@ -128,16 +128,36 @@ UserPreferences _prefs({double? bacCapGramsPerL}) {
   );
 }
 
+/// An in-progress [PartySession] (`endedAt` unset) — drives Party Mode
+/// gating via [activePartySessionProvider].
+PartySession _session({String id = 's1'}) {
+  final now = DateTime.utc(2026, 1, 1);
+  return PartySession(
+    id: id,
+    startedAt: now,
+    useSessionPrices: false,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Test harness
 // ---------------------------------------------------------------------------
 
-/// Builds a [ProviderContainer] with [repo]/[prefs] wired in and warms both
-/// [allPresetsProvider] and [userPreferencesProvider] (see file header) so
-/// the first pump already observes resolved data, not AsyncLoading.
+/// Builds a [ProviderContainer] with [repo]/[prefs]/[activeSession] wired in
+/// and warms [allPresetsProvider], [userPreferencesProvider], and
+/// [activePartySessionProvider] (see file header) so the first pump already
+/// observes resolved data, not AsyncLoading.
+///
+/// [activeSession] drives Party Mode gating (manage_drinks_screen.dart:
+/// `partyModeActive = activePartySessionProvider.valueOrNull != null`) —
+/// null means no active session, matching data-model.md §PartySession's
+/// "active" = `endedAt IS NULL`.
 Future<ProviderContainer> _buildContainer({
   required _FakeDrinksRepo repo,
   UserPreferences? prefs,
+  PartySession? activeSession,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -145,10 +165,14 @@ Future<ProviderContainer> _buildContainer({
       userPreferencesProvider.overrideWith(
         (ref) => Stream.value(prefs ?? _prefs()),
       ),
+      activePartySessionProvider.overrideWith(
+        (ref) => Stream.value(activeSession),
+      ),
     ],
   );
   await container.read(allPresetsProvider.future);
   await container.read(userPreferencesProvider.future);
+  await container.read(activePartySessionProvider.future);
   return container;
 }
 
@@ -174,9 +198,7 @@ void main() {
   // 1. Empty state
   // -------------------------------------------------------------------------
 
-  testWidgets('empty state shows "No drink presets yet." text', (
-    tester,
-  ) async {
+  testWidgets('empty state shows "No drink presets yet." text', (tester) async {
     final repo = _FakeDrinksRepo(const []);
     final container = await _buildContainer(repo: repo);
     addTearDown(container.dispose);
@@ -220,45 +242,46 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'hidden preset shows the visibility_off icon; visible preset does not',
-      (tester) async {
-    final presets = [
-      _preset(id: 'p1', name: 'Visible Water'),
-      _preset(
-        id: 'p2',
-        name: 'Hidden Juice',
-        isHidden: true,
-        beverageType: BeverageType.juice,
-      ),
-    ];
-    final repo = _FakeDrinksRepo(presets);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'hidden preset shows the visibility_off icon; visible preset does not',
+    (tester) async {
+      final presets = [
+        _preset(id: 'p1', name: 'Visible Water'),
+        _preset(
+          id: 'p2',
+          name: 'Hidden Juice',
+          isHidden: true,
+          beverageType: BeverageType.juice,
+        ),
+      ];
+      final repo = _FakeDrinksRepo(presets);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    // Exactly one hidden preset -> exactly one visibility_off icon overall.
-    // Source: manage_drinks_screen.dart _PresetTile.build —
-    // `preset.isHidden ? Icons.visibility_off_outlined : Icons.visibility_outlined`.
-    expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+      // Exactly one hidden preset -> exactly one visibility_off icon overall.
+      // Source: manage_drinks_screen.dart _PresetTile.build —
+      // `preset.isHidden ? Icons.visibility_off_outlined : Icons.visibility_outlined`.
+      expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
 
-    final hiddenTile = find.widgetWithText(ListTile, 'Hidden Juice');
-    final visibleTile = find.widgetWithText(ListTile, 'Visible Water');
+      final hiddenTile = find.widgetWithText(ListTile, 'Hidden Juice');
+      final visibleTile = find.widgetWithText(ListTile, 'Visible Water');
 
-    expect(
-      find.descendant(
-        of: hiddenTile,
-        matching: find.byIcon(Icons.visibility_off_outlined),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: visibleTile,
-        matching: find.byIcon(Icons.visibility_off_outlined),
-      ),
-      findsNothing,
-    );
-  });
+      expect(
+        find.descendant(
+          of: hiddenTile,
+          matching: find.byIcon(Icons.visibility_off_outlined),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: visibleTile,
+          matching: find.byIcon(Icons.visibility_off_outlined),
+        ),
+        findsNothing,
+      );
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 4. Party Mode gating
@@ -268,38 +291,34 @@ void main() {
     List<DrinkPreset> presets() => [
           _preset(id: 'water', name: 'Glass of water'),
           _preset(
-            id: 'beer',
-            name: 'Craft Lager',
-            beverageType: BeverageType.beer,
-          ),
+              id: 'beer', name: 'Craft Lager', beverageType: BeverageType.beer),
         ];
 
     testWidgets(
-        'alcoholic presets do not render at all when bacCapGramsPerL is null',
-        (tester) async {
-      final repo = _FakeDrinksRepo(presets());
-      final container = await _buildContainer(
-        repo: repo,
-        prefs: _prefs(),
-      );
-      addTearDown(container.dispose);
-      await _pumpScreen(tester, container);
+      'alcoholic presets do not render at all when there is no active '
+      'PartySession',
+      (tester) async {
+        final repo = _FakeDrinksRepo(presets());
+        final container = await _buildContainer(repo: repo);
+        addTearDown(container.dispose);
+        await _pumpScreen(tester, container);
 
-      expect(find.text('Glass of water'), findsOneWidget);
-      // Source: manage_drinks_screen.dart ManageDrinksScreen.build —
-      // `partyModeActive` false -> `allPresets.where((p) =>
-      // !p.beverageType.isAlcoholic)`; features.md F14: "alcoholic presets
-      // visible only when Party Mode active".
-      expect(find.text('Craft Lager'), findsNothing);
-    });
+        expect(find.text('Glass of water'), findsOneWidget);
+        // Source: manage_drinks_screen.dart ManageDrinksScreen.build —
+        // `partyModeActive` false -> `allPresets.where((p) =>
+        // !p.beverageType.isAlcoholic)`; features.md F14: "alcoholic presets
+        // visible only when Party Mode active".
+        expect(find.text('Craft Lager'), findsNothing);
+      },
+    );
 
     testWidgets(
-        'alcoholic presets render alongside everything else when '
-        'bacCapGramsPerL is set', (tester) async {
+        'alcoholic presets render alongside everything else when a '
+        'PartySession is active', (tester) async {
       final repo = _FakeDrinksRepo(presets());
       final container = await _buildContainer(
         repo: repo,
-        prefs: _prefs(bacCapGramsPerL: 0.5),
+        activeSession: _session(),
       );
       addTearDown(container.dispose);
       await _pumpScreen(tester, container);
@@ -314,36 +333,38 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'tapping the visibility button on a visible preset calls hidePreset',
-      (tester) async {
-    final repo = _FakeDrinksRepo([_preset(id: 'p1', name: 'Visible Water')]);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'tapping the visibility button on a visible preset calls hidePreset',
+    (tester) async {
+      final repo = _FakeDrinksRepo([_preset(id: 'p1', name: 'Visible Water')]);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    await tester.tap(find.byKey(const Key('manage_drinks_visibility_p1')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('manage_drinks_visibility_p1')));
+      await tester.pump();
 
-    expect(repo.hideCalls, ['p1']);
-    expect(repo.unhideCalls, isEmpty);
-  });
+      expect(repo.hideCalls, ['p1']);
+      expect(repo.unhideCalls, isEmpty);
+    },
+  );
 
   testWidgets(
-      'tapping the visibility button on a hidden preset calls unhidePreset',
-      (tester) async {
-    final repo = _FakeDrinksRepo([
-      _preset(id: 'p1', name: 'Hidden Juice', isHidden: true),
-    ]);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'tapping the visibility button on a hidden preset calls unhidePreset',
+    (tester) async {
+      final repo = _FakeDrinksRepo([
+        _preset(id: 'p1', name: 'Hidden Juice', isHidden: true),
+      ]);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    await tester.tap(find.byKey(const Key('manage_drinks_visibility_p1')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('manage_drinks_visibility_p1')));
+      await tester.pump();
 
-    expect(repo.unhideCalls, ['p1']);
-    expect(repo.hideCalls, isEmpty);
-  });
+      expect(repo.unhideCalls, ['p1']);
+      expect(repo.hideCalls, isEmpty);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 6. Delete button — user-created only, gated behind a confirm dialog
@@ -392,23 +413,25 @@ void main() {
     expect(repo.deleteCalls, isEmpty);
   });
 
-  testWidgets('tapping Delete on the delete confirm dialog calls deletePreset',
-      (tester) async {
-    final repo = _FakeDrinksRepo([
-      _preset(id: 'custom', name: 'My Cola', isUserCreated: true),
-    ]);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+  testWidgets(
+    'tapping Delete on the delete confirm dialog calls deletePreset',
+    (tester) async {
+      final repo = _FakeDrinksRepo([
+        _preset(id: 'custom', name: 'My Cola', isUserCreated: true),
+      ]);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    await tester.tap(find.byKey(const Key('manage_drinks_delete_custom')));
-    await tester.pump();
+      await tester.tap(find.byKey(const Key('manage_drinks_delete_custom')));
+      await tester.pump();
 
-    await tester.tap(find.text('Delete'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
 
-    expect(repo.deleteCalls, ['custom']);
-  });
+      expect(repo.deleteCalls, ['custom']);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 7. FAB navigates to create
@@ -438,109 +461,57 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'tapping a preset tile pushes PresetEditorScreen with that preset',
-      (tester) async {
-    final preset = _preset(id: 'p1', name: 'Glass of water');
-    final repo = _FakeDrinksRepo([preset]);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
+    'tapping a preset tile pushes PresetEditorScreen with that preset',
+    (tester) async {
+      final preset = _preset(id: 'p1', name: 'Glass of water');
+      final repo = _FakeDrinksRepo([preset]);
+      final container = await _buildContainer(repo: repo);
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, container);
 
-    await tester.tap(find.widgetWithText(ListTile, 'Glass of water'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Glass of water'));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(PresetEditorScreen), findsOneWidget);
-    final pushed = tester.widget<PresetEditorScreen>(
-      find.byType(PresetEditorScreen),
-    );
-    expect(pushed.preset?.id, 'p1');
-    expect(find.text('Edit drink'), findsOneWidget);
-  });
+      expect(find.byType(PresetEditorScreen), findsOneWidget);
+      final pushed = tester.widget<PresetEditorScreen>(
+        find.byType(PresetEditorScreen),
+      );
+      expect(pushed.preset?.id, 'p1');
+      expect(find.text('Edit drink'), findsOneWidget);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 9. Reorder — dragging the drag handle calls reorderPresets
   // -------------------------------------------------------------------------
 
   testWidgets(
-      'dragging a row past the others calls reorderPresets with the new id '
-      'order', (tester) async {
-    final presets = [
-      _preset(id: 'p1', name: 'Preset One', sortOrder: 1),
-      _preset(id: 'p2', name: 'Preset Two', sortOrder: 2),
-      _preset(id: 'p3', name: 'Preset Three', sortOrder: 3),
-    ];
-    final repo = _FakeDrinksRepo(presets);
-    final container = await _buildContainer(repo: repo);
-    addTearDown(container.dispose);
-    await _pumpScreen(tester, container);
-
-    // Source: manage_drinks_screen.dart _PresetTile — drag handle is a
-    // ReorderableDragStartListener-wrapped Icon inside the _PresetTile keyed
-    // by ValueKey(preset.id).
-    final handle = find.descendant(
-      of: find.byKey(const ValueKey('p1')),
-      matching: find.byIcon(Icons.drag_handle),
-    );
-    expect(handle, findsOneWidget);
-
-    // ReorderableDragStartListener starts the drag immediately on pointer
-    // down (no long-press needed, unlike the default drag handles this
-    // screen disables via buildDefaultDragHandles: false). Drag p1 down far
-    // enough to pass both p2 and p3, landing it last.
-    final gesture = await tester.startGesture(tester.getCenter(handle));
-    await tester.pump(const Duration(milliseconds: 50));
-    await gesture.moveBy(const Offset(0, 500));
-    await tester.pump(const Duration(milliseconds: 50));
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(repo.reorderCalls, isNotEmpty);
-    // p1 dragged from index 0 past p2 and p3 -> final visual order is
-    // [p2, p3, p1]. Source: DrinksRepository.reorderPresets doc — "ids in
-    // final order"; manage_drinks_screen.dart _onReorder passes
-    // `reordered.map((p) => p.id)` after removeAt(oldIndex)/insert(newIndex)
-    // using ReorderableListView's onReorderItem callback, whose newIndex is
-    // already adjusted for the removed item (Flutter framework doc:
-    // "onReorderItem ... adjusts the newIndex parameter for a removed item
-    // at the oldIndex" — unlike the deprecated onReorder).
-    expect(repo.reorderCalls.last, ['p2', 'p3', 'p1']);
-  });
-
-  testWidgets(
-    'dragging a row when an alcoholic preset is hidden by Party Mode '
-    "filtering keeps the hidden preset's absolute position instead of "
-    'pushing it to the tail of sortOrder (regression: reorderPresets '
-    'appends any id not passed in after the full passed-in list, so '
-    'passing only the visible subset would silently move every hidden '
-    'alcoholic preset on every reorder)',
+    'dragging a row past the others calls reorderPresets with the new id '
+    'order',
     (tester) async {
       final presets = [
         _preset(id: 'p1', name: 'Preset One', sortOrder: 1),
-        _preset(
-          id: 'alc',
-          name: 'Hidden Beer',
-          beverageType: BeverageType.beer,
-          sortOrder: 2,
-        ),
-        _preset(id: 'p2', name: 'Preset Two', sortOrder: 3),
-        _preset(id: 'p3', name: 'Preset Three', sortOrder: 4),
+        _preset(id: 'p2', name: 'Preset Two', sortOrder: 2),
+        _preset(id: 'p3', name: 'Preset Three', sortOrder: 3),
       ];
-      // Party Mode off (default _prefs()) — 'alc' is filtered out of the
-      // visible list entirely, but must still appear in reorderPresets'
-      // orderedIds at its original relative position.
       final repo = _FakeDrinksRepo(presets);
       final container = await _buildContainer(repo: repo);
       addTearDown(container.dispose);
       await _pumpScreen(tester, container);
 
+      // Source: manage_drinks_screen.dart _PresetTile — drag handle is a
+      // ReorderableDragStartListener-wrapped Icon inside the _PresetTile keyed
+      // by ValueKey(preset.id).
       final handle = find.descendant(
         of: find.byKey(const ValueKey('p1')),
         matching: find.byIcon(Icons.drag_handle),
       );
       expect(handle, findsOneWidget);
 
-      // Drag p1 (visible index 0) past p2 and p3, landing it last among the
-      // visible rows -> visible order becomes [p2, p3, p1].
+      // ReorderableDragStartListener starts the drag immediately on pointer
+      // down (no long-press needed, unlike the default drag handles this
+      // screen disables via buildDefaultDragHandles: false). Drag p1 down far
+      // enough to pass both p2 and p3, landing it last.
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 50));
       await gesture.moveBy(const Offset(0, 500));
@@ -549,10 +520,64 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.reorderCalls, isNotEmpty);
-      // 'alc' must stay interleaved at its original absolute position
-      // (between p1 and p2 in allPresets) — not appended after the
-      // reordered visible subset as ['p2', 'p3', 'p1', 'alc'] would be.
-      expect(repo.reorderCalls.last, ['p2', 'alc', 'p3', 'p1']);
+      // p1 dragged from index 0 past p2 and p3 -> final visual order is
+      // [p2, p3, p1]. Source: DrinksRepository.reorderPresets doc — "ids in
+      // final order"; manage_drinks_screen.dart _onReorder passes
+      // `reordered.map((p) => p.id)` after removeAt(oldIndex)/insert(newIndex)
+      // using ReorderableListView's onReorderItem callback, whose newIndex is
+      // already adjusted for the removed item (Flutter framework doc:
+      // "onReorderItem ... adjusts the newIndex parameter for a removed item
+      // at the oldIndex" — unlike the deprecated onReorder).
+      expect(repo.reorderCalls.last, ['p2', 'p3', 'p1']);
     },
   );
+
+  testWidgets(
+      'dragging a row when an alcoholic preset is hidden by Party Mode '
+      "filtering keeps the hidden preset's absolute position instead of "
+      'pushing it to the tail of sortOrder (regression: reorderPresets '
+      'appends any id not passed in after the full passed-in list, so '
+      'passing only the visible subset would silently move every hidden '
+      'alcoholic preset on every reorder)', (tester) async {
+    final presets = [
+      _preset(id: 'p1', name: 'Preset One', sortOrder: 1),
+      _preset(
+        id: 'alc',
+        name: 'Hidden Beer',
+        beverageType: BeverageType.beer,
+        sortOrder: 2,
+      ),
+      _preset(id: 'p2', name: 'Preset Two', sortOrder: 3),
+      _preset(id: 'p3', name: 'Preset Three', sortOrder: 4),
+    ];
+    // Party Mode off (no active PartySession, the _buildContainer default)
+    // — 'alc' is filtered out of the visible list entirely, but must still
+    // appear in reorderPresets' orderedIds at its original relative
+    // position.
+    final repo = _FakeDrinksRepo(presets);
+    final container = await _buildContainer(repo: repo);
+    addTearDown(container.dispose);
+    await _pumpScreen(tester, container);
+
+    final handle = find.descendant(
+      of: find.byKey(const ValueKey('p1')),
+      matching: find.byIcon(Icons.drag_handle),
+    );
+    expect(handle, findsOneWidget);
+
+    // Drag p1 (visible index 0) past p2 and p3, landing it last among the
+    // visible rows -> visible order becomes [p2, p3, p1].
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveBy(const Offset(0, 500));
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(repo.reorderCalls, isNotEmpty);
+    // 'alc' must stay interleaved at its original absolute position
+    // (between p1 and p2 in allPresets) — not appended after the
+    // reordered visible subset as ['p2', 'p3', 'p1', 'alc'] would be.
+    expect(repo.reorderCalls.last, ['p2', 'alc', 'p3', 'p1']);
+  });
 }

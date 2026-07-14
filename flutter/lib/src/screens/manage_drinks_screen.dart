@@ -15,9 +15,10 @@ import 'preset_editor_screen.dart';
 /// delete (user-created presets only), and create/edit via
 /// [PresetEditorScreen].
 ///
-/// Alcoholic presets are shown only when Party Mode is active
-/// ([UserPreferences.bacCapGramsPerL] set) — features.md F14: "alcoholic
-/// presets visible only when Party Mode active".
+/// Alcoholic presets are shown only when Party Mode is active — an
+/// in-progress [PartySession] (`endedAt IS NULL`), per data-model.md
+/// §PartySession — features.md F14: "alcoholic presets visible only when
+/// Party Mode active".
 class ManageDrinksScreen extends ConsumerWidget {
   const ManageDrinksScreen({super.key});
 
@@ -25,7 +26,7 @@ class ManageDrinksScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final presetsAsync = ref.watch(allPresetsProvider);
     final partyModeActive =
-        ref.watch(userPreferencesProvider).valueOrNull?.bacCapGramsPerL != null;
+        ref.watch(activePartySessionProvider).valueOrNull != null;
     final fmt = ref.watch(formatServiceProvider);
 
     return Scaffold(
