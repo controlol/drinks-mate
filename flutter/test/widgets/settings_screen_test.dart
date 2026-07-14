@@ -16,6 +16,8 @@
 //     visibleNonAlcoholicPresetsProvider filter runs against a fake
 //     DrinksRepository seeded with a mixed alcoholic/non-alcoholic list).
 //  6. Tapping "Manage drinks" pushes ManageDrinksScreen.
+//  7. Toggling "Always show alcoholic drinks" calls
+//     updateAlcoholicPresetsAlwaysVisible with the new value.
 //
 // Provider override pattern mirrors
 // flutter/test/widgets/today_drinks_screen_test.dart — fake repository
@@ -72,6 +74,7 @@ class _FakePreferencesRepo extends PreferencesRepository {
         bool? soberEstimateNotifEnabled,
       })> partyModeCalls = [];
   UserProfile? lastUpsertedProfile;
+  bool? lastAlcoholicPresetsAlwaysVisible;
 
   @override
   Future<void> updateDailyGoal(int dailyGoalMl) async {
@@ -148,6 +151,11 @@ class _FakePreferencesRepo extends PreferencesRepository {
   Future<void> upsertProfile(UserProfile profile) async {
     lastUpsertedProfile = profile;
   }
+
+  @override
+  Future<void> updateAlcoholicPresetsAlwaysVisible(bool value) async {
+    lastAlcoholicPresetsAlwaysVisible = value;
+  }
 }
 
 /// Fake [DrinksRepository] whose visible/all preset streams both yield a
@@ -185,6 +193,7 @@ UserPreferences _makePrefs({
   bool bacOnLockScreenEnabled = false,
   bool approachingCapNotifEnabled = false,
   bool soberEstimateNotifEnabled = false,
+  bool alcoholicPresetsAlwaysVisible = true,
 }) {
   return UserPreferences(
     id: kUserPreferencesId,
@@ -204,6 +213,7 @@ UserPreferences _makePrefs({
     bacOnLockScreenEnabled: bacOnLockScreenEnabled,
     approachingCapNotifEnabled: approachingCapNotifEnabled,
     soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+    alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
     installedAt: _epoch,
     createdAt: _epoch,
     updatedAt: _epoch,
@@ -278,12 +288,21 @@ Widget _buildScreen({
 /// until [finder] is visible. Explicitly targets the first [Scrollable]
 /// because `find.byType(Scrollable)` alone can match more than one instance
 /// (e.g. one nested inside an open dropdown overlay).
-Future<void> _scrollToVisible(WidgetTester tester, Finder finder) =>
-    tester.scrollUntilVisible(
-      finder,
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
+///
+/// `scrollUntilVisible` only scrolls until [finder] is *found in the tree*
+/// (i.e. within the sliver's cache extent), which can leave it just outside
+/// the actual on-screen viewport bounds and make a subsequent `tester.tap()`
+/// hit-test-miss. The trailing `ensureVisible` does a precise scroll (via
+/// `Scrollable.ensureVisible`) so the widget's bounds are fully on-screen.
+Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -814,5 +833,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ManageDrinksScreen), findsOneWidget);
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. "Always show alcoholic drinks" toggle
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+      'toggling "Always show alcoholic drinks" off calls '
+      'updateAlcoholicPresetsAlwaysVisible(false)', (tester) async {
+    final repo = _FakePreferencesRepo();
+    await tester.pumpWidget(
+      _buildScreen(
+        prefs: _makePrefs(alcoholicPresetsAlwaysVisible: true),
+        repo: repo,
+      ),
+    );
+    await tester.pump();
+
+    final switchFinder = find.byKey(
+      const Key('settings_alcoholic_presets_always_visible_switch'),
+    );
+    await _scrollToVisible(tester, switchFinder);
+    await tester.tap(switchFinder);
+    await tester.pump();
+
+    expect(repo.lastAlcoholicPresetsAlwaysVisible, isFalse);
   });
 }

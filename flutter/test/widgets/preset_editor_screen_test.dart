@@ -181,6 +181,7 @@ UserPreferences _prefs({String currency = 'EUR'}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: now,
     createdAt: now,
     updatedAt: now,

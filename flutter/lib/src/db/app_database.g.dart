@@ -2169,6 +2169,17 @@ class $UserPreferencesTableTable extends UserPreferencesTable
           requiredDuringInsert: true,
           defaultConstraints: GeneratedColumn.constraintIsAlways(
               'CHECK ("sober_estimate_notif_enabled" IN (0, 1))'));
+  static const VerificationMeta _alcoholicPresetsAlwaysVisibleMeta =
+      const VerificationMeta('alcoholicPresetsAlwaysVisible');
+  @override
+  late final GeneratedColumn<bool> alcoholicPresetsAlwaysVisible =
+      GeneratedColumn<bool>(
+          'alcoholic_presets_always_visible', aliasedName, false,
+          type: DriftSqlType.bool,
+          requiredDuringInsert: false,
+          defaultConstraints: GeneratedColumn.constraintIsAlways(
+              'CHECK ("alcoholic_presets_always_visible" IN (0, 1))'),
+          defaultValue: const Constant(true));
   static const VerificationMeta _installedAtMeta =
       const VerificationMeta('installedAt');
   @override
@@ -2206,6 +2217,7 @@ class $UserPreferencesTableTable extends UserPreferencesTable
         bacOnLockScreenEnabled,
         approachingCapNotifEnabled,
         soberEstimateNotifEnabled,
+        alcoholicPresetsAlwaysVisible,
         installedAt,
         createdAt,
         updatedAt
@@ -2333,6 +2345,13 @@ class $UserPreferencesTableTable extends UserPreferencesTable
     } else if (isInserting) {
       context.missing(_soberEstimateNotifEnabledMeta);
     }
+    if (data.containsKey('alcoholic_presets_always_visible')) {
+      context.handle(
+          _alcoholicPresetsAlwaysVisibleMeta,
+          alcoholicPresetsAlwaysVisible.isAcceptableOrUnknown(
+              data['alcoholic_presets_always_visible']!,
+              _alcoholicPresetsAlwaysVisibleMeta));
+    }
     if (data.containsKey('installed_at')) {
       context.handle(
           _installedAtMeta,
@@ -2401,6 +2420,9 @@ class $UserPreferencesTableTable extends UserPreferencesTable
       soberEstimateNotifEnabled: attachedDatabase.typeMapping.read(
           DriftSqlType.bool,
           data['${effectivePrefix}sober_estimate_notif_enabled'])!,
+      alcoholicPresetsAlwaysVisible: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool,
+          data['${effectivePrefix}alcoholic_presets_always_visible'])!,
       installedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}installed_at'])!,
       createdAt: attachedDatabase.typeMapping
@@ -2460,6 +2482,12 @@ class UserPreferencesRow extends DataClass
   final bool approachingCapNotifEnabled;
   final bool soberEstimateNotifEnabled;
 
+  /// Schema v5 addition. When `true` (default), alcoholic presets are always
+  /// shown in the Manage Drinks screen (F14). When `false`, they're shown
+  /// only while a [PartySession] is active (`endedAt IS NULL`) — see
+  /// `ManageDrinksScreen`'s doc comment for the full rationale.
+  final bool alcoholicPresetsAlwaysVisible;
+
   /// Epoch-milliseconds of when the local database was first created.
   /// Set once in beforeOpen; never changes.
   final int installedAt;
@@ -2483,6 +2511,7 @@ class UserPreferencesRow extends DataClass
       required this.bacOnLockScreenEnabled,
       required this.approachingCapNotifEnabled,
       required this.soberEstimateNotifEnabled,
+      required this.alcoholicPresetsAlwaysVisible,
       required this.installedAt,
       required this.createdAt,
       required this.updatedAt});
@@ -2515,6 +2544,8 @@ class UserPreferencesRow extends DataClass
         Variable<bool>(approachingCapNotifEnabled);
     map['sober_estimate_notif_enabled'] =
         Variable<bool>(soberEstimateNotifEnabled);
+    map['alcoholic_presets_always_visible'] =
+        Variable<bool>(alcoholicPresetsAlwaysVisible);
     map['installed_at'] = Variable<int>(installedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -2546,6 +2577,7 @@ class UserPreferencesRow extends DataClass
       bacOnLockScreenEnabled: Value(bacOnLockScreenEnabled),
       approachingCapNotifEnabled: Value(approachingCapNotifEnabled),
       soberEstimateNotifEnabled: Value(soberEstimateNotifEnabled),
+      alcoholicPresetsAlwaysVisible: Value(alcoholicPresetsAlwaysVisible),
       installedAt: Value(installedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -2580,6 +2612,8 @@ class UserPreferencesRow extends DataClass
           serializer.fromJson<bool>(json['approachingCapNotifEnabled']),
       soberEstimateNotifEnabled:
           serializer.fromJson<bool>(json['soberEstimateNotifEnabled']),
+      alcoholicPresetsAlwaysVisible:
+          serializer.fromJson<bool>(json['alcoholicPresetsAlwaysVisible']),
       installedAt: serializer.fromJson<int>(json['installedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -2609,6 +2643,8 @@ class UserPreferencesRow extends DataClass
           serializer.toJson<bool>(approachingCapNotifEnabled),
       'soberEstimateNotifEnabled':
           serializer.toJson<bool>(soberEstimateNotifEnabled),
+      'alcoholicPresetsAlwaysVisible':
+          serializer.toJson<bool>(alcoholicPresetsAlwaysVisible),
       'installedAt': serializer.toJson<int>(installedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -2633,6 +2669,7 @@ class UserPreferencesRow extends DataClass
           bool? bacOnLockScreenEnabled,
           bool? approachingCapNotifEnabled,
           bool? soberEstimateNotifEnabled,
+          bool? alcoholicPresetsAlwaysVisible,
           int? installedAt,
           DateTime? createdAt,
           DateTime? updatedAt}) =>
@@ -2662,6 +2699,8 @@ class UserPreferencesRow extends DataClass
             approachingCapNotifEnabled ?? this.approachingCapNotifEnabled,
         soberEstimateNotifEnabled:
             soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
+        alcoholicPresetsAlwaysVisible:
+            alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
         installedAt: installedAt ?? this.installedAt,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
@@ -2710,6 +2749,9 @@ class UserPreferencesRow extends DataClass
       soberEstimateNotifEnabled: data.soberEstimateNotifEnabled.present
           ? data.soberEstimateNotifEnabled.value
           : this.soberEstimateNotifEnabled,
+      alcoholicPresetsAlwaysVisible: data.alcoholicPresetsAlwaysVisible.present
+          ? data.alcoholicPresetsAlwaysVisible.value
+          : this.alcoholicPresetsAlwaysVisible,
       installedAt:
           data.installedAt.present ? data.installedAt.value : this.installedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -2737,6 +2779,8 @@ class UserPreferencesRow extends DataClass
           ..write('bacOnLockScreenEnabled: $bacOnLockScreenEnabled, ')
           ..write('approachingCapNotifEnabled: $approachingCapNotifEnabled, ')
           ..write('soberEstimateNotifEnabled: $soberEstimateNotifEnabled, ')
+          ..write(
+              'alcoholicPresetsAlwaysVisible: $alcoholicPresetsAlwaysVisible, ')
           ..write('installedAt: $installedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -2745,27 +2789,29 @@ class UserPreferencesRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
-      id,
-      username,
-      dailyGoalMl,
-      dayBoundaryHour,
-      units,
-      currency,
-      reminderEnabled,
-      reminderStartHour,
-      reminderEndHour,
-      reminderIntervalMin,
-      inactivityReminderEnabled,
-      weeklySummaryEnabled,
-      defaultDrinkPresetId,
-      bacCapGramsPerL,
-      bacOnLockScreenEnabled,
-      approachingCapNotifEnabled,
-      soberEstimateNotifEnabled,
-      installedAt,
-      createdAt,
-      updatedAt);
+  int get hashCode => Object.hashAll([
+        id,
+        username,
+        dailyGoalMl,
+        dayBoundaryHour,
+        units,
+        currency,
+        reminderEnabled,
+        reminderStartHour,
+        reminderEndHour,
+        reminderIntervalMin,
+        inactivityReminderEnabled,
+        weeklySummaryEnabled,
+        defaultDrinkPresetId,
+        bacCapGramsPerL,
+        bacOnLockScreenEnabled,
+        approachingCapNotifEnabled,
+        soberEstimateNotifEnabled,
+        alcoholicPresetsAlwaysVisible,
+        installedAt,
+        createdAt,
+        updatedAt
+      ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2787,6 +2833,8 @@ class UserPreferencesRow extends DataClass
           other.bacOnLockScreenEnabled == this.bacOnLockScreenEnabled &&
           other.approachingCapNotifEnabled == this.approachingCapNotifEnabled &&
           other.soberEstimateNotifEnabled == this.soberEstimateNotifEnabled &&
+          other.alcoholicPresetsAlwaysVisible ==
+              this.alcoholicPresetsAlwaysVisible &&
           other.installedAt == this.installedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -2811,6 +2859,7 @@ class UserPreferencesTableCompanion
   final Value<bool> bacOnLockScreenEnabled;
   final Value<bool> approachingCapNotifEnabled;
   final Value<bool> soberEstimateNotifEnabled;
+  final Value<bool> alcoholicPresetsAlwaysVisible;
   final Value<int> installedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -2833,6 +2882,7 @@ class UserPreferencesTableCompanion
     this.bacOnLockScreenEnabled = const Value.absent(),
     this.approachingCapNotifEnabled = const Value.absent(),
     this.soberEstimateNotifEnabled = const Value.absent(),
+    this.alcoholicPresetsAlwaysVisible = const Value.absent(),
     this.installedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2856,6 +2906,7 @@ class UserPreferencesTableCompanion
     required bool bacOnLockScreenEnabled,
     required bool approachingCapNotifEnabled,
     required bool soberEstimateNotifEnabled,
+    this.alcoholicPresetsAlwaysVisible = const Value.absent(),
     required int installedAt,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -2889,6 +2940,7 @@ class UserPreferencesTableCompanion
     Expression<bool>? bacOnLockScreenEnabled,
     Expression<bool>? approachingCapNotifEnabled,
     Expression<bool>? soberEstimateNotifEnabled,
+    Expression<bool>? alcoholicPresetsAlwaysVisible,
     Expression<int>? installedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -2919,6 +2971,8 @@ class UserPreferencesTableCompanion
         'approaching_cap_notif_enabled': approachingCapNotifEnabled,
       if (soberEstimateNotifEnabled != null)
         'sober_estimate_notif_enabled': soberEstimateNotifEnabled,
+      if (alcoholicPresetsAlwaysVisible != null)
+        'alcoholic_presets_always_visible': alcoholicPresetsAlwaysVisible,
       if (installedAt != null) 'installed_at': installedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -2944,6 +2998,7 @@ class UserPreferencesTableCompanion
       Value<bool>? bacOnLockScreenEnabled,
       Value<bool>? approachingCapNotifEnabled,
       Value<bool>? soberEstimateNotifEnabled,
+      Value<bool>? alcoholicPresetsAlwaysVisible,
       Value<int>? installedAt,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt,
@@ -2970,6 +3025,8 @@ class UserPreferencesTableCompanion
           approachingCapNotifEnabled ?? this.approachingCapNotifEnabled,
       soberEstimateNotifEnabled:
           soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
+      alcoholicPresetsAlwaysVisible:
+          alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
       installedAt: installedAt ?? this.installedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -3037,6 +3094,10 @@ class UserPreferencesTableCompanion
       map['sober_estimate_notif_enabled'] =
           Variable<bool>(soberEstimateNotifEnabled.value);
     }
+    if (alcoholicPresetsAlwaysVisible.present) {
+      map['alcoholic_presets_always_visible'] =
+          Variable<bool>(alcoholicPresetsAlwaysVisible.value);
+    }
     if (installedAt.present) {
       map['installed_at'] = Variable<int>(installedAt.value);
     }
@@ -3072,6 +3133,8 @@ class UserPreferencesTableCompanion
           ..write('bacOnLockScreenEnabled: $bacOnLockScreenEnabled, ')
           ..write('approachingCapNotifEnabled: $approachingCapNotifEnabled, ')
           ..write('soberEstimateNotifEnabled: $soberEstimateNotifEnabled, ')
+          ..write(
+              'alcoholicPresetsAlwaysVisible: $alcoholicPresetsAlwaysVisible, ')
           ..write('installedAt: $installedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -5511,6 +5574,7 @@ typedef $$UserPreferencesTableTableCreateCompanionBuilder
   required bool bacOnLockScreenEnabled,
   required bool approachingCapNotifEnabled,
   required bool soberEstimateNotifEnabled,
+  Value<bool> alcoholicPresetsAlwaysVisible,
   required int installedAt,
   required DateTime createdAt,
   required DateTime updatedAt,
@@ -5535,6 +5599,7 @@ typedef $$UserPreferencesTableTableUpdateCompanionBuilder
   Value<bool> bacOnLockScreenEnabled,
   Value<bool> approachingCapNotifEnabled,
   Value<bool> soberEstimateNotifEnabled,
+  Value<bool> alcoholicPresetsAlwaysVisible,
   Value<int> installedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
@@ -5611,6 +5676,10 @@ class $$UserPreferencesTableTableFilterComposer
 
   ColumnFilters<bool> get soberEstimateNotifEnabled => $composableBuilder(
       column: $table.soberEstimateNotifEnabled,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get alcoholicPresetsAlwaysVisible => $composableBuilder(
+      column: $table.alcoholicPresetsAlwaysVisible,
       builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get installedAt => $composableBuilder(
@@ -5695,6 +5764,10 @@ class $$UserPreferencesTableTableOrderingComposer
       column: $table.soberEstimateNotifEnabled,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<bool> get alcoholicPresetsAlwaysVisible => $composableBuilder(
+      column: $table.alcoholicPresetsAlwaysVisible,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get installedAt => $composableBuilder(
       column: $table.installedAt, builder: (column) => ColumnOrderings(column));
 
@@ -5765,6 +5838,10 @@ class $$UserPreferencesTableTableAnnotationComposer
   GeneratedColumn<bool> get soberEstimateNotifEnabled => $composableBuilder(
       column: $table.soberEstimateNotifEnabled, builder: (column) => column);
 
+  GeneratedColumn<bool> get alcoholicPresetsAlwaysVisible => $composableBuilder(
+      column: $table.alcoholicPresetsAlwaysVisible,
+      builder: (column) => column);
+
   GeneratedColumn<int> get installedAt => $composableBuilder(
       column: $table.installedAt, builder: (column) => column);
 
@@ -5822,6 +5899,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             Value<bool> bacOnLockScreenEnabled = const Value.absent(),
             Value<bool> approachingCapNotifEnabled = const Value.absent(),
             Value<bool> soberEstimateNotifEnabled = const Value.absent(),
+            Value<bool> alcoholicPresetsAlwaysVisible = const Value.absent(),
             Value<int> installedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
@@ -5845,6 +5923,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             bacOnLockScreenEnabled: bacOnLockScreenEnabled,
             approachingCapNotifEnabled: approachingCapNotifEnabled,
             soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+            alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
             installedAt: installedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -5868,6 +5947,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             required bool bacOnLockScreenEnabled,
             required bool approachingCapNotifEnabled,
             required bool soberEstimateNotifEnabled,
+            Value<bool> alcoholicPresetsAlwaysVisible = const Value.absent(),
             required int installedAt,
             required DateTime createdAt,
             required DateTime updatedAt,
@@ -5891,6 +5971,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             bacOnLockScreenEnabled: bacOnLockScreenEnabled,
             approachingCapNotifEnabled: approachingCapNotifEnabled,
             soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+            alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
             installedAt: installedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,

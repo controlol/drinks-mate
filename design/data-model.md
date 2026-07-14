@@ -55,7 +55,7 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 
 #### Seeded defaults
 
-On first launch the database is seeded with the default preset list (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)) using `isUserCreated = false`. The user can edit, hide, or delete them — there is no special protection. A "Reset to defaults" action in settings re-seeds any missing default presets.
+On first launch the database is seeded with the default preset list (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)) using `isUserCreated = false`. The user can edit and hide them freely. Deleting them is intended to have no special protection once a "Reset to defaults" action exists in settings to re-seed any missing default presets. `[OPEN]` — that action is not built yet, so the Manage Drinks screen (F14) restricts delete to `isUserCreated` presets in the meantime, since deleting a seeded default today has no recovery path. Lift this restriction once "Reset to defaults" ships.
 
 #### Snapshot semantics — log immutability
 
@@ -116,6 +116,7 @@ A single per-device record holding the user's settings. Edited via [user-experie
 | `weeklySummaryEnabled`   | boolean               | Default `true`. Independent toggle for the end-of-week summary notification. See [notifications.md → Notification types](./notifications.md#notification-types). |
 | `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md → Lock-screen visibility](./notifications.md#lock-screen-visibility). |
 | `bacCapGramsPerL`        | decimal \| null       | Optional personal cap, stored canonically in g/L. Null means no cap is set. The UI shows g/L as primary and mmol/L as secondary. Persistent across sessions. |
+| `alcoholicPresetsAlwaysVisible` | boolean        | Default `true`. Governs alcoholic-preset visibility in the Manage Drinks screen (F14). When `true`, alcoholic presets are always listed there, matching the S2 log-drink picker (which never filters alcoholic presets by session state — see [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active)). When `false`, alcoholic presets are shown there only while a `PartySession` is active (`endedAt IS NULL`). Settings → Drinks → "Always show alcoholic drinks". |
 | `updatedAt`              | timestamp             | Used by phase 2 sync.                                       |
 
 **Phase 2 sync notes for `UserPreferences`.** `[OPEN]` — confirm which preferences travel across devices vs. stay per-device. Recommended split: `dailyGoalMl`, `unitsDisplay`, `currency`, `dayBoundary`, `defaultDrinkPresetId`, `bacCapGramsPerL`, and the notification-type toggles sync; the reminder schedule (`reminderStartTime`, `reminderEndTime`, `reminderIntervalMin`) stays per-device since a user's phone and tablet may want different windows. `installedAt` is per-device by definition.

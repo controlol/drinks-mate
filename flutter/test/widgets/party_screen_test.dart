@@ -207,6 +207,7 @@ UserPreferences _makePrefs({double? bacCapGramsPerL}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: _epoch,
     createdAt: _epoch,
     updatedAt: _epoch,

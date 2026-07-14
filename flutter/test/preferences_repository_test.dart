@@ -46,6 +46,9 @@ void main() {
       // Party Mode notifications are OFF by default (notifications.md §4).
       expect(prefs.approachingCapNotifEnabled, isFalse);
       expect(prefs.soberEstimateNotifEnabled, isFalse);
+      // Alcoholic presets are always visible in Manage Drinks by default
+      // (features.md F14).
+      expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
       expect(prefs.installedAt, isNotNull);
     });
 
@@ -176,6 +179,29 @@ void main() {
       expect(prefs.approachingCapNotifEnabled, isTrue);
       expect(prefs.soberEstimateNotifEnabled, isTrue);
     });
+
+    test(
+      'updateAlcoholicPresetsAlwaysVisible writes false then true',
+      () async {
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isTrue,
+          reason: 'seed default is true',
+        );
+
+        await repo.updateAlcoholicPresetsAlwaysVisible(false);
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isFalse,
+        );
+
+        await repo.updateAlcoholicPresetsAlwaysVisible(true);
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isTrue,
+        );
+      },
+    );
 
     test('updatedAt is set to a recent UTC timestamp', () async {
       final beforeUpdate = DateTime.now().toUtc();

@@ -110,6 +110,7 @@ UserPreferences _makePrefs({int dailyGoalMl = 2000, double? bacCapGramsPerL}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: epoch,
     createdAt: epoch,
     updatedAt: epoch,

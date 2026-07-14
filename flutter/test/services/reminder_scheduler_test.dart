@@ -68,6 +68,7 @@ UserPreferences _prefs({
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: installedAt ?? DateTime(2026, 1, 10),
     createdAt: now,
     updatedAt: now,

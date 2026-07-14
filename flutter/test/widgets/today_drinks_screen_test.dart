@@ -62,6 +62,7 @@ UserPreferences _makePrefs() {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: epoch,
     createdAt: epoch,
     updatedAt: epoch,

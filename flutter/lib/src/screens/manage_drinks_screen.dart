@@ -15,25 +15,36 @@ import 'preset_editor_screen.dart';
 /// delete (user-created presets only), and create/edit via
 /// [PresetEditorScreen].
 ///
-/// Alcoholic presets are shown only when Party Mode is active — an
-/// in-progress [PartySession] (`endedAt IS NULL`), per data-model.md
-/// §PartySession — features.md F14: "alcoholic presets visible only when
-/// Party Mode active".
+/// Alcoholic-preset visibility is controlled by
+/// [UserPreferences.alcoholicPresetsAlwaysVisible] (Settings → Drinks →
+/// "Always show alcoholic drinks", default **on**). When on, alcoholic
+/// presets are always listed here — matching the S2 log-drink picker, which
+/// never filters alcoholic presets by session state (party-session.md:
+/// alcohol can always be logged, session or not). When the user turns it
+/// off, alcoholic presets are shown only while a party session is active —
+/// an in-progress [PartySession] (`endedAt IS NULL`), per data-model.md
+/// §PartySession.
 class ManageDrinksScreen extends ConsumerWidget {
   const ManageDrinksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final presetsAsync = ref.watch(allPresetsProvider);
-    final partyModeActive =
+    final alwaysShowAlcoholic = ref
+            .watch(userPreferencesProvider)
+            .valueOrNull
+            ?.alcoholicPresetsAlwaysVisible ??
+        true;
+    final partySessionActive =
         ref.watch(activePartySessionProvider).valueOrNull != null;
+    final showAlcoholic = alwaysShowAlcoholic || partySessionActive;
     final fmt = ref.watch(formatServiceProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Manage drinks')),
       body: presetsAsync.when(
         data: (allPresets) {
-          final presets = partyModeActive
+          final presets = showAlcoholic
               ? allPresets
               : allPresets.where((p) => !p.beverageType.isAlcoholic).toList();
           if (presets.isEmpty) {
@@ -67,8 +78,8 @@ class ManageDrinksScreen extends ConsumerWidget {
 
   /// [reorderPresets] appends any id *not* passed in after the entire
   /// passed-in list (AppDatabase.reorderPresets: "finalOrder = [...orderedIds,
-  /// ...remainingIds]"), so passing only the Party-Mode-filtered [presets]
-  /// subset would push every hidden alcoholic preset to the tail of
+  /// ...remainingIds]"), so passing only the visibility-filtered [presets]
+  /// subset would push every filtered-out alcoholic preset to the tail of
   /// [allPresets]'s sortOrder on every reorder. Instead, this builds the
   /// *complete* [allPresets] id list: filtered-out presets keep their
   /// absolute position, and filtered-in ones are replaced in place with

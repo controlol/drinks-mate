@@ -60,7 +60,7 @@ class _SettingsBody extends ConsumerWidget {
       children: [
         _HydrationSection(prefs: prefs, isImperial: isImperial, fmt: fmt),
         _RemindersSection(prefs: prefs, presetsAsync: presetsAsync),
-        const _DrinksSection(),
+        _DrinksSection(prefs: prefs),
         _ProfileSection(profile: profile, isImperial: isImperial, fmt: fmt),
         _PartyModeSection(prefs: prefs, profile: profile),
         _DisplayFormatSection(prefs: prefs),
@@ -254,11 +254,15 @@ class _RemindersSection extends ConsumerWidget {
 // Group 3 — Drinks
 // ---------------------------------------------------------------------------
 
-class _DrinksSection extends StatelessWidget {
-  const _DrinksSection();
+class _DrinksSection extends ConsumerWidget {
+  const _DrinksSection({required this.prefs});
+
+  final UserPreferences prefs;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.read(preferencesRepositoryProvider);
+
     return _SettingsSection(
       title: 'Drinks',
       children: [
@@ -269,6 +273,16 @@ class _DrinksSection extends StatelessWidget {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const ManageDrinksScreen()),
           ),
+        ),
+        SwitchListTile(
+          key: const Key('settings_alcoholic_presets_always_visible_switch'),
+          title: const Text('Always show alcoholic drinks'),
+          subtitle: const Text(
+            'When off, alcoholic presets appear in Manage Drinks only '
+            'while a party session is active.',
+          ),
+          value: prefs.alcoholicPresetsAlwaysVisible,
+          onChanged: (v) => repo.updateAlcoholicPresetsAlwaysVisible(v),
         ),
       ],
     );

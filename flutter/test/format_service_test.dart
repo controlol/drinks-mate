@@ -33,6 +33,7 @@ UserPreferences _prefs({String units = 'metric', String currency = 'EUR'}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: now,
     createdAt: now,
     updatedAt: now,

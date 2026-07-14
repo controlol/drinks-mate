@@ -25,7 +25,7 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 4.
+/// Phase-1 Drift database — schema version 5.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
@@ -35,6 +35,10 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 /// v4 (issue #21): PartySessions + PartySessionPrices + Meals tables;
 ///   DrinkEntries gains partySessionId/priceTokens/tokenValueMinor/
 ///   tokenValueCurrency columns.
+/// v5 (issue #68 / PR #69 review remediation): UserPreferences gains
+///   alcoholicPresetsAlwaysVisible (default true) — governs whether
+///   ManageDrinksScreen shows alcoholic presets unconditionally or only
+///   while a party session is active.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -58,7 +62,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -68,7 +72,7 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           // Add an `if (from < N)` block for each schema version bump.
           // Each block must be cumulative — a user upgrading directly from v1
-          // to v4 must run every earlier block in sequence.
+          // to v5 must run every earlier block in sequence.
           if (from < 2) {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
@@ -85,6 +89,12 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(drinkEntries, drinkEntries.priceTokens);
             await m.addColumn(drinkEntries, drinkEntries.tokenValueMinor);
             await m.addColumn(drinkEntries, drinkEntries.tokenValueCurrency);
+          }
+          if (from < 5) {
+            await m.addColumn(
+              userPreferencesTable,
+              userPreferencesTable.alcoholicPresetsAlwaysVisible,
+            );
           }
         },
         beforeOpen: (_) async {
@@ -316,6 +326,9 @@ class AppDatabase extends _$AppDatabase {
       // Party Mode notifications are OFF by default (notifications.md §4).
       approachingCapNotifEnabled: false,
       soberEstimateNotifEnabled: false,
+      // Default ON — alcoholic presets are always visible in Manage Drinks
+      // unless the user opts into session-only visibility (features.md F14).
+      alcoholicPresetsAlwaysVisible: const Value(true),
       installedAt: now.millisecondsSinceEpoch,
       createdAt: now,
       updatedAt: now,

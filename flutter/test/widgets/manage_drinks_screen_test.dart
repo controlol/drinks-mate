@@ -6,11 +6,11 @@
 //  1. Empty state shows "No drink presets yet." text.
 //  2. Populated list shows preset name + volume for each preset.
 //  3. A hidden preset shows the visibility_off icon; a visible one does not.
-//  4. Party Mode gating: alcoholic presets render nowhere in the tree when
-//     there is no active PartySession; they render alongside everything else
-//     when one is active (features.md F14: "alcoholic presets visible only
-//     when Party Mode active"; data-model.md §PartySession: "active" means
-//     `endedAt IS NULL`).
+//  4. Party Mode gating: alcoholic presets always render when
+//     UserPreferences.alcoholicPresetsAlwaysVisible is true (the default).
+//     When false, they render nowhere in the tree with no active
+//     PartySession, and alongside everything else once one is active
+//     (data-model.md §PartySession: "active" means `endedAt IS NULL`).
 //  5. Hide/unhide button calls hidePreset/unhidePreset with the preset id.
 //  6. Delete button only renders for isUserCreated presets; the confirm
 //     dialog gates deletePreset on tapping "Delete" (not "Cancel").
@@ -103,7 +103,10 @@ DrinkPreset _preset({
   );
 }
 
-UserPreferences _prefs({double? bacCapGramsPerL}) {
+UserPreferences _prefs({
+  double? bacCapGramsPerL,
+  bool alcoholicPresetsAlwaysVisible = true,
+}) {
   final now = DateTime.utc(2026, 1, 1);
   return UserPreferences(
     id: kUserPreferencesId,
@@ -122,6 +125,7 @@ UserPreferences _prefs({double? bacCapGramsPerL}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
     installedAt: now,
     createdAt: now,
     updatedAt: now,
@@ -295,29 +299,50 @@ void main() {
         ];
 
     testWidgets(
-      'alcoholic presets do not render at all when there is no active '
-      'PartySession',
+      'alcoholic presets render even with no active PartySession when '
+      'alcoholicPresetsAlwaysVisible is true (the default)',
       (tester) async {
         final repo = _FakeDrinksRepo(presets());
-        final container = await _buildContainer(repo: repo);
+        final container = await _buildContainer(
+          repo: repo,
+          prefs: _prefs(),
+        );
+        addTearDown(container.dispose);
+        await _pumpScreen(tester, container);
+
+        expect(find.text('Glass of water'), findsOneWidget);
+        expect(find.text('Craft Lager'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'alcoholic presets do not render when there is no active PartySession '
+      'and alcoholicPresetsAlwaysVisible is false',
+      (tester) async {
+        final repo = _FakeDrinksRepo(presets());
+        final container = await _buildContainer(
+          repo: repo,
+          prefs: _prefs(alcoholicPresetsAlwaysVisible: false),
+        );
         addTearDown(container.dispose);
         await _pumpScreen(tester, container);
 
         expect(find.text('Glass of water'), findsOneWidget);
         // Source: manage_drinks_screen.dart ManageDrinksScreen.build —
-        // `partyModeActive` false -> `allPresets.where((p) =>
-        // !p.beverageType.isAlcoholic)`; features.md F14: "alcoholic presets
-        // visible only when Party Mode active".
+        // `showAlcoholic` false -> `allPresets.where((p) =>
+        // !p.beverageType.isAlcoholic)`.
         expect(find.text('Craft Lager'), findsNothing);
       },
     );
 
     testWidgets(
-        'alcoholic presets render alongside everything else when a '
-        'PartySession is active', (tester) async {
+        'alcoholic presets render alongside everything else when '
+        'alcoholicPresetsAlwaysVisible is false but a PartySession is active',
+        (tester) async {
       final repo = _FakeDrinksRepo(presets());
       final container = await _buildContainer(
         repo: repo,
+        prefs: _prefs(alcoholicPresetsAlwaysVisible: false),
         activeSession: _session(),
       );
       addTearDown(container.dispose);
@@ -550,12 +575,14 @@ void main() {
       _preset(id: 'p2', name: 'Preset Two', sortOrder: 3),
       _preset(id: 'p3', name: 'Preset Three', sortOrder: 4),
     ];
-    // Party Mode off (no active PartySession, the _buildContainer default)
-    // — 'alc' is filtered out of the visible list entirely, but must still
-    // appear in reorderPresets' orderedIds at its original relative
-    // position.
+    // alcoholicPresetsAlwaysVisible off + no active PartySession — 'alc' is
+    // filtered out of the visible list entirely, but must still appear in
+    // reorderPresets' orderedIds at its original relative position.
     final repo = _FakeDrinksRepo(presets);
-    final container = await _buildContainer(repo: repo);
+    final container = await _buildContainer(
+      repo: repo,
+      prefs: _prefs(alcoholicPresetsAlwaysVisible: false),
+    );
     addTearDown(container.dispose);
     await _pumpScreen(tester, container);
 
