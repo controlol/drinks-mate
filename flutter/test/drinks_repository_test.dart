@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 
 // ---------------------------------------------------------------------------
@@ -392,6 +394,23 @@ void main() {
         );
       },
     );
+
+    test('unrecognised iconKey throws ArgumentError', () async {
+      // Source: drink_icons.dart kDrinkIconKeys — the bundled icon allowlist;
+      // createPreset must reject a key with no matching asset instead of
+      // persisting it and failing to resolve at render time.
+      expect(
+        () => repo.createPreset(
+          name: 'Bad Icon',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'not-a-real-icon',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -493,7 +512,8 @@ void main() {
         final id = await _createUserPreset(repo, name: 'Green Tea');
 
         expect(
-          () => repo.updatePreset(id: id, abvPercent: const Value(0.5)),
+          () =>
+              repo.updatePreset(id: id, abvPercent: const Optional.value(0.5)),
           throwsA(isA<ArgumentError>()),
         );
       },
@@ -504,7 +524,7 @@ void main() {
       // non-alcoholic presets; Value(null) should be idempotent and not throw.
       final id = await _createUserPreset(repo, name: 'Still Water');
 
-      await repo.updatePreset(id: id, abvPercent: const Value(null));
+      await repo.updatePreset(id: id, abvPercent: const Optional.value(null));
 
       final presets = await repo.watchAllPresets().first;
       final updated = presets.firstWhere((p) => p.id == id);
@@ -521,7 +541,7 @@ void main() {
         expect(
           () => repo.updatePreset(
             id: id,
-            regularPriceMinor: const Value(300),
+            regularPriceMinor: const Optional.value(300),
             // regularCurrency absent — effective currency = null on existing row
           ),
           throwsA(isA<ArgumentError>()),
@@ -557,7 +577,8 @@ void main() {
         );
 
         expect(
-          () => repo.updatePreset(id: id, abvPercent: const Value(null)),
+          () =>
+              repo.updatePreset(id: id, abvPercent: const Optional.value(null)),
           throwsA(isA<ArgumentError>()),
         );
       },
@@ -577,6 +598,37 @@ void main() {
       // NFC form: é is a single code point (U+00E9)
       expect(stored, equals('Café Water'));
       expect(stored, isNot(equals(nfdName)));
+    });
+
+    test('unrecognised iconKey throws ArgumentError', () async {
+      // Source: drink_icons.dart kDrinkIconKeys — the bundled icon allowlist;
+      // updatePreset must reject a key with no matching asset instead of
+      // persisting it and failing to resolve at render time.
+      final id = await _createUserPreset(repo, name: 'My Water');
+
+      expect(
+        () => repo.updatePreset(id: id, iconKey: 'not-a-real-icon'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('iconKey: null (default) leaves the existing iconKey untouched',
+        () async {
+      // Source: updatePreset() docstring — "Only fields with a present
+      // Optional are written; omitted fields retain their current values."
+      // iconKey is a plain nullable String (not Optional), so null means
+      // "leave unchanged" and must not be validated against kDrinkIconKeys.
+      final id = await _createUserPreset(
+        repo,
+        name: 'My Water',
+        iconKey: 'glass',
+      );
+
+      await repo.updatePreset(id: id, name: 'Renamed Water');
+
+      final presets = await repo.watchAllPresets().first;
+      final updated = presets.firstWhere((p) => p.id == id);
+      expect(updated.iconKey, 'glass');
     });
   });
 
@@ -671,12 +723,16 @@ void main() {
       },
     );
 
-    test('seeded default (isUserCreated == false) can be soft-deleted',
-        () async {
-      // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
-      // or delete them — there is no special protection." A future reset-to-
-      // defaults must use INSERT OR REPLACE (not INSERT OR IGNORE) because soft-
-      // deleted rows still exist in the table and OR IGNORE would skip them.
+    test(
+        'seeded default (isUserCreated == false) cannot be deleted: throws '
+        'StateError and remains in watchAllPresets()', () async {
+      // Source: data-model.md §DrinkPreset "Seeded defaults" — deleting a
+      // seeded default has no recovery path until a "Reset to defaults"
+      // action exists to re-seed missing defaults, so this is an interim
+      // restriction (not a permanent invariant). It is enforced in
+      // DrinksRepository.deletePreset() itself — not just in the Manage
+      // Drinks UI's `if (preset.isUserCreated)` delete-button gate — so no
+      // other caller can bypass it.
       final db = _memDb();
       addTearDown(db.close);
       final repo = DrinksRepository(db);
@@ -684,14 +740,18 @@ void main() {
       final presets = await repo.watchAllPresets().first;
       final seeded = presets.firstWhere((p) => !p.isUserCreated);
 
-      await repo.deletePreset(seeded.id);
+      expect(
+        () => repo.deletePreset(seeded.id),
+        throwsA(isA<StateError>()),
+      );
 
+      // The seeded default is untouched: still present in watchAllPresets()
+      // and its raw row has no deletedAt.
       final after = await repo.watchAllPresets().first;
-      expect(after.any((p) => p.id == seeded.id), isFalse);
+      expect(after.any((p) => p.id == seeded.id), isTrue);
 
-      // Verify deletedAt is non-null in raw row.
       final raw = await db.getPresetById(seeded.id);
-      expect(raw!.deletedAt, isNotNull);
+      expect(raw!.deletedAt, isNull);
     });
 
     test('non-existent id throws StateError', () async {
@@ -706,6 +766,64 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Group 7b: nextSortOrder — MAX-based, not COUNT-based
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository — nextSortOrder', () {
+    test(
+        'returns one greater than the current max sortOrder among live '
+        'presets', () async {
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
+
+      await _createUserPreset(repo, name: 'Preset A', sortOrder: 1000);
+      await _createUserPreset(repo, name: 'Preset B', sortOrder: 1001);
+      await _createUserPreset(repo, name: 'Preset C', sortOrder: 1002);
+
+      expect(await repo.nextSortOrder(), 1003);
+    });
+
+    test(
+      'is not fooled by a live-preset count lower than the max sortOrder '
+      'after a soft-delete (regression: preset_editor_screen.dart and '
+      "log_drink_sheet.dart's create paths used to derive the next "
+      'sortOrder from the live preset *count*, which collided with an '
+      'existing preset once deletePreset — a soft delete — opened a gap)',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final repo = DrinksRepository(db);
+
+        final idA =
+            await _createUserPreset(repo, name: 'Preset A', sortOrder: 1000);
+        final idB =
+            await _createUserPreset(repo, name: 'Preset B', sortOrder: 1001);
+        final idC =
+            await _createUserPreset(repo, name: 'Preset C', sortOrder: 1002);
+
+        await repo.deletePreset(idB);
+
+        // A naive `liveCount + 1` would now return 1002 (only 2 of the 3
+        // created presets are still live) — colliding with C.
+        expect(await repo.nextSortOrder(), 1003);
+
+        final idD = await _createUserPreset(
+          repo,
+          name: 'Preset D',
+          sortOrder: await repo.nextSortOrder(),
+        );
+
+        final all = await repo.watchAllPresets().first;
+        final sortOrderById = {for (final p in all) p.id: p.sortOrder};
+        expect(sortOrderById[idA], 1000);
+        expect(sortOrderById[idC], 1002);
+        expect(sortOrderById[idD], 1003);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -872,6 +990,182 @@ void main() {
         expect(entry.name, 'Original Brew');
         // Snapshot volumeMl must equal the preset's volume at log time.
         expect(entry.volumeMl, 330);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Group 9b: logDrink — name/priceMinor/currency entry-only overrides
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository — logDrink name/priceMinor/currency overrides', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    Future<DrinkEntryRow> loggedRow() async {
+      final rows = await db.select(db.drinkEntries).get();
+      return rows.single;
+    }
+
+    test(
+      'priceMinor/currency absent falls back to the preset\'s stored price',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(preset: preset);
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, 450);
+        expect(entry.currency, 'EUR');
+      },
+    );
+
+    test(
+      'Optional.value(null) priceMinor/currency logs this entry with no '
+      'price, without touching the preset\'s stored price (S2 Advanced '
+      '"Confirm" — entry-only, preset unchanged)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(
+          preset: preset,
+          priceMinor: const Optional.value(null),
+          currency: const Optional.value(null),
+        );
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, isNull);
+        expect(entry.currency, isNull);
+
+        // The preset's own stored price must be untouched.
+        final row = await db.getPresetById(preset.id);
+        expect(row!.regularPriceMinor, 450);
+        expect(row.regularCurrency, 'EUR');
+      },
+    );
+
+    test(
+      'Optional.value with an explicit priceMinor/currency overrides the '
+      "preset's stored price for this entry only",
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Priced Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          regularPriceMinor: 450,
+          regularCurrency: 'EUR',
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(
+          preset: preset,
+          priceMinor: const Optional.value(999),
+          currency: const Optional.value('USD'),
+        );
+
+        final entry = await loggedRow();
+        expect(entry.priceMinor, 999);
+        expect(entry.currency, 'USD');
+      },
+    );
+
+    test(
+      'effective priceMinor non-null with effective currency null throws '
+      'ArgumentError (data-model.md: currency required when priceMinor is '
+      'set)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Free Water',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+
+        expect(
+          () => repo.logDrink(
+            preset: preset,
+            priceMinor: const Optional.value(300),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('name override is written to the logged entry', () async {
+      final presetId = await _createUserPreset(repo, name: 'Original Name');
+      final preset = (await repo.watchAllPresets().first)
+          .firstWhere((p) => p.id == presetId);
+
+      await repo.logDrink(preset: preset, name: 'Entry-only Name');
+
+      final entry = await loggedRow();
+      expect(entry.name, 'Entry-only Name');
+    });
+
+    test(
+      'name override is NFC-normalized before persisting, matching '
+      'createPreset/updatePreset (username.dart normalizeNfc doc: '
+      '"visually identical inputs produce the same stored bytes")',
+      () async {
+        final presetId = await _createUserPreset(repo, name: 'Original Name');
+        final preset = (await repo.watchAllPresets().first)
+            .firstWhere((p) => p.id == presetId);
+
+        // NFD form of 'café' — 'e' followed by a combining acute accent
+        // (U+0301) instead of the precomposed 'é' (U+00E9).
+        const nfdName = 'Café Latte';
+        await repo.logDrink(preset: preset, name: nfdName);
+
+        final entry = await loggedRow();
+        expect(entry.name, normalizeNfc(nfdName));
+        expect(entry.name, isNot(equals(nfdName)));
+      },
+    );
+
+    test(
+      'name override failing validatePresetName throws ArgumentError, same '
+      'as createPreset/updatePreset',
+      () async {
+        final presetId = await _createUserPreset(repo, name: 'Original Name');
+        final preset = (await repo.watchAllPresets().first)
+            .firstWhere((p) => p.id == presetId);
+
+        expect(
+          () => repo.logDrink(preset: preset, name: 'ab'),
+          throwsA(isA<ArgumentError>()),
+        );
       },
     );
   });

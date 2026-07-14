@@ -36,6 +36,7 @@ UserPreferences _makePrefs({int dailyGoalMl = 2000, int dayBoundaryHour = 5}) {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: epoch,
     createdAt: epoch,
     updatedAt: epoch,

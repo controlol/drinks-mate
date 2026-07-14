@@ -6,7 +6,9 @@ import '../db/app_database.dart';
 import '../models/beverage_type.dart';
 import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
+import '../models/drink_icons.dart';
 import '../models/drink_preset.dart';
+import '../models/optional.dart';
 
 /// Repository seam — the only way widgets touch persisted drink data (D2).
 ///
@@ -57,6 +59,19 @@ class DrinksRepository {
   // Presets — write
   // ---------------------------------------------------------------------------
 
+  /// The [sortOrder] to use for a newly created preset: one greater than the
+  /// current maximum among non-deleted presets (1 if none exist).
+  ///
+  /// Callers must not derive this from a preset *count* — [deletePreset] is a
+  /// soft delete, so the count of live presets can be lower than the highest
+  /// sortOrder still in use, and a `count + 1` value can then collide with an
+  /// existing preset's sortOrder (undefined relative ordering, since
+  /// `ORDER BY sortOrder ASC` has no secondary tiebreaker).
+  Future<int> nextSortOrder() async {
+    final maxSortOrder = await _db.getMaxPresetSortOrder();
+    return (maxSortOrder ?? 0) + 1;
+  }
+
   /// Creates a new user-owned preset.
   ///
   /// Validates [name] via [validatePresetName]; throws [ArgumentError] on
@@ -64,6 +79,7 @@ class DrinksRepository {
   /// - [volumeMl] > 0 (data-model.md §DrinkPreset: "Required, must be > 0")
   /// - [abvPercent] non-null for alcoholic [beverageType] (null → 0 g alcohol in BAC)
   /// - [regularCurrency] non-null when [regularPriceMinor] is set
+  /// - [iconKey] must be one of [kDrinkIconKeys] (the bundled icon allowlist)
   Future<DrinkPreset> createPreset({
     required String name,
     required BeverageType beverageType,
@@ -99,6 +115,13 @@ class DrinksRepository {
         'regularCurrency is required when regularPriceMinor is set',
       );
     }
+    if (!kDrinkIconKeys.contains(iconKey)) {
+      throw ArgumentError.value(
+        iconKey,
+        'iconKey',
+        'Not a recognised bundled icon key',
+      );
+    }
     final now = DateTime.now().toUtc();
     final id = _uuid.v4();
     await _db.insertPreset(
@@ -124,23 +147,29 @@ class DrinksRepository {
 
   /// Updates mutable fields of an existing preset.
   ///
-  /// Only fields with a non-absent [Value] are written; omitted fields retain
+  /// Only fields with a present [Optional] are written; omitted fields retain
   /// their current values (no snapshot-immutability breach — [DrinkEntry] rows
   /// are never touched).
   ///
   /// For nullable fields ([abvPercent], [regularPriceMinor], [regularCurrency])
-  /// use [Value.absent] (the default) to leave the field unchanged,
-  /// [Value(someValue)] to set it, and [Value(null)] to clear it to null.
+  /// use [Optional.absent] (the default) to leave the field unchanged,
+  /// [Optional.value] with a non-null argument to set it, and
+  /// [Optional.value] with `null` to clear it. [Optional] is this
+  /// repository's own present/absent wrapper — never Drift's `Value` — so
+  /// callers (including widgets) don't need a `package:drift` import
+  /// (D2: "Drift types never reach widgets").
   ///
   /// Validates [name] via [validatePresetName] when provided; throws
-  /// [ArgumentError] on failure. Throws [StateError] if [id] does not exist.
+  /// [ArgumentError] on failure. When provided, [iconKey] must be one of
+  /// [kDrinkIconKeys] (the bundled icon allowlist); throws [ArgumentError]
+  /// otherwise. Throws [StateError] if [id] does not exist.
   Future<void> updatePreset({
     required String id,
     String? name,
     int? volumeMl,
-    Value<double?> abvPercent = const Value.absent(),
-    Value<int?> regularPriceMinor = const Value.absent(),
-    Value<String?> regularCurrency = const Value.absent(),
+    Optional<double?> abvPercent = const Optional.absent(),
+    Optional<int?> regularPriceMinor = const Optional.absent(),
+    Optional<String?> regularCurrency = const Optional.absent(),
     String? iconKey,
     String? iconColor,
   }) async {
@@ -151,8 +180,15 @@ class DrinksRepository {
     if (volumeMl != null && volumeMl <= 0) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
     }
+    if (iconKey != null && !kDrinkIconKeys.contains(iconKey)) {
+      throw ArgumentError.value(
+        iconKey,
+        'iconKey',
+        'Not a recognised bundled icon key',
+      );
+    }
     DrinkPresetRow? existing;
-    if (abvPercent.present) {
+    if (abvPercent.isPresent) {
       existing = await _db.getPresetById(id);
       if (existing != null) {
         final storedType = BeverageType.fromStored(existing.beverageType);
@@ -168,13 +204,13 @@ class DrinksRepository {
         }
       }
     }
-    if (regularPriceMinor.present || regularCurrency.present) {
+    if (regularPriceMinor.isPresent || regularCurrency.isPresent) {
       existing ??= await _db.getPresetById(id);
       if (existing != null) {
-        final effectivePrice = regularPriceMinor.present
+        final effectivePrice = regularPriceMinor.isPresent
             ? regularPriceMinor.value
             : existing.regularPriceMinor;
-        final effectiveCurrency = regularCurrency.present
+        final effectiveCurrency = regularCurrency.isPresent
             ? regularCurrency.value
             : existing.regularCurrency;
         if (effectivePrice != null && effectiveCurrency == null) {
@@ -190,9 +226,15 @@ class DrinksRepository {
       DrinkPresetsCompanion(
         name: name != null ? Value(name) : const Value.absent(),
         volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-        abvPercent: abvPercent,
-        regularPriceMinor: regularPriceMinor,
-        regularCurrency: regularCurrency,
+        abvPercent: abvPercent.isPresent
+            ? Value(abvPercent.value)
+            : const Value.absent(),
+        regularPriceMinor: regularPriceMinor.isPresent
+            ? Value(regularPriceMinor.value)
+            : const Value.absent(),
+        regularCurrency: regularCurrency.isPresent
+            ? Value(regularCurrency.value)
+            : const Value.absent(),
         iconKey: iconKey != null ? Value(iconKey) : const Value.absent(),
         iconColor: iconColor != null ? Value(iconColor) : const Value.absent(),
         updatedAt: Value(now),
@@ -222,19 +264,27 @@ class DrinksRepository {
 
   /// Soft-deletes a preset (sets [deletedAt]).
   ///
-  /// Applies to any preset — user-created or seeded default. Per data-model.md
-  /// §DrinkPreset: "The user can edit, hide, or delete them — there is no
-  /// special protection."
+  /// Restricted to user-created presets. Per data-model.md §DrinkPreset
+  /// "Seeded defaults": deleting a seeded default has no recovery path until
+  /// a "Reset to defaults" action exists in settings to re-seed missing
+  /// defaults, so this is an interim restriction — not a permanent
+  /// invariant — enforced here (not just in the Manage Drinks UI) so no
+  /// other caller can bypass it.
   ///
   /// Note: a future "Reset to defaults" action must use INSERT OR REPLACE (or
   /// an explicit UPDATE … SET deletedAt = NULL keyed on stable UUIDs) —
   /// INSERT OR IGNORE is a no-op for rows that already exist, even if
   /// soft-deleted.
   ///
-  /// Throws [StateError] if the preset does not exist.
+  /// Throws [StateError] if the preset does not exist, or if it is a seeded
+  /// (non-user-created) preset.
   Future<void> deletePreset(String id) async {
     final row = await _db.getPresetById(id);
     if (row == null) throw StateError('Preset $id not found.');
+    if (!row.isUserCreated) {
+      throw StateError(
+          'Cannot delete a seeded (non-user-created) preset: $id.');
+    }
     await _db.softDeletePreset(id, DateTime.now().toUtc());
   }
 
@@ -262,23 +312,53 @@ class DrinksRepository {
   /// even though the drink is never attached to a session. A future session's
   /// orphan absorption reads this stored value, so it must reflect the
   /// user's actual entry, not just the preset default.
+  /// [name] and [abvPercent] override the preset default when non-null.
+  /// [priceMinor] and [currency] override the preset default — the S2
+  /// Advanced editor's "Confirm" path (user-experience.md §S2): "logs the
+  /// drink with the entered values for this entry only. The underlying
+  /// preset is unchanged." Use [Optional.absent] (the default) to fall back
+  /// to the preset's stored price/currency, or [Optional.value] — including
+  /// `Optional.value(null)` to explicitly log this entry with no price —
+  /// to override it for this entry only. Passing these does not write to
+  /// the [DrinkPreset] row; callers that want the preset itself updated
+  /// must call [updatePreset] first and pass the refreshed preset in.
   /// [consumedAt] defaults to now.
+  ///
+  /// Throws [ArgumentError] if the effective price is non-null while the
+  /// effective currency is null (data-model.md `DrinkEntry.currency`:
+  /// "Required when priceMinor is set"), or if [name] fails
+  /// [validatePresetName] — the same rule `createPreset`/`updatePreset`
+  /// enforce, since `DrinkEntry.name` follows the same Parity Rulebook shape.
   Future<void> logDrink({
     required DrinkPreset preset,
+    String? name,
     int? volumeMl,
     double? abvPercent,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
     DateTime? consumedAt,
   }) async {
+    if (name != null) {
+      _assertValidPresetName(name);
+      name = normalizeNfc(name);
+    }
+    final effectivePriceMinor =
+        priceMinor.isPresent ? priceMinor.value : preset.regularPriceMinor;
+    final effectiveCurrency =
+        currency.isPresent ? currency.value : preset.regularCurrency;
+    if (effectivePriceMinor != null && effectiveCurrency == null) {
+      throw ArgumentError('currency is required when priceMinor is set');
+    }
     final now = DateTime.now().toUtc();
     final consumed = consumedAt?.toUtc() ?? now;
     final companion = DrinkEntriesCompanion.insert(
       id: _uuid.v4(),
-      name: Value(preset.name),
+      name: Value(name ?? preset.name),
       beverageType: preset.beverageType.stored,
       volumeMl: volumeMl ?? preset.volumeMl,
       abvPercent: Value(abvPercent ?? preset.abvPercent),
-      priceMinor: Value(preset.regularPriceMinor),
-      currency: Value(preset.regularCurrency),
+      priceMinor: Value(effectivePriceMinor),
+      currency: Value(effectiveCurrency),
       iconKey: Value(preset.iconKey),
       iconColor: Value(preset.iconColor),
       consumedAt: consumed,

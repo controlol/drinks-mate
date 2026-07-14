@@ -136,6 +136,17 @@ class PreferencesRepository {
         ),
       );
 
+  /// Update whether alcoholic presets are always visible in Manage Drinks
+  /// (`true`, default) or shown only during an active party session
+  /// (`false`) — features.md F14.
+  Future<void> updateAlcoholicPresetsAlwaysVisible(bool value) =>
+      _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          alcoholicPresetsAlwaysVisible: Value(value),
+          updatedAt: Value(DateTime.now().toUtc()),
+        ),
+      );
+
   // ---------------------------------------------------------------------------
   // UserProfile — watch / upsert
   // ---------------------------------------------------------------------------
@@ -262,6 +273,7 @@ class PreferencesRepository {
         bacOnLockScreenEnabled: row.bacOnLockScreenEnabled,
         approachingCapNotifEnabled: row.approachingCapNotifEnabled,
         soberEstimateNotifEnabled: row.soberEstimateNotifEnabled,
+        alcoholicPresetsAlwaysVisible: row.alcoholicPresetsAlwaysVisible,
         installedAt: DateTime.fromMillisecondsSinceEpoch(
           row.installedAt,
           isUtc: true,

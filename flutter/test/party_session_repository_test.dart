@@ -178,12 +178,23 @@ void main() {
   // 1. Schema migration
   // ---------------------------------------------------------------------------
 
-  group('AppDatabase — schema v4 (fresh onCreate)', () {
-    test('schemaVersion is 4 (app_database.dart)', () async {
+  group('AppDatabase — schema v5 (fresh onCreate)', () {
+    test('schemaVersion is 5 (app_database.dart)', () async {
       final db = _memDb();
       addTearDown(db.close);
-      expect(db.schemaVersion, 4);
+      expect(db.schemaVersion, 5);
     });
+
+    test(
+      'default preferences row has alcoholicPresetsAlwaysVisible = true '
+      '(v5 default)',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final prefs = await PreferencesRepository(db).getPreferences();
+        expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
+      },
+    );
 
     test(
       'PartySessions / PartySessionPrices / Meals tables exist and '
@@ -383,7 +394,10 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        expect(upgraded.schemaVersion, 4);
+        // This test opens the *real* AppDatabase (currently schema v5), so a
+        // hand-built v3 file cascades through both the "if (from < 4)" and
+        // "if (from < 5)" onUpgrade blocks in one open — verified below.
+        expect(upgraded.schemaVersion, 5);
 
         final entries = await upgraded.select(upgraded.drinkEntries).get();
         final legacyEntry = entries.singleWhere((e) => e.id == 'legacy-1');
@@ -401,6 +415,12 @@ void main() {
         final session = await repo.startSession(now: DateTime.utc(2026, 7, 10));
         expect(session.id, isNotEmpty);
         expect(await upgraded.getActiveSession(), isNotNull);
+
+        // v5's addColumn ran too: the hand-built v3 user_preferences table
+        // (no alcoholic_presets_always_visible column) gained it via ALTER
+        // TABLE, and the beforeOpen seed populated the default row.
+        final prefs = await PreferencesRepository(upgraded).getPreferences();
+        expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
       },
     );
   });

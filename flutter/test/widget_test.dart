@@ -41,6 +41,7 @@ Widget _appWithFakeStreams() {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: epoch,
     createdAt: epoch,
     updatedAt: epoch,

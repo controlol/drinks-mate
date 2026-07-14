@@ -49,6 +49,7 @@ UserPreferences _prefs({
     bacOnLockScreenEnabled: bacOnLockScreenEnabled,
     approachingCapNotifEnabled: approachingCapNotifEnabled,
     soberEstimateNotifEnabled: soberEstimateNotifEnabled,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: _epoch,
     createdAt: now,
     updatedAt: now,

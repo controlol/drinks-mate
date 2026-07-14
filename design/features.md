@@ -98,6 +98,7 @@ The settings screen exposes every persisted preference. The canonical grouping, 
    - **Default drink** — reference to one of the user's drink presets; restricted to non-alcoholic. Defaults to the seeded "Glass of water" preset. Used by the notification quick-log action and as the "glass" unit in the per-reminder recommended-volume calculation.
 3. **Drinks**
    - **Manage drinks** — create, edit, hide, delete, and reorder drink presets (see F14).
+   - **Always show alcoholic drinks** toggle (default ON). When on, alcoholic presets are always listed in Manage Drinks. When off, they're listed there only while a Party Session is active. See [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
 4. **Profile** — used by the goal suggestion and the BAC algorithm in Party Mode. See [data-model.md → UserProfile](./data-model.md#userprofile).
    - Gender (male / female / unspecified).
    - Weight (kg).
@@ -144,7 +145,9 @@ Non-alcoholic:
 | Glass of milk             | milk          | 200 ml | glass      |
 | Alcohol-free beer (0.33L) | non_alcoholic_beer | 330 ml | beer_glass |
 
-Alcoholic (visible only when Party Mode is active — see [party-session.md](./party-session.md)):
+Alcoholic:
+
+These are always selectable via quick-log and the S2 log-drink picker regardless of session state, matching [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active) ("alcohol can always be logged; the app just prompts to start a session"). The **Manage Drinks** screen (below) is the only screen that ever hides them, and only when the user has turned off the "Always show alcoholic drinks" setting (default ON) — see [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
 
 | Name                   | Beverage type | Volume | ABV | Icon        |
 | ---------------------- | ------------- | ------ | --- | ----------- |
