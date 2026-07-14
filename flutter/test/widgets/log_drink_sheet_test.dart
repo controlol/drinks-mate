@@ -861,4 +861,73 @@ void main() {
       expect(repo.updatePresetCalls, isEmpty);
     },
   );
+
+  // -------------------------------------------------------------------------
+  // 8. Copy-name dialog validates the name (its "(copy)" default can overflow
+  //    the 30-rune limit on its own for a long-enough base name).
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Copy-name dialog disables Create for an over-length default name and '
+    're-enables it once edited to a valid name',
+    (tester) async {
+      final repo = _FakeDrinksRepo(existingPresets: const [_beerPreset]);
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      // 24-char base name + ' (copy)' (7 chars) = 31 runes, over the 30 max.
+      await _fillAdvanced(tester, name: 'Craft Lager Super Deluxe');
+
+      await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save as copy and confirm'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('advanced_editor_copy_name_field')),
+            )
+            .controller!
+            .text,
+        'Craft Lager Super Deluxe (copy)',
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const Key('advanced_editor_copy_confirm_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('advanced_editor_copy_name_field')),
+        'Craft Lager Copy',
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const Key('advanced_editor_copy_confirm_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('advanced_editor_copy_confirm_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(repo.createPresetCalls.single.name, 'Craft Lager Copy');
+    },
+  );
 }

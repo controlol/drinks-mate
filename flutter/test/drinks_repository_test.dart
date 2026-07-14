@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1018,6 +1019,41 @@ void main() {
       final entry = await loggedRow();
       expect(entry.name, 'Entry-only Name');
     });
+
+    test(
+      'name override is NFC-normalized before persisting, matching '
+      'createPreset/updatePreset (username.dart normalizeNfc doc: '
+      '"visually identical inputs produce the same stored bytes")',
+      () async {
+        final presetId = await _createUserPreset(repo, name: 'Original Name');
+        final preset = (await repo.watchAllPresets().first)
+            .firstWhere((p) => p.id == presetId);
+
+        // NFD form of 'café' — 'e' followed by a combining acute accent
+        // (U+0301) instead of the precomposed 'é' (U+00E9).
+        const nfdName = 'Café Latte';
+        await repo.logDrink(preset: preset, name: nfdName);
+
+        final entry = await loggedRow();
+        expect(entry.name, normalizeNfc(nfdName));
+        expect(entry.name, isNot(equals(nfdName)));
+      },
+    );
+
+    test(
+      'name override failing validatePresetName throws ArgumentError, same '
+      'as createPreset/updatePreset',
+      () async {
+        final presetId = await _createUserPreset(repo, name: 'Original Name');
+        final preset = (await repo.watchAllPresets().first)
+            .firstWhere((p) => p.id == presetId);
+
+        expect(
+          () => repo.logDrink(preset: preset, name: 'ab'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
