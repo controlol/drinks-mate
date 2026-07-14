@@ -1,33 +1,31 @@
 # .github/workflows/release-play.yml
 #
 # Builds a signed Android App Bundle and uploads it to the Google Play
-# Console via the Play Developer API. See docs/play-store-release.md for the
-# one-time account/keystore/secret setup this depends on.
+# Console via the Play Developer API. Reuses the same release keystore and
+# ANDROID_* secrets as build-apk.yml (see RELEASE_SIGNING.md) rather than a
+# second keystore — one upload key, one place it's documented. See
+# docs/play-store-release.md for the one-time Play account/listing/service
+# account setup this additionally depends on.
 #
-# Deliberately NOT wired to `push: [main]` — release cadence should be a
-# deliberate act (a version tag or a manual dispatch), not every merge. It's
-# inert without the secrets below: the "Decode signing keystore" step fails
-# fast with a clear message rather than silently building a debug-signed AAB.
+# Triggered ONLY by publishing a GitHub Release, not by every tag push or
+# workflow_dispatch — cutting a Play release is a deliberate, reviewable act
+# distinct from tagging a build for Firebase App Distribution
+# (distribute-firebase.yml, which does trigger on a tag). The track is
+# derived from the release's "pre-release" flag rather than taken as an
+# input: mark the GitHub Release a pre-release to ship to the `internal`
+# Play track, or a full release to ship straight to `production`.
 #
 # LIMITATION: this cannot bootstrap the very first release. The Play
 # Developer API rejects uploads to a packageName the Play Console has never
 # seen, so the first .aab for a brand-new app listing must be uploaded by
-# hand through the Console UI. Run this workflow starting with the second
-# release. See the doc for the full first-release checklist.
+# hand through the Console UI. Publish a GitHub Release starting with the
+# second release. See the doc for the full first-release checklist.
 on:
-  workflow_dispatch:
-    inputs:
-      track:
-        description: "Play Console track to release to"
-        type: choice
-        options: [internal, alpha, beta, production]
-        default: internal
-  push:
-    tags:
-      - 'v*.*.*'
+  release:
+    types: [published]
 
 concurrency:
-  group: release-play-${{ github.ref }}
+  group: release-play-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -42,26 +40,26 @@ jobs:
         working-directory: flutter
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
-      - name: Derive version from tag
+      - name: Derive version and track from the GitHub release
         id: version
         run: |
           set -euo pipefail
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            name="${GITHUB_REF_NAME#v}"
-          else
-            # Manual dispatch off a branch: keep versionName as pubspec.yaml's
-            # and only bump the build number, so ad-hoc dispatch runs don't
-            # need a tag to produce an installable, uniquely-numbered build.
-            name="$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
-          fi
-          echo "build_name=$name" >> "$GITHUB_OUTPUT"
+          tag="${{ github.event.release.tag_name }}"
+          echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
           # github.run_number is monotonically increasing for this workflow
           # file, which is all Play requires of versionCode (strictly
           # increasing per release). It resets only if the workflow file is
           # renamed/recreated — acceptable for a low-frequency release job,
           # but don't rename this file casually once releases are flowing.
           echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            echo "track=internal" >> "$GITHUB_OUTPUT"
+          else
+            echo "track=production" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-java@v5
         with:
@@ -79,22 +77,18 @@ jobs:
 
       - name: Decode signing keystore
         env:
-          PLAY_KEYSTORE_BASE64: ${{ secrets.PLAY_KEYSTORE_BASE64 }}
-          PLAY_KEYSTORE_PASSWORD: ${{ secrets.PLAY_KEYSTORE_PASSWORD }}
-          PLAY_KEY_ALIAS: ${{ secrets.PLAY_KEY_ALIAS }}
-          PLAY_KEY_PASSWORD: ${{ secrets.PLAY_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          : "${PLAY_KEYSTORE_BASE64:?PLAY_KEYSTORE_BASE64 secret is not set — see docs/play-store-release.md#one-time-setup}"
-          echo "$PLAY_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          cat > android/key.properties <<EOF
-          storePassword=$PLAY_KEYSTORE_PASSWORD
-          keyPassword=$PLAY_KEY_PASSWORD
-          keyAlias=$PLAY_KEY_ALIAS
-          storeFile=release.keystore
-          EOF
+          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed AAB can't be uploaded to Play.}"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
 
       - name: Build signed App Bundle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter build appbundle --release \
             --build-name="${{ steps.version.outputs.build_name }}" \
@@ -114,5 +108,5 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.controlol.drinks_mate
           releaseFiles: flutter/build/app/outputs/bundle/release/app-release.aab
-          track: ${{ inputs.track || 'internal' }}
+          track: ${{ steps.version.outputs.track }}
           status: completed

@@ -1,42 +1,93 @@
-# Play Store release — operations guide
+# Release & distribution — operations guide
 
-How a Drinks Mate build becomes a release on the Google Play Store, and what
-still has to happen before the *first* one can ship. Companion to
+How a Drinks Mate build gets in front of users, and what still has to happen
+before the *first* Play Store release can ship. Companion to
 [`docs/agentic-workflow.md`](./agentic-workflow.md) (that one gates code
 changes into `main`; this one gates a build from `main` out to users).
 
-## Two build pipelines, two jobs
+Two distinct paths, covered in this doc:
+- **Firebase App Distribution** — no Play account, no store listing, no
+  review; add a tester's email and they get a build within minutes. The
+  right way to get a real build in front of people *today*, and to keep
+  doing so throughout development.
+- **Google Play Store** — the eventual production distribution channel.
+  Has a real one-time setup cost (account, listing, policy questionnaires)
+  and a per-release review; see [Technical gap](#technical-gap-for-the-first-play-release)
+  for exactly what's still missing.
 
-| Workflow | Produces | For |
-|---|---|---|
-| [`build-apk.yml`](../.github/workflows/build-apk.yml) (existing) | Debug-signed `.apk` | Direct install on a test device, sideloading, sharing a build with someone off Play entirely |
-| [`release-play.yml`](../.github/workflows/release-play.yml) (added alongside this doc) | Signed `.aab` (Android App Bundle) | Upload to the Play Console |
+Nothing below requires choosing one over the other — they run off the same
+signed APK/AAB and can operate in parallel indefinitely.
 
-These are deliberately separate. Play has required the App Bundle format for
-new app publishing since 2021 — a plain `.apk` cannot be uploaded as a
-production Play release — while the existing APK workflow still earns its
-keep for quick installs that don't go through Play at all. Don't collapse one
-into the other.
+## Three build pipelines, three triggers
+
+| Workflow | Trigger | Produces | For |
+|---|---|---|---|
+| [`build-apk.yml`](../.github/workflows/build-apk.yml) (existing) | Every relevant push to `main` (via CI completing) | Signed `.apk` (see [`RELEASE_SIGNING.md`](../RELEASE_SIGNING.md)) | Quick sideloading/sanity checks on `main`'s tip |
+| [`distribute-firebase.yml`](../.github/workflows/distribute-firebase.yml) (added alongside this doc) | A `v*.*.*` tag, or manual dispatch | Firebase App Distribution release | Getting a real build to testers, no Play account, no waiting |
+| [`release-play.yml`](../.github/workflows/release-play.yml) (added alongside this doc) | Publishing a GitHub Release | Signed `.aab` uploaded to the Play Console | An actual Play Store release |
+
+All three build and sign independently (each decodes the same release
+keystore from the same `ANDROID_*` secrets — see `RELEASE_SIGNING.md` —
+rather than sharing artifacts across workflows), but on deliberately
+different triggers. `build-apk.yml` firing on every `main` push is fine for
+a disposable sideload artifact; `distribute-firebase.yml` and
+`release-play.yml` are scoped to an explicit tag / a published GitHub
+Release respectively so that shipping a build to testers or to Play is
+always an intentional act, never a side effect of merging a PR.
 
 ```
-git tag v1.2.0 && git push --tags       workflow_dispatch (track=internal|alpha|beta|production)
-        │                                         │
-        └───────────────────┬─────────────────────┘
-                            ▼
-        .github/workflows/release-play.yml
-          decode release keystore from secrets
-          flutter build appbundle --release
-            --build-name=<tag>  --build-number=<run_number>
-          upload app-release.aab as a workflow artifact
-          upload to Play Console via the Play Developer API
-            (r0adkll/upload-google-play → chosen track)
-                            │
-                            ▼
-                  Google Play Console
-        track review → (promote track) → users
+        git tag v1.2.0 && git push --tags        gh release create v1.2.0 --tag v1.2.0
+          (or: workflow_dispatch)                   [--prerelease]   (or the Console UI)
+                    │                                          │
+                    ▼                                          ▼
+     distribute-firebase.yml                         release-play.yml
+       decode release keystore                         decode release keystore
+       flutter build apk --release                      flutter build appbundle --release
+       upload to Firebase App                            upload to Play Console via the
+       Distribution (group: testers)                      Play Developer API
+                    │                              track = internal if the release is
+                    ▼                              marked "pre-release", else production
+          testers install via                                    │
+          emailed/link invite                                    ▼
+                                                     Google Play Console
+                                             track review → (promote track) → users
 ```
 
-## How a release reaches users
+## Firebase App Distribution: one-time setup
+
+Do this once; after that, pushing a `v*.*.*` tag (or a manual dispatch of
+`distribute-firebase.yml`) builds a fresh signed APK and ships it straight to
+testers.
+
+1. **Create a Firebase project** at [console.firebase.google.com](https://console.firebase.google.com/)
+   (free tier is enough) and add an Android app to it with `packageName`
+   `com.controlol.drinks_mate` — this doesn't need to be the same Firebase
+   project you'd later use for anything else, and doesn't require or affect
+   the Play Console `applicationId` decision at all.
+2. **Grab the App ID** from Project settings → General → your Android app's
+   "App ID" (format `1:1234567890:android:abcdef...`), and store it:
+   ```bash
+   gh secret set FIREBASE_APP_ID
+   ```
+3. **Create a service account** with the **Firebase App Distribution Admin**
+   role: Google Cloud Console → IAM → Service Accounts → create → grant that
+   role → Keys → Add key → JSON. Store its content directly:
+   ```bash
+   gh secret set FIREBASE_SERVICE_ACCOUNT_JSON < service-account.json
+   ```
+4. **Create a tester group** named `testers` in Firebase Console → App
+   Distribution → Testers & Groups (or change the `groups:` input in
+   `distribute-firebase.yml` to whatever name you use), and add tester
+   emails to it. They'll get an email invite the first time a build lands;
+   after accepting once, new builds just show up in the Firebase App Tester
+   app.
+
+That's the entire setup — no account review, no store listing, no waiting
+period. Try it with `git tag v0.1.0 && git push origin v0.1.0`, or *Actions →
+Build + upload APK to Firebase App Distribution → Run workflow* for an
+ad-hoc build off any branch, once the secrets above are in place.
+
+## How a Play release reaches users
 
 Play releases move through **tracks**, each with a different audience and a
 different bar to promote out of it:
@@ -72,7 +123,7 @@ different bar to promote out of it:
   `flutter/distribution/whatsnew/whatsnew-en-US`, if you want notes checked
   into the repo instead of typed into the Console each time).
 
-## One-time setup
+## Play Store: one-time setup
 
 These are mostly Play Console / Google Cloud actions, not code. Do them once,
 in roughly this order — several have multi-day lead times, so start early.
@@ -112,27 +163,19 @@ track — not even internal testing — until they're filled in:
   apps that estimate or discuss BAC before submitting, since this can affect
   age rating and country availability.
 
-### 4. Generate the release (upload) keystore
-```bash
-keytool -genkey -v -keystore release.keystore -storetype JKS \
-  -keyalg RSA -keysize 2048 -validity 10000 -alias drinks-mate-upload
-```
-Keep this file and its passwords **outside the repo** — `flutter/android/`
-already gitignores `key.properties` and `*.keystore`/`*.jks`. This is your
-**upload key**: on first upload, enroll in **Play App Signing** (the Console
-default for new apps) so Google holds the actual **app signing key** and
-re-signs what you upload; if the upload key is ever lost or compromised you
-can request a Console-mediated reset, unlike the app signing key.
+### 4. Release keystore
+`release-play.yml` signs the AAB with the same release keystore and
+`ANDROID_KEYSTORE_BASE64`/`ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALIAS`/
+`ANDROID_KEY_PASSWORD` secrets that `build-apk.yml` already uses — see
+[`RELEASE_SIGNING.md`](../RELEASE_SIGNING.md) for how to generate it and
+wire it into CI. One upload key, one place it's documented; nothing
+Play-specific to set up here.
 
-Feed it to CI as three repo secrets, base64-encoding the keystore file:
-```bash
-base64 -w0 release.keystore | gh secret set PLAY_KEYSTORE_BASE64
-gh secret set PLAY_KEYSTORE_PASSWORD
-gh secret set PLAY_KEY_ALIAS       # drinks-mate-upload, from the command above
-gh secret set PLAY_KEY_PASSWORD
-```
-For local signed builds, copy `flutter/android/key.properties.example` to
-`flutter/android/key.properties` (gitignored) and fill in the same values.
+On first upload, enroll in **Play App Signing** (the Console default for
+new apps) so Google holds the actual **app signing key** and re-signs what
+you upload; if the upload key in `RELEASE_SIGNING.md` is ever lost or
+compromised you can request a Console-mediated reset, unlike the app
+signing key.
 
 ### 5. Upload the first release manually
 **The Play Developer API cannot create the first release for a package name
@@ -159,58 +202,79 @@ gh secret set PLAY_SERVICE_ACCOUNT_JSON < service-account.json
 
 ## Day-to-day: cutting a release
 
+**Sharing a build with testers, no Play release needed:** once
+[Firebase setup](#firebase-app-distribution-one-time-setup) is done,
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+builds a signed APK and ships it to the Firebase `testers` group within a
+few minutes. No Play track, no review — this is the everyday path while
+iterating. (Or dispatch `distribute-firebase.yml` manually for an ad-hoc
+build off any branch, tag or no tag.)
+
+**Cutting an actual Play Store release:**
+
 1. Land the changes on `main` through the normal PR flow
-   ([`docs/agentic-workflow.md`](./agentic-workflow.md)).
-2. Decide the version (semver) and tag it:
+   ([`docs/agentic-workflow.md`](./agentic-workflow.md)) and tag it as above
+   if you also want it on Firebase.
+2. Publish a GitHub Release for that tag — this, not the tag push itself, is
+   what triggers `release-play.yml`:
    ```bash
-   git tag v1.2.0 && git push origin v1.2.0
+   gh release create v1.2.0 --title v1.2.0 --generate-notes --prerelease
    ```
-   This triggers `release-play.yml`, which builds `app-release.aab` with
-   `versionName=1.2.0` and a `versionCode` derived from the GitHub Actions
-   run number (guaranteed to strictly increase, which is Play's only
-   requirement for `versionCode`), and uploads it to the `internal` track by
-   default.
-   
-   To target a different track (or re-run without tagging), use *Actions →
-   Release to Play Store → Run workflow* and pick `track`.
-3. Check the internal testing release in Play Console; sanity-check on a
-   real device via the track's opt-in link.
-4. Promote: in Play Console, promote the same release to closed → open →
-   production as it clears each bar (or re-run the workflow with a different
-   `track` input — either uploads/promotes, no separate rebuild required for
-   promotion via the Console). Production releases go through Play's review
-   before going live; stage the rollout percentage if you want a ramp
-   instead of 100% at once.
+   `release-play.yml` builds `app-release.aab` with `versionName=1.2.0` and a
+   `versionCode` derived from the GitHub Actions run number (guaranteed to
+   strictly increase, which is Play's only requirement for `versionCode`),
+   and uploads it to Play. **The track is derived from the release itself**:
+   mark it `--prerelease` for the `internal` track, or omit the flag for a
+   full release to go straight to `production`. There's no manual
+   `track` input — creating the right *kind* of GitHub Release is the whole
+   interface.
+3. For an internal-track release: check it in Play Console, sanity-check on
+   a real device via the track's opt-in link, then promote it to
+   closed → open → production in the Console as it clears each bar (a
+   Console action, no rebuild needed).
+4. Production releases go through Play's standard review before going live;
+   stage the rollout percentage in the Console if you want a ramp instead of
+   100% at once.
 
-## Technical gap for the first release
+## Technical gap for the first Play release
 
-Two different kinds of gap. The first is now closed by the changes alongside
-this doc; the rest need a human with Play Console / Google Cloud access and
-can't be scripted from inside this repo.
+Play Store publishing is **not required** to get real builds in front of
+people — Firebase App Distribution (above) does that today, with only the
+four setup steps in that section and no Play account at all. The gap below
+is specifically what's still missing for a *Play Store* release; nothing
+here blocks using Firebase App Distribution in the meantime.
 
-**Closed by this change:**
-- `flutter/android/app/build.gradle.kts` signed every release build with the
-  **debug keystore** (explicit `TODO`s in the file) — there was no path to a
-  Play-acceptable signed build at all. It now reads an optional
-  `key.properties`/keystore and falls back to debug signing only when that's
-  absent, so it's a no-op until step 4 above is done.
+Two different kinds of gap. The first kind is closed by code already on
+`main`, or by the workflow added alongside this doc; the rest need a human
+with Play Console / Google Cloud / Firebase access and can't be scripted
+from inside this repo.
+
+**Closed in code:**
+- `flutter/android/app/build.gradle.kts` used to sign every release build
+  with the **debug keystore** — fixed in #74 (`RELEASE_SIGNING.md`), which
+  also wired a real signing key into `build-apk.yml`. `release-play.yml`
+  reuses that same key/secrets rather than a second Play-specific one.
 - There was no App Bundle build target or Play upload step anywhere in CI —
-  `build-apk.yml` only ever produced a debug-signed `.apk`, which Play
-  doesn't accept for new-app publishing. `release-play.yml` adds the AAB
-  build + Play Developer API upload.
+  `build-apk.yml` only produces a `.apk`, which Play doesn't accept for
+  new-app publishing. `release-play.yml` adds the AAB build + Play
+  Developer API upload.
 - There was no versioning convention beyond hand-editing `version:` in
-  `pubspec.yaml` (frozen at `0.1.0+1`). The release workflow now derives
-  `versionName`/`versionCode` from a git tag and the CI run number instead.
+  `pubspec.yaml` (frozen at `0.1.0+1`). Both new workflows now derive
+  `versionName`/`versionCode` from a git tag/GitHub Release and the CI run
+  number instead.
+- There was no way to get a build to testers without either sideloading an
+  APK by hand or going through Play at all. `distribute-firebase.yml` closes
+  that gap independently of the Play Store work, and is scoped to a tag/
+  manual dispatch rather than firing on every `main` push.
 
-**Still open — blocks the first release, not fixable in code:**
+**Still open — blocks the first Play release, not fixable in code:**
 - **No Play Developer account exists yet** (personal vs. organization is an
   unmade, consequential decision — see step 1).
 - **No app listing / package name registered in Play Console** — until one
   exists, `release-play.yml` has nothing to upload to (see step 5: the very
   first upload for a new app must be manual regardless of pipeline quality).
-- **No release keystore has been generated** — `key.properties`/the
-  `PLAY_KEYSTORE_*` secrets don't exist. Whoever generates it becomes the
-  long-term holder of the upload key.
 - **No privacy policy exists** — required by Play for every app regardless
   of whether Drinks Mate is local-only; the design docs currently treat it as
   Phase 2 scope, which doesn't satisfy the Play submission requirement.
@@ -222,9 +286,7 @@ can't be scripted from inside this repo.
   been filled in, and the alcohol/BAC feature likely needs a specific look
   at Play's alcohol-content policy before submitting.
 - **`applicationId "com.controlol.drinks_mate"` needs an explicit
-  confirm-it's-final** — it's immutable after the first publish, and the
-  `build.gradle.kts` TODO calling it out was otherwise silent on the
-  consequence.
+  confirm-it's-final** — it's immutable after the first Play publish.
 - **No Play Developer API service account** — `PLAY_SERVICE_ACCOUNT_JSON`
   doesn't exist yet; requires linking a Google Cloud project in Console API
   access.
@@ -232,3 +294,9 @@ can't be scripted from inside this repo.
   checkbox** — for a personal account, 12 active testers for 14 consecutive
   days must elapse before Play will even consider a production application,
   independent of how ready the app or pipeline is.
+
+For Firebase App Distribution, the equivalent still-open list is much
+shorter: a Firebase project, the `FIREBASE_APP_ID`/
+`FIREBASE_SERVICE_ACCOUNT_JSON` secrets, and a tester group — all covered in
+[Firebase App Distribution: one-time setup](#firebase-app-distribution-one-time-setup)
+above, with no account review or waiting period.

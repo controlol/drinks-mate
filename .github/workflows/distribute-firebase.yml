@@ -1,0 +1,92 @@
+# .github/workflows/distribute-firebase.yml
+#
+# Builds a signed release APK and ships it to testers via Firebase App
+# Distribution. This is the fast, low-friction distribution path: no Play
+# developer account, no app listing, none of the Play Console gates (see
+# docs/play-store-release.md) — testers just need to be in a distribution
+# group and accept an email/link once.
+#
+# Triggered by a version tag (the same tags a Play release is later cut
+# from) or manual dispatch — deliberately NOT on every main push, so
+# shipping a build to testers is still an intentional act. Reuses the same
+# release keystore and ANDROID_* secrets as build-apk.yml/release-play.yml
+# (see RELEASE_SIGNING.md) rather than a Firebase-specific keystore.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: distribute-firebase-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  distribute:
+    name: Build + upload APK to Firebase App Distribution
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            # Manual dispatch off a branch: keep versionName as pubspec.yaml's
+            # and only bump the build number, so ad-hoc dispatch runs don't
+            # need a tag to produce an installable, uniquely-numbered build.
+            name="$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          fi
+          echo "build_name=$name" >> "$GITHUB_OUTPUT"
+          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed APK can still be uploaded to Firebase App Distribution, but testers won't be able to install it as an update over a real release build.}"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+
+      - name: Upload to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          groups: testers
+          file: flutter/build/app/outputs/flutter-apk/app-release.apk
+          releaseNotes: "Automated build from ${{ github.sha }}"
