@@ -172,11 +172,44 @@ track — not even internal testing — until they're filled in:
 wire it into CI. One upload key, one place it's documented; nothing
 Play-specific to set up here.
 
-On first upload, enroll in **Play App Signing** (the Console default for
-new apps) so Google holds the actual **app signing key** and re-signs what
-you upload; if the upload key in `RELEASE_SIGNING.md` is ever lost or
-compromised you can request a Console-mediated reset, unlike the app
-signing key.
+On first upload, Play requires enrolling in **Play App Signing**. The
+Console defaults to **"Use Play-generated key"** — don't accept that
+default here. It mints a brand-new signing key, which would leave the
+Play-installed app signed differently from every `distribute-firebase.yml`
+build, and Android refuses to install one as an "update" over the other:
+testers who already have a Firebase build installed would have to uninstall
+it before they could get the Play version.
+
+Instead, choose **"Export and upload a key from a Java keystore"** and
+upload the *same* keystore from `RELEASE_SIGNING.md`, so the Play app
+signing key and the Firebase-distributed APKs share one certificate and
+testers can update straight across:
+
+1. Console → your app → *Setup* → *App integrity* → *App signing* → pick
+   "Export and upload a key from a Java keystore". That page hands you two
+   session-specific files: the **PEPK tool** (`pepk.jar`) and an
+   **encryption public key** (`encryption_public_key.pem`) — both only
+   available from inside this flow, not a stable download link.
+2. Encrypt the existing keystore's private key for upload (alias is
+   `upload`, per `RELEASE_SIGNING.md`; same password serves as both the
+   store and key password):
+   ```bash
+   java -jar pepk.jar \
+     --keystore=upload-keystore.jks \
+     --alias=upload \
+     --output=output.zip \
+     --include-cert \
+     --rsa-aes-encryption \
+     --encryption-key-path=encryption_public_key.pem
+   ```
+3. Upload the resulting `output.zip` on that same Console page.
+
+This is a one-time, first-enrollment-only choice — Google only lets you
+change the app signing key afterward through an exceptional, manually
+reviewed "key upgrade" request (e.g. a compromised key), not as a routine
+do-over. If the upload key in `RELEASE_SIGNING.md` is ever lost or
+compromised, that same request process applies; the Play-side app signing
+key stays recoverable independent of it either way.
 
 ### 5. Upload the first release manually
 **The Play Developer API cannot create the first release for a package name
