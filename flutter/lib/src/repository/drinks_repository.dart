@@ -6,6 +6,7 @@ import '../db/app_database.dart';
 import '../models/beverage_type.dart';
 import '../models/daily_bucket.dart';
 import '../models/drink_entry.dart';
+import '../models/drink_icons.dart';
 import '../models/drink_preset.dart';
 import '../models/optional.dart';
 
@@ -78,6 +79,7 @@ class DrinksRepository {
   /// - [volumeMl] > 0 (data-model.md §DrinkPreset: "Required, must be > 0")
   /// - [abvPercent] non-null for alcoholic [beverageType] (null → 0 g alcohol in BAC)
   /// - [regularCurrency] non-null when [regularPriceMinor] is set
+  /// - [iconKey] must be one of [kDrinkIconKeys] (the bundled icon allowlist)
   Future<DrinkPreset> createPreset({
     required String name,
     required BeverageType beverageType,
@@ -111,6 +113,13 @@ class DrinksRepository {
     if (regularPriceMinor != null && regularCurrency == null) {
       throw ArgumentError(
         'regularCurrency is required when regularPriceMinor is set',
+      );
+    }
+    if (!kDrinkIconKeys.contains(iconKey)) {
+      throw ArgumentError.value(
+        iconKey,
+        'iconKey',
+        'Not a recognised bundled icon key',
       );
     }
     final now = DateTime.now().toUtc();
@@ -151,7 +160,9 @@ class DrinksRepository {
   /// (D2: "Drift types never reach widgets").
   ///
   /// Validates [name] via [validatePresetName] when provided; throws
-  /// [ArgumentError] on failure. Throws [StateError] if [id] does not exist.
+  /// [ArgumentError] on failure. When provided, [iconKey] must be one of
+  /// [kDrinkIconKeys] (the bundled icon allowlist); throws [ArgumentError]
+  /// otherwise. Throws [StateError] if [id] does not exist.
   Future<void> updatePreset({
     required String id,
     String? name,
@@ -168,6 +179,13 @@ class DrinksRepository {
     }
     if (volumeMl != null && volumeMl <= 0) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'Must be > 0');
+    }
+    if (iconKey != null && !kDrinkIconKeys.contains(iconKey)) {
+      throw ArgumentError.value(
+        iconKey,
+        'iconKey',
+        'Not a recognised bundled icon key',
+      );
     }
     DrinkPresetRow? existing;
     if (abvPercent.isPresent) {
@@ -246,19 +264,27 @@ class DrinksRepository {
 
   /// Soft-deletes a preset (sets [deletedAt]).
   ///
-  /// Applies to any preset — user-created or seeded default. Per data-model.md
-  /// §DrinkPreset: "The user can edit, hide, or delete them — there is no
-  /// special protection."
+  /// Restricted to user-created presets. Per data-model.md §DrinkPreset
+  /// "Seeded defaults": deleting a seeded default has no recovery path until
+  /// a "Reset to defaults" action exists in settings to re-seed missing
+  /// defaults, so this is an interim restriction — not a permanent
+  /// invariant — enforced here (not just in the Manage Drinks UI) so no
+  /// other caller can bypass it.
   ///
   /// Note: a future "Reset to defaults" action must use INSERT OR REPLACE (or
   /// an explicit UPDATE … SET deletedAt = NULL keyed on stable UUIDs) —
   /// INSERT OR IGNORE is a no-op for rows that already exist, even if
   /// soft-deleted.
   ///
-  /// Throws [StateError] if the preset does not exist.
+  /// Throws [StateError] if the preset does not exist, or if it is a seeded
+  /// (non-user-created) preset.
   Future<void> deletePreset(String id) async {
     final row = await _db.getPresetById(id);
     if (row == null) throw StateError('Preset $id not found.');
+    if (!row.isUserCreated) {
+      throw StateError(
+          'Cannot delete a seeded (non-user-created) preset: $id.');
+    }
     await _db.softDeletePreset(id, DateTime.now().toUtc());
   }
 

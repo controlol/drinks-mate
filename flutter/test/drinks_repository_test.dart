@@ -394,6 +394,23 @@ void main() {
         );
       },
     );
+
+    test('unrecognised iconKey throws ArgumentError', () async {
+      // Source: drink_icons.dart kDrinkIconKeys — the bundled icon allowlist;
+      // createPreset must reject a key with no matching asset instead of
+      // persisting it and failing to resolve at render time.
+      expect(
+        () => repo.createPreset(
+          name: 'Bad Icon',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'not-a-real-icon',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -582,6 +599,37 @@ void main() {
       expect(stored, equals('Café Water'));
       expect(stored, isNot(equals(nfdName)));
     });
+
+    test('unrecognised iconKey throws ArgumentError', () async {
+      // Source: drink_icons.dart kDrinkIconKeys — the bundled icon allowlist;
+      // updatePreset must reject a key with no matching asset instead of
+      // persisting it and failing to resolve at render time.
+      final id = await _createUserPreset(repo, name: 'My Water');
+
+      expect(
+        () => repo.updatePreset(id: id, iconKey: 'not-a-real-icon'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('iconKey: null (default) leaves the existing iconKey untouched',
+        () async {
+      // Source: updatePreset() docstring — "Only fields with a present
+      // Optional are written; omitted fields retain their current values."
+      // iconKey is a plain nullable String (not Optional), so null means
+      // "leave unchanged" and must not be validated against kDrinkIconKeys.
+      final id = await _createUserPreset(
+        repo,
+        name: 'My Water',
+        iconKey: 'glass',
+      );
+
+      await repo.updatePreset(id: id, name: 'Renamed Water');
+
+      final presets = await repo.watchAllPresets().first;
+      final updated = presets.firstWhere((p) => p.id == id);
+      expect(updated.iconKey, 'glass');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -675,12 +723,16 @@ void main() {
       },
     );
 
-    test('seeded default (isUserCreated == false) can be soft-deleted',
-        () async {
-      // Source: data-model.md §DrinkPreset line 58: "The user can edit, hide,
-      // or delete them — there is no special protection." A future reset-to-
-      // defaults must use INSERT OR REPLACE (not INSERT OR IGNORE) because soft-
-      // deleted rows still exist in the table and OR IGNORE would skip them.
+    test(
+        'seeded default (isUserCreated == false) cannot be deleted: throws '
+        'StateError and remains in watchAllPresets()', () async {
+      // Source: data-model.md §DrinkPreset "Seeded defaults" — deleting a
+      // seeded default has no recovery path until a "Reset to defaults"
+      // action exists to re-seed missing defaults, so this is an interim
+      // restriction (not a permanent invariant). It is enforced in
+      // DrinksRepository.deletePreset() itself — not just in the Manage
+      // Drinks UI's `if (preset.isUserCreated)` delete-button gate — so no
+      // other caller can bypass it.
       final db = _memDb();
       addTearDown(db.close);
       final repo = DrinksRepository(db);
@@ -688,14 +740,18 @@ void main() {
       final presets = await repo.watchAllPresets().first;
       final seeded = presets.firstWhere((p) => !p.isUserCreated);
 
-      await repo.deletePreset(seeded.id);
+      expect(
+        () => repo.deletePreset(seeded.id),
+        throwsA(isA<StateError>()),
+      );
 
+      // The seeded default is untouched: still present in watchAllPresets()
+      // and its raw row has no deletedAt.
       final after = await repo.watchAllPresets().first;
-      expect(after.any((p) => p.id == seeded.id), isFalse);
+      expect(after.any((p) => p.id == seeded.id), isTrue);
 
-      // Verify deletedAt is non-null in raw row.
       final raw = await db.getPresetById(seeded.id);
-      expect(raw!.deletedAt, isNotNull);
+      expect(raw!.deletedAt, isNull);
     });
 
     test('non-existent id throws StateError', () async {
