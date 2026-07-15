@@ -12,14 +12,14 @@ import '../theme/reduce_motion.dart';
 // Designer-brief §Goal-met celebration:
 //   - Confetti from the app palette (azure + honey, mint accents).
 //   - Medium haptic alongside.
-//   - Confetti burst finishes in ≈2 s; the overlay itself auto-dismisses
-//     after 10 s, or immediately on tap — whichever comes first.
+//   - Confetti plays for the same 10 s as the overlay itself, which
+//     auto-dismisses after 10 s, or immediately on tap — whichever
+//     comes first.
 //   - Reduce-motion fallback: static "Goal reached!" card, haptic still fires.
 //
 // Usage: push via showGeneralDialog (or Stack in TodayScreen) then call
 // onDismissed when the user taps anywhere or the timer elapses.
 
-const _kConfettiDuration = Duration(seconds: 2);
 const _kAutoDismissDuration = Duration(seconds: 10);
 
 class GoalCelebrationOverlay extends StatefulWidget {
@@ -50,7 +50,7 @@ class _GoalCelebrationOverlayState extends State<GoalCelebrationOverlay> {
     // ReduceMotion check (cannot call MediaQuery in initState safely).
     if (_confetti == null && _autoDismiss == null) {
       if (!ReduceMotion.isEnabled(context)) {
-        _confetti = ConfettiController(duration: _kConfettiDuration)..play();
+        _confetti = ConfettiController(duration: _kAutoDismissDuration)..play();
       }
       _autoDismiss = Timer(_kAutoDismissDuration, _dismiss);
     }
@@ -178,9 +178,9 @@ class _GoalCard extends StatelessWidget {
             Text(
               'Goal reached!',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: kColorHoney,
-                fontWeight: FontWeight.bold,
-              ),
+                    color: kColorHoney,
+                    fontWeight: FontWeight.bold,
+                  ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
