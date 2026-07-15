@@ -61,7 +61,7 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed APK can still be uploaded to Firebase App Distribution, but testers won't be able to install it as an update over a real release build.}"
+          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed APK can still be uploaded to Firebase App Distribution, but testers will not be able to install it as an update over a real release build.}"
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
 
