@@ -61,7 +61,7 @@ testers.
 
 1. **Create a Firebase project** at [console.firebase.google.com](https://console.firebase.google.com/)
    (free tier is enough) and add an Android app to it with `packageName`
-   `com.controlol.drinks_mate` — this doesn't need to be the same Firebase
+   `nl.controlol.drinksmate` — this doesn't need to be the same Firebase
    project you'd later use for anything else, and doesn't require or affect
    the Play Console `applicationId` decision at all.
 2. **Grab the App ID** from Project settings → General → your Android app's
@@ -343,8 +343,6 @@ from inside this repo.
 - **Content rating / data safety / target audience questionnaires** haven't
   been filled in, and the alcohol/BAC feature likely needs a specific look
   at Play's alcohol-content policy before submitting.
-- **`applicationId "com.controlol.drinks_mate"` needs an explicit
-  confirm-it's-final** — it's immutable after the first Play publish.
 - **No Play Developer API service account** — `PLAY_SERVICE_ACCOUNT_JSON`
   doesn't exist yet; requires linking a Google Cloud project in Console API
   access.
