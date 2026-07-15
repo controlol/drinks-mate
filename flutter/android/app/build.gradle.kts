@@ -22,7 +22,7 @@ fun signingProp(propertiesKey: String, envKey: String): String? =
     keystoreProperties.getProperty(propertiesKey) ?: System.getenv(envKey)
 
 android {
-    namespace = "com.controlol.drinks_mate"
+    namespace = "nl.controlol.drinksmate"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -33,8 +33,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.controlol.drinks_mate"
+        applicationId = "nl.controlol.drinksmate"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26        // D1: Android 8.0+ (notification channels require API 26)

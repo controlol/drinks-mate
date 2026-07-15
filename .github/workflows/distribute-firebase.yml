@@ -1,0 +1,98 @@
+# .github/workflows/distribute-firebase.yml
+#
+# Builds and ships a signed release APK to Firebase App Distribution
+# testers. Triggered by a v*.*.* tag or manual dispatch, not every main
+# push, so shipping to testers stays an intentional act. See
+# docs/play-store-release.md for setup and the full pipeline.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+concurrency:
+  group: distribute-firebase-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  distribute:
+    name: Build + upload APK to Firebase App Distribution
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Derive version from tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            name="${GITHUB_REF_NAME#v}"
+          else
+            # Manual dispatch off a branch: keep versionName as pubspec.yaml's
+            # and only bump the build number, so ad-hoc dispatch runs don't
+            # need a tag to produce an installable, uniquely-numbered build.
+            name="$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d+ -f1)"
+          fi
+          echo "build_name=$name" >> "$GITHUB_OUTPUT"
+          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed APK can still be uploaded to Firebase App Distribution, but testers won't be able to install it as an update over a real release build.}"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@15.23.0 # pinned (latest as of 2026-07-14)
+
+      - name: Upload to Firebase App Distribution
+        working-directory: ${{ github.workspace }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase appdistribution:distribute \
+            flutter/build/app/outputs/flutter-apk/app-release.apk \
+            --app "$FIREBASE_APP_ID" \
+            --groups testers \
+            --release-notes "Automated build from ${{ github.sha }}"

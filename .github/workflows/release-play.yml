@@ -1,0 +1,114 @@
+# .github/workflows/release-play.yml
+#
+# Builds and uploads a signed AAB to the Play Console. Triggered only by
+# publishing a GitHub Release (not tag push/dispatch), so cutting a Play
+# release is a deliberate act. See docs/play-store-release.md for the
+# pipeline, track derivation, and first-release setup.
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-play-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build + upload signed AAB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Derive version and track from the GitHub release
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          # versionCode = major*10000 + minor*100 + patch (minor/patch <
+          # 100, -rc suffix stripped) instead of github.run_number, which
+          # starts at 1 and collides with the manual first upload's
+          # versionCode 1 (docs/play-store-release.md step 5). Don't
+          # publish both an -rc tag and its final release: they'd compute
+          # the same versionCode.
+          name="${tag#v}"; name="${name%%-*}"
+          IFS=. read -r major minor patch <<< "$name"
+          : "${major:?malformed release tag '$tag': expected major.minor.patch}"
+          : "${minor:?malformed release tag '$tag': expected major.minor.patch}"
+          : "${patch:?malformed release tag '$tag': expected major.minor.patch}"
+          if (( 10#$minor >= 100 || 10#$patch >= 100 )); then
+            echo "minor/patch must each be < 100 to keep versionCode unique (got $name)" >&2
+            exit 1
+          fi
+          echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "build_number=$(( 10#$major*10000 + 10#$minor*100 + 10#$patch ))" >> "$GITHUB_OUTPUT"
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            echo "track=internal" >> "$GITHUB_OUTPUT"
+            echo "status=completed" >> "$GITHUB_OUTPUT"
+            echo "user_fraction=" >> "$GITHUB_OUTPUT"
+          else
+            echo "track=production" >> "$GITHUB_OUTPUT"
+            echo "status=inProgress" >> "$GITHUB_OUTPUT"
+            echo "user_fraction=0.1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.x'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is not set — see RELEASE_SIGNING.md. A debug-signed AAB can't be uploaded to Play.}"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload-keystore.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed App Bundle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: drinks-mate-release-aab
+          path: flutter/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish to Play Console
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: nl.controlol.drinksmate
+          releaseFiles: flutter/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ steps.version.outputs.track }}
+          status: ${{ steps.version.outputs.status }}
+          userFraction: ${{ steps.version.outputs.user_fraction }}
