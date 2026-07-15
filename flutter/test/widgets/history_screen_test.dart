@@ -13,11 +13,14 @@
 //     non-colour signal — Parity Rulebook: "History bar below daily goal:
 //     non-colour pattern/marker in addition to colour") while an
 //     at-or-above-goal bar does not.
-//  6. Alcohol section (issue #26): conditional visibility driven by
-//     historySessionsInRangeProvider alone (not by whether the BAC/alcoholic
-//     buckets are all-zero) — including the party-only-period regression
-//     case (no hydration entries, but a session in range: the alcohol
-//     section must show, not the "no drinks" empty state).
+//  6. Alcohol charts (issue #26, revised by issue #66): the "Alcoholic
+//     drinks per day" chart shows whenever there's a session in range OR any
+//     alcoholic entries were counted (session-attached or orphan) — it is no
+//     longer gated on sessions alone. "Max estimated BAC per day" stays
+//     gated on historySessionsInRangeProvider alone (BAC estimation is
+//     inherently session-scoped), including the party-only-period
+//     regression case (no hydration entries, but a session in range: the
+//     alcohol section must show, not the "no drinks" empty state).
 //  7. Max-BAC chart: the cap HorizontalLine appears only when
 //     UserPreferences.bacCapGramsPerL is set; at/above-cap bars get a
 //     visible border (the non-colour signal), below-cap bars don't.
@@ -503,21 +506,21 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Alcohol section conditional visibility (issue #26)
+  // 6. Alcohol charts conditional visibility (issue #26, revised by #66)
   // -------------------------------------------------------------------------
 
   testWidgets(
-    'alcohol section is NOT shown when there is no session in range, even '
-    'if the (fake) alcoholic/BAC buckets carry data',
+    'neither alcohol chart is shown when there is no session in range and '
+    'no alcoholic entries were counted',
     (tester) async {
       final repo = _FakeRepo(totals: _week([500, 0, 0, 0, 0, 0, 0]));
 
       await tester.pumpWidget(
         _buildScreen(
           repo: repo,
-          sessions: const [], // no sessions — the discriminator.
-          alcoholicCounts: _week([3, 0, 0, 0, 0, 0, 0]),
-          maxBacBuckets: _bacWeek([0.2, null, null, null, null, null, null]),
+          sessions: const [],
+          alcoholicCounts: _week([0, 0, 0, 0, 0, 0, 0]),
+          maxBacBuckets: _bacWeek([null, null, null, null, null, null, null]),
         ),
       );
       await tester.pump();
@@ -528,9 +531,39 @@ void main() {
       expect(
         find.byType(BarChart),
         findsNWidgets(2),
-        reason: 'Only the hydration + drinks-per-day charts render — '
-            'visibility is driven by historySessionsInRangeProvider, not by '
-            'whether the alcohol buckets are non-zero',
+        reason: 'Only the hydration + drinks-per-day charts render when '
+            'there is no session and no alcoholic entry in range',
+      );
+    },
+  );
+
+  testWidgets(
+    '"Alcoholic drinks per day" IS shown from orphan alcoholic entries '
+    'alone, with no session in range, but "Max estimated BAC per day" stays '
+    'hidden — issue #66: the drinks-count chart counts all alcoholic '
+    'entries, but BAC estimation is inherently session-scoped',
+    (tester) async {
+      _growSurfaceForAlcoholSection(tester);
+      final repo = _FakeRepo(totals: _week([500, 0, 0, 0, 0, 0, 0]));
+
+      await tester.pumpWidget(
+        _buildScreen(
+          repo: repo,
+          sessions: const [], // no sessions — only the counts drive this.
+          alcoholicCounts: _week([3, 0, 0, 0, 0, 0, 0]),
+          maxBacBuckets: _bacWeek([null, null, null, null, null, null, null]),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Alcoholic drinks per day'), findsOneWidget);
+      expect(find.text('Max estimated BAC per day'), findsNothing);
+      expect(
+        find.byType(BarChart),
+        findsNWidgets(3),
+        reason: 'Hydration + drinks-per-day + alcoholic-drinks-per-day '
+            'charts render; max-BAC does not, since there is no session',
       );
     },
   );
