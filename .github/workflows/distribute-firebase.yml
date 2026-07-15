@@ -89,6 +89,7 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
           firebase appdistribution:distribute \
             flutter/build/app/outputs/flutter-apk/app-release.apk \

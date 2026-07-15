@@ -29,9 +29,12 @@ jobs:
 
       - name: Derive version and track from the GitHub release
         id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -euo pipefail
-          tag="${{ github.event.release.tag_name }}"
+          tag="$RELEASE_TAG"
           # versionCode = major*10000 + minor*100 + patch (minor/patch <
           # 100, -rc suffix stripped) instead of github.run_number, which
           # starts at 1 and collides with the manual first upload's
@@ -42,7 +45,7 @@ jobs:
           IFS=. read -r major minor patch <<< "$name"
           echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "build_number=$(( 10#$major*10000 + 10#$minor*100 + 10#$patch ))" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+          if [ "$IS_PRERELEASE" = "true" ]; then
             echo "track=internal" >> "$GITHUB_OUTPUT"
             echo "status=completed" >> "$GITHUB_OUTPUT"
             echo "user_fraction=" >> "$GITHUB_OUTPUT"
@@ -94,7 +97,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish to Play Console
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: nl.controlol.drinksmate
