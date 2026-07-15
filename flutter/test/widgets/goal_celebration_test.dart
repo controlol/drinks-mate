@@ -53,8 +53,9 @@ Widget _buildTodayScreen({
   return ProviderScope(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(DrinksRepository(db)),
-      visiblePresetsProvider
-          .overrideWith((_) => Stream.value(const <DrinkPreset>[])),
+      visiblePresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
       todayTotalMlProvider.overrideWith((_) => totalMlStream),
       sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
       sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),
@@ -108,7 +109,7 @@ void main() {
       expect(dismissed, isTrue);
     });
 
-    testWidgets('auto-dismisses after ~2 s', (tester) async {
+    testWidgets('auto-dismisses after ~10 s', (tester) async {
       bool dismissed = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -120,8 +121,12 @@ void main() {
       await tester.pump();
       expect(dismissed, isFalse);
 
-      // Advance past the 2-second auto-dismiss timer.
-      await tester.pump(const Duration(seconds: 3));
+      // Still short of the 10-second auto-dismiss timer.
+      await tester.pump(const Duration(seconds: 5));
+      expect(dismissed, isFalse);
+
+      // Advance past the 10-second auto-dismiss timer.
+      await tester.pump(const Duration(seconds: 6));
 
       expect(dismissed, isTrue);
     });
@@ -133,9 +138,7 @@ void main() {
           home: MediaQuery(
             data: const MediaQueryData(disableAnimations: true),
             child: Scaffold(
-              body: GoalCelebrationOverlay(
-                onDismissed: () => dismissed = true,
-              ),
+              body: GoalCelebrationOverlay(onDismissed: () => dismissed = true),
             ),
           ),
         ),
@@ -150,16 +153,14 @@ void main() {
       expect(dismissed, isTrue);
     });
 
-    testWidgets('reduce-motion: auto-dismisses after ~2 s', (tester) async {
+    testWidgets('reduce-motion: auto-dismisses after ~10 s', (tester) async {
       bool dismissed = false;
       await tester.pumpWidget(
         MaterialApp(
           home: MediaQuery(
             data: const MediaQueryData(disableAnimations: true),
             child: Scaffold(
-              body: GoalCelebrationOverlay(
-                onDismissed: () => dismissed = true,
-              ),
+              body: GoalCelebrationOverlay(onDismissed: () => dismissed = true),
             ),
           ),
         ),
@@ -167,7 +168,7 @@ void main() {
       await tester.pump();
       expect(dismissed, isFalse);
 
-      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 11));
       expect(dismissed, isTrue);
     });
   });
@@ -218,8 +219,10 @@ void main() {
 
       // Pre-mark the guard for the current day window.
       final now = DateTime.now();
-      final dayStart =
-          dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour).$1;
+      final dayStart = dayWindow(
+        now: now,
+        boundaryHour: prefs.dayBoundaryHour,
+      ).$1;
       await guard.markShownForDay(dayStart);
 
       await tester.pumpWidget(

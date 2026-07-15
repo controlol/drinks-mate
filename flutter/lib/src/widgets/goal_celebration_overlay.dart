@@ -12,13 +12,15 @@ import '../theme/reduce_motion.dart';
 // Designer-brief §Goal-met celebration:
 //   - Confetti from the app palette (azure + honey, mint accents).
 //   - Medium haptic alongside.
-//   - Auto-dismisses when confetti finishes (≈2 s) or on tap.
+//   - Confetti burst finishes in ≈2 s; the overlay itself auto-dismisses
+//     after 10 s, or immediately on tap — whichever comes first.
 //   - Reduce-motion fallback: static "Goal reached!" card, haptic still fires.
 //
 // Usage: push via showGeneralDialog (or Stack in TodayScreen) then call
 // onDismissed when the user taps anywhere or the timer elapses.
 
-const _kAutoDissmissDuration = Duration(seconds: 2);
+const _kConfettiDuration = Duration(seconds: 2);
+const _kAutoDismissDuration = Duration(seconds: 10);
 
 class GoalCelebrationOverlay extends StatefulWidget {
   const GoalCelebrationOverlay({super.key, required this.onDismissed});
@@ -48,10 +50,9 @@ class _GoalCelebrationOverlayState extends State<GoalCelebrationOverlay> {
     // ReduceMotion check (cannot call MediaQuery in initState safely).
     if (_confetti == null && _autoDismiss == null) {
       if (!ReduceMotion.isEnabled(context)) {
-        _confetti = ConfettiController(duration: _kAutoDissmissDuration)
-          ..play();
+        _confetti = ConfettiController(duration: _kConfettiDuration)..play();
       }
-      _autoDismiss = Timer(_kAutoDissmissDuration, _dismiss);
+      _autoDismiss = Timer(_kAutoDismissDuration, _dismiss);
     }
   }
 
@@ -88,10 +89,7 @@ class _GoalCelebrationOverlayState extends State<GoalCelebrationOverlay> {
 // ---------------------------------------------------------------------------
 
 class _ConfettiScreen extends StatelessWidget {
-  const _ConfettiScreen({
-    required this.controller,
-    required this.onDismissed,
-  });
+  const _ConfettiScreen({required this.controller, required this.onDismissed});
 
   final ConfettiController controller;
   final VoidCallback onDismissed;
@@ -123,9 +121,7 @@ class _ConfettiScreen extends StatelessWidget {
                 shouldLoop: false,
               ),
               // Centred card with message.
-              Center(
-                child: _GoalCard(),
-              ),
+              Center(child: _GoalCard()),
             ],
           ),
         ),
@@ -182,9 +178,9 @@ class _GoalCard extends StatelessWidget {
             Text(
               'Goal reached!',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: kColorHoney,
-                    fontWeight: FontWeight.bold,
-                  ),
+                color: kColorHoney,
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
