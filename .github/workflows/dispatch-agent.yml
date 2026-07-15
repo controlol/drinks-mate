@@ -32,7 +32,7 @@ on:
   pull_request:
     types: [closed]             # a merged PR frees a queue slot (guarded in select.if)
   schedule:
-    - cron: "7,37 * * * *"      # low-frequency backstop on off-peak minutes;
+    - cron: "49 7 * * *"      # low-frequency backstop on off-peak minutes;
                                 # GitHub heavily throttles top-of-hour schedules
   workflow_dispatch:
     inputs:
