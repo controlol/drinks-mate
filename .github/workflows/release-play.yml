@@ -43,6 +43,13 @@ jobs:
           # the same versionCode.
           name="${tag#v}"; name="${name%%-*}"
           IFS=. read -r major minor patch <<< "$name"
+          : "${major:?malformed release tag '$tag': expected major.minor.patch}"
+          : "${minor:?malformed release tag '$tag': expected major.minor.patch}"
+          : "${patch:?malformed release tag '$tag': expected major.minor.patch}"
+          if (( 10#$minor >= 100 || 10#$patch >= 100 )); then
+            echo "minor/patch must each be < 100 to keep versionCode unique (got $name)" >&2
+            exit 1
+          fi
           echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "build_number=$(( 10#$major*10000 + 10#$minor*100 + 10#$patch ))" >> "$GITHUB_OUTPUT"
           if [ "$IS_PRERELEASE" = "true" ]; then
