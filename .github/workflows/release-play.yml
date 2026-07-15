@@ -41,7 +41,7 @@ jobs:
           name="${tag#v}"; name="${name%%-*}"
           IFS=. read -r major minor patch <<< "$name"
           echo "build_name=${tag#v}" >> "$GITHUB_OUTPUT"
-          echo "build_number=$(( major*10000 + minor*100 + patch ))" >> "$GITHUB_OUTPUT"
+          echo "build_number=$(( 10#$major*10000 + 10#$minor*100 + 10#$patch ))" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event.release.prerelease }}" = "true" ]; then
             echo "track=internal" >> "$GITHUB_OUTPUT"
             echo "status=completed" >> "$GITHUB_OUTPUT"
