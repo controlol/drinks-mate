@@ -2268,8 +2268,8 @@ void main() {
     }
 
     test(
-      'counts only entries with a non-null partySessionId, zero-filling '
-      'days with none, ordered oldest-first',
+      'counts session-attached alcoholic entries, zero-filling days with '
+      'none, ordered oldest-first',
       () async {
         await insertSessionDrink(
           id: 'e1',
@@ -2300,15 +2300,16 @@ void main() {
     );
 
     test(
-      'excludes non-alcoholic entries and orphaned alcoholic entries '
-      '(partySessionId == null)',
+      'excludes non-alcoholic entries but includes orphaned alcoholic '
+      'entries (partySessionId == null)',
       () async {
         // Non-alcoholic, via the normal logDrink path.
         await repo.logDrink(
           preset: _waterPreset,
           consumedAt: DateTime(2026, 6, 22, 8, 0),
         );
-        // Orphaned alcoholic drink — logDrink() never sets partySessionId.
+        // Orphaned alcoholic drink — logDrink() never sets partySessionId,
+        // e.g. logged from the Today tab's LogDrinkSheet outside Party Mode.
         const beerPreset = DrinkPreset(
           id: 'test-beer-preset-alcoholic-counts',
           name: 'Test Beer',
@@ -2334,10 +2335,11 @@ void main() {
             .first;
 
         expect(
-          buckets.every((b) => b.value == 0),
-          isTrue,
-          reason: 'Only entries with partySessionId set count toward the '
-              'alcoholic-drinks-per-day chart (F4/#26)',
+          buckets.fold<int>(0, (s, b) => s + b.value),
+          equals(1),
+          reason: 'Orphan alcoholic entries count toward the '
+              'alcoholic-drinks-per-day chart same as session-attached ones '
+              '(issue #66) — only the non-alcoholic water entry is excluded',
         );
       },
     );

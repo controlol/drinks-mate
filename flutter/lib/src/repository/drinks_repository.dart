@@ -645,19 +645,32 @@ class DrinksRepository {
     return buckets;
   }
 
-  /// Reactive stream of alcoholic drink counts (non-deleted,
-  /// `partySessionId` not null) for every day-window in
-  /// `[rangeStart, rangeEnd)`, one zero-filled [DailyBucket] per day, ordered
-  /// oldest-first — F4/#26 "Alcoholic drinks per day". See
-  /// [watchDailyTotalsMl] for the [rangeStart] alignment requirement.
+  /// Reactive stream of alcoholic drink counts (non-deleted, any
+  /// [BeverageType.isAlcoholic] entry — session-attached *or* orphan) for
+  /// every day-window in `[rangeStart, rangeEnd)`, one zero-filled
+  /// [DailyBucket] per day, ordered oldest-first — F4/#26 "Alcoholic drinks
+  /// per day". features.md F4 specs this chart as counting "alcoholic drink
+  /// entries", with no `partySessionId` condition; entries logged outside
+  /// Party Mode (e.g. via the Today tab's `LogDrinkSheet`) count too, so this
+  /// chart stays consistent with the day drill-down's full entry list (issue
+  /// #66). See [watchDailyTotalsMl] for the [rangeStart] alignment
+  /// requirement.
   Stream<List<DailyBucket>> watchAlcoholicDrinksPerDay({
     required DateTime rangeStart,
     required DateTime rangeEnd,
     int boundaryHour = 5,
     int boundaryMinute = 0,
   }) {
+    final alcoholicTypes = BeverageType.values
+        .where((t) => t.isAlcoholic)
+        .map((t) => t.stored)
+        .toList();
     return _db
-        .watchPartySessionEntriesInWindow(rangeStart.toUtc(), rangeEnd.toUtc())
+        .watchEntriesInWindow(
+          rangeStart.toUtc(),
+          rangeEnd.toUtc(),
+          alcoholicTypes,
+        )
         .map(
           (entries) => _bucketByDay(
             entries,

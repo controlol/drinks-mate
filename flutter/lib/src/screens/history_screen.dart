@@ -144,17 +144,25 @@ class _HistoryBody extends ConsumerWidget {
                 const Center(child: Text('Could not load history.')),
             data: (totals) {
               final counts = countsAsync.valueOrNull ?? [];
-              // features.md F4: alcohol charts show only when at least one
-              // PartySession intersects the selected range — driven off the
-              // sessions stream itself, not off whether any BAC bucket is
-              // non-null, so a party-only period (no hydration/non-alcoholic
-              // drinks logged) still shows the alcohol section instead of
-              // falling into the all-zero empty state below.
               final sessions = sessionsAsync.valueOrNull ?? [];
-              final hasAlcoholSection = sessions.isNotEmpty;
+              final alcoholicCounts = alcoholicCountsAsync.valueOrNull ?? [];
+              // "Alcoholic drinks per day" counts every alcoholic entry, not
+              // just session-attached ones (issue #66), so it must show
+              // whenever there's a session in range *or* an orphan alcoholic
+              // entry was logged outside Party Mode — driven off the counts/
+              // sessions streams themselves, not off whether any BAC bucket
+              // is non-null, so a party-only period (no hydration/
+              // non-alcoholic drinks logged) still shows this section
+              // instead of falling into the all-zero empty state below.
+              final showAlcoholicDrinksChart = sessions.isNotEmpty ||
+                  alcoholicCounts.any((b) => b.value > 0);
+              // Max-BAC estimation is inherently tied to `PartySession` data
+              // (weight, ABV curve, session window) — it stays session-gated
+              // even though the drinks-count chart above no longer is.
+              final showMaxBacChart = sessions.isNotEmpty;
               final isEmpty = totals.every((b) => b.value == 0) &&
                   counts.every((b) => b.value == 0) &&
-                  !hasAlcoholSection;
+                  !showAlcoholicDrinksChart;
               if (isEmpty) return const _EmptyState();
 
               void onDayTap(int index) {
@@ -187,11 +195,11 @@ class _HistoryBody extends ConsumerWidget {
                       onDayTap: onDayTap,
                     ),
                   ),
-                  if (hasAlcoholSection) ...[
+                  if (showAlcoholicDrinksChart)
                     _ChartCard(
                       title: 'Alcoholic drinks per day',
                       child: _AlcoholicDrinksPerDayChart(
-                        buckets: alcoholicCountsAsync.valueOrNull ?? [],
+                        buckets: alcoholicCounts,
                         dayStarts: totals.map((b) => b.dayStart).toList(),
                         sessions: sessions,
                         boundaryHour: prefs.dayBoundaryHour,
@@ -199,6 +207,7 @@ class _HistoryBody extends ConsumerWidget {
                         onDayTap: onDayTap,
                       ),
                     ),
+                  if (showMaxBacChart)
                     _ChartCard(
                       title: 'Max estimated BAC per day',
                       child: _MaxBacChart(
@@ -217,7 +226,6 @@ class _HistoryBody extends ConsumerWidget {
                         onDayTap: onDayTap,
                       ),
                     ),
-                  ],
                 ],
               );
             },

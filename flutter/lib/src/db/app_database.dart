@@ -878,28 +878,6 @@ class AppDatabase extends _$AppDatabase {
           ))
         .get();
   }
-
-  /// Reactive stream of `(consumedAt, volumeMl)` pairs for live alcoholic
-  /// entries (`partySessionId IS NOT NULL`) within `[startUtc, endUtc)` —
-  /// feeds the "alcoholic drinks per day" chart (F4/#26). [volumeMl] is
-  /// unused by the count bucketing but kept for signature symmetry with
-  /// [watchEntriesInWindow].
-  Stream<List<(DateTime, int)>> watchPartySessionEntriesInWindow(
-    DateTime startUtc,
-    DateTime endUtc,
-  ) {
-    final query = select(drinkEntries)
-      ..where(
-        (t) =>
-            t.deletedAt.isNull() &
-            t.partySessionId.isNotNull() &
-            t.consumedAt.isBiggerOrEqualValue(startUtc) &
-            t.consumedAt.isSmallerThanValue(endUtc),
-      );
-    return query.watch().map(
-          (rows) => rows.map((r) => (r.consumedAt, r.volumeMl)).toList(),
-        );
-  }
 }
 
 LazyDatabase _openConnection() {
