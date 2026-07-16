@@ -39,10 +39,13 @@ import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
+import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/optional.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/preferences_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/log_drink_sheet.dart';
@@ -215,6 +218,77 @@ class _FakePreferencesRepo extends PreferencesRepository {
   }
 }
 
+typedef _LogAlcoholicDrinkCall = ({
+  DrinkPreset preset,
+  String sessionId,
+  String? id,
+  String? name,
+  int? volumeMl,
+  double? abvPercent,
+  int? priceMinor,
+  String? currency,
+});
+
+/// Records [logAlcoholicDrink] calls instead of touching the DB — mirrors
+/// [_FakeDrinksRepo] above (issue #85: LogDrinkSheet attaches an alcoholic
+/// entry to an active Party Session instead of logging it as an orphan).
+class _FakePartySessionRepo extends PartySessionRepository {
+  _FakePartySessionRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<_LogAlcoholicDrinkCall> logAlcoholicDrinkCalls = [];
+
+  /// Sentinel resolved price — deliberately distinct from any preset's
+  /// regularPriceMinor fixture in this file, so a test asserting the logged
+  /// price came from `resolvePrice` (not some other source) can't pass by
+  /// coincidence.
+  @override
+  Future<ResolvedDrinkPrice> resolvePrice({
+    required PartySession session,
+    required DrinkPreset preset,
+  }) async =>
+      const ResolvedDrinkPrice(priceMinor: 777, currency: 'GBP');
+
+  @override
+  Future<DrinkEntry> logAlcoholicDrink({
+    required DrinkPreset preset,
+    required String sessionId,
+    String? id,
+    String? name,
+    int? volumeMl,
+    double? abvPercent,
+    DateTime? consumedAt,
+    int? priceMinor,
+    String? currency,
+    int? priceTokens,
+    int? tokenValueMinor,
+    String? tokenValueCurrency,
+    DateTime? now,
+  }) async {
+    logAlcoholicDrinkCalls.add((
+      preset: preset,
+      sessionId: sessionId,
+      id: id,
+      name: name,
+      volumeMl: volumeMl,
+      abvPercent: abvPercent,
+      priceMinor: priceMinor,
+      currency: currency,
+    ));
+    final at = now ?? DateTime.now();
+    return DrinkEntry(
+      id: id ?? 'fake-party-entry-id',
+      name: name ?? preset.name,
+      beverageType: preset.beverageType,
+      volumeMl: volumeMl ?? preset.volumeMl,
+      abvPercent: abvPercent ?? preset.abvPercent,
+      partySessionId: sessionId,
+      consumedAt: consumedAt ?? at,
+      createdAt: at,
+      updatedAt: at,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -295,21 +369,39 @@ const _winePreset = DrinkPreset(
 // ---------------------------------------------------------------------------
 
 /// Builds a [ProviderContainer] wired to [repo], with [visiblePresets] fixed
-/// (deterministic phase-1 list) and allPresetsProvider/userPreferencesProvider
-/// pre-warmed (see file header). [preferencesRepo] defaults to a recording
-/// fake (never a real [PreferencesRepository], which would open a real
-/// on-disk [AppDatabase] via `_appDatabaseProvider`).
+/// (deterministic phase-1 list) and allPresetsProvider/userPreferencesProvider/
+/// activePartySessionProvider pre-warmed (see file header). [preferencesRepo]
+/// defaults to a recording fake (never a real [PreferencesRepository], which
+/// would open a real on-disk [AppDatabase] via `_appDatabaseProvider`).
+///
+/// activePartySessionProvider defaults to `Stream.value(null)` (no active
+/// session) and is always warmed — even for tests that never touch Party
+/// Session state — because `_confirm`/`_applyAdvancedResult` now
+/// `ref.read(activePartySessionProvider)` for ANY alcoholic preset
+/// (issue #85), including every existing `_beerPreset`-based test in this
+/// file. Without pre-warming, that first `ref.read` on a freshly-created
+/// StreamProvider observes `AsyncLoading` (same trap documented in
+/// today_screen_test.dart's `_buildWarmContainer`) instead of an
+/// unoverridden provider reaching for a real on-disk database — either way,
+/// wrong.
 Future<ProviderContainer> _buildContainer({
   required _FakeDrinksRepo repo,
   required List<DrinkPreset> visiblePresets,
   UserPreferences? prefs,
   PreferencesRepository? preferencesRepo,
+  PartySession? activeSession,
+  PartySessionRepository? partyRepo,
 }) async {
   final container = ProviderContainer(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(repo),
       preferencesRepositoryProvider.overrideWithValue(
         preferencesRepo ?? _FakePreferencesRepo(),
+      ),
+      if (partyRepo != null)
+        partySessionRepositoryProvider.overrideWithValue(partyRepo),
+      activePartySessionProvider.overrideWith(
+        (ref) => Stream.value(activeSession),
       ),
       visiblePresetsProvider.overrideWith(
         (ref) => Stream.value(visiblePresets),
@@ -324,6 +416,7 @@ Future<ProviderContainer> _buildContainer({
   );
   await container.read(allPresetsProvider.future);
   await container.read(userPreferencesProvider.future);
+  await container.read(activePartySessionProvider.future);
   return container;
 }
 
@@ -350,6 +443,56 @@ Future<void> _pickPreset(WidgetTester tester, String name) async {
   await tester.pumpAndSettle();
 }
 
+/// Mutable holder for the [LoggedDrinkResult] popped by [_pushSheet] — a
+/// plain closure-captured local can't be reassigned from inside the pumped
+/// widget tree's `onPressed` callback and read back out afterwards, so tests
+/// pass one of these in instead (mirrors the inline pattern from "plain
+/// Confirm pops a non-null LoggedDrinkResult" above, factored out so the
+/// attachedToSession tests below don't have to repeat the whole
+/// push-a-MaterialPageRoute boilerplate).
+class _ResultBox {
+  LoggedDrinkResult? value;
+}
+
+/// Pushes [LogDrinkSheet] via `Navigator.push` (not a bare pump, like
+/// [_pumpSheet]) so the popped [LoggedDrinkResult] can be captured into
+/// [box].
+Future<void> _pushSheet(
+  WidgetTester tester,
+  ProviderContainer container,
+  _ResultBox box,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  box.value =
+                      await Navigator.of(context).push<LoggedDrinkResult>(
+                    MaterialPageRoute<LoggedDrinkResult>(
+                      builder: (_) => const Scaffold(
+                        body: SizedBox(height: 700, child: LogDrinkSheet()),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _openAdvanced(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('log_drink_advanced_button')));
   await tester.pumpAndSettle();
@@ -370,7 +513,6 @@ Future<void> _fillAdvanced(
   WidgetTester tester, {
   String? name,
   String? abv,
-  String? price,
 }) async {
   if (name != null) {
     await tester.enterText(
@@ -382,12 +524,6 @@ Future<void> _fillAdvanced(
     await tester.enterText(
       find.byKey(const Key('advanced_editor_abv_field')),
       abv,
-    );
-  }
-  if (price != null) {
-    await tester.enterText(
-      find.byKey(const Key('advanced_editor_price_field')),
-      price,
     );
   }
   await tester.pump();
@@ -554,7 +690,7 @@ void main() {
       );
 
       // Source: log_drink_sheet.dart _AdvancedEditorSheetState.initState —
-      // name/ABV/price controllers seeded from the preset.
+      // name/ABV controllers seeded from the preset.
       expect(
         tester
             .widget<TextField>(
@@ -573,14 +709,11 @@ void main() {
             .text,
         '5.0',
       );
+      // Price is no longer editable in the Advanced editor (issue #85 — set
+      // via S6/S9 per-entry override instead, not at log time).
       expect(
-        tester
-            .widget<TextField>(
-              find.byKey(const Key('advanced_editor_price_field')),
-            )
-            .controller!
-            .text,
-        '4.50',
+        find.byKey(const Key('advanced_editor_price_field')),
+        findsNothing,
       );
     },
   );
@@ -674,6 +807,121 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // 4b. Party Session attachment (issue #85): an alcoholic preset logs
+  // through PartySessionRepository.logAlcoholicDrink (attached, not orphan)
+  // when a session is active, both for the plain _confirm() path and the
+  // Advanced editor's confirmOnly exit path — and the popped
+  // LoggedDrinkResult.attachedToSession reflects which happened.
+  // -------------------------------------------------------------------------
+
+  group(
+      'Party Session attachment (party-session.md §Logging from Today / '
+      'issue #85)', () {
+    final sessionFixture = PartySession(
+      id: 'active-session-1',
+      startedAt: _epoch,
+      useSessionPrices: false,
+      createdAt: _epoch,
+      updatedAt: _epoch,
+    );
+
+    testWidgets(
+      'plain Confirm with an active session attaches via '
+      'PartySessionRepository.logAlcoholicDrink, and the popped '
+      'LoggedDrinkResult.attachedToSession is true',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          activeSession: sessionFixture,
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, isEmpty);
+        expect(partyRepo.logAlcoholicDrinkCalls, hasLength(1));
+        expect(
+          partyRepo.logAlcoholicDrinkCalls.single.sessionId,
+          'active-session-1',
+        );
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isTrue);
+      },
+    );
+
+    testWidgets(
+      'plain Confirm with no active session logs an orphan via '
+      'DrinksRepository, and the popped LoggedDrinkResult.attachedToSession '
+      'is false',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, hasLength(1));
+        expect(partyRepo.logAlcoholicDrinkCalls, isEmpty);
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isFalse);
+      },
+    );
+
+    testWidgets(
+      'Advanced -> Confirm (confirmOnly) with an active session attaches via '
+      'PartySessionRepository.logAlcoholicDrink with the entered name, and '
+      'the popped LoggedDrinkResult.attachedToSession is true',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          activeSession: sessionFixture,
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await _openAdvanced(tester);
+        await _fillAdvanced(tester, name: 'Craft Lager Deluxe', abv: '6.5');
+        await tester.tap(
+          find.byKey(const Key('advanced_editor_confirm_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, isEmpty);
+        expect(partyRepo.logAlcoholicDrinkCalls, hasLength(1));
+        final call = partyRepo.logAlcoholicDrinkCalls.single;
+        expect(call.sessionId, 'active-session-1');
+        expect(call.name, 'Craft Lager Deluxe');
+        expect(call.abvPercent, 6.5);
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isTrue);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // 5. Path discrimination — the three S2 Advanced exit paths
   // -------------------------------------------------------------------------
 
@@ -696,7 +944,6 @@ void main() {
         tester,
         name: 'Craft Lager Deluxe',
         abv: '6.5',
-        price: '5.25',
       );
 
       await tester.tap(find.byKey(const Key('advanced_editor_confirm_button')));
@@ -712,46 +959,16 @@ void main() {
       expect(call.volumeMl, 500);
       expect(call.name, 'Craft Lager Deluxe');
       expect(call.abvPercent, 6.5);
-      expect(call.priceMinor, const Optional.value(525));
-      expect(call.currency, const Optional.value('EUR'));
+      // Price is no longer settable in the Advanced editor (issue #85) —
+      // confirmOnly's logEntry() never passes priceMinor/currency, so the
+      // repo falls back to the preset's own stored price (Optional.absent,
+      // not an explicit override or an explicit clear).
+      expect(call.priceMinor, const Optional<int?>.absent());
+      expect(call.currency, const Optional<String?>.absent());
 
       expect(repo.updatePresetCalls, isEmpty);
       expect(repo.createPresetCalls, isEmpty);
     });
-
-    testWidgets(
-      'Advanced -> Confirm with the price field cleared logs this entry '
-      'with no price, instead of falling back to the preset\'s stored '
-      'price (regression: entry-only price-clear must not resolve to the '
-      'preset default)',
-      (tester) async {
-        final repo = _FakeDrinksRepo();
-        final container = await _buildContainer(
-          repo: repo,
-          visiblePresets: const [_beerPreset],
-        );
-        addTearDown(container.dispose);
-        await _pumpSheet(tester, container);
-        await _pickPreset(tester, 'Craft Lager');
-        await _editVolume(tester, '500');
-        await _openAdvanced(tester);
-
-        // _beerPreset has a regularPriceMinor; clearing the pre-filled price
-        // field must explicitly clear it for this entry, not silently keep
-        // the preset's stored price (drinks_repository.dart logDrink).
-        await _fillAdvanced(tester, name: 'Craft Lager', abv: '5.0', price: '');
-
-        await tester.tap(
-          find.byKey(const Key('advanced_editor_confirm_button')),
-        );
-        await tester.pumpAndSettle();
-
-        expect(repo.logDrinkCalls, hasLength(1));
-        final call = repo.logDrinkCalls.single;
-        expect(call.priceMinor, const Optional<int?>.value(null));
-        expect(call.currency, const Optional<String?>.value(null));
-      },
-    );
 
     testWidgets(
       'Advanced -> menu -> "Save and confirm" calls updatePreset with the '
@@ -788,7 +1005,6 @@ void main() {
           tester,
           name: 'Craft Lager Deluxe',
           abv: '6.5',
-          price: '5.25',
         );
 
         await _selectMenuAction(tester, 'Save and confirm');
@@ -798,8 +1014,11 @@ void main() {
         expect(update.id, 'preset-beer');
         expect(update.name, 'Craft Lager Deluxe');
         expect(update.abvPercent, const Optional.value(6.5));
-        expect(update.regularPriceMinor, const Optional.value(525));
-        expect(update.regularCurrency, const Optional.value('EUR'));
+        // Price is no longer editable here (issue #85) — updatePreset is
+        // called with Optional.absent() defaults for both price fields, so
+        // the preset's existing price is left untouched, not nulled out.
+        expect(update.regularPriceMinor, const Optional<int?>.absent());
+        expect(update.regularCurrency, const Optional<String?>.absent());
 
         expect(repo.logDrinkCalls, hasLength(1));
         // logDrink is called against the refetched (edited) preset, not raw
@@ -837,7 +1056,6 @@ void main() {
           tester,
           name: 'Craft Lager Deluxe',
           abv: '6.5',
-          price: '5.25',
         );
 
         await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
@@ -876,8 +1094,12 @@ void main() {
         // Edited phase-2 volume (500), not the preset default (330).
         expect(create.volumeMl, 500);
         expect(create.abvPercent, 6.5);
-        expect(create.regularPriceMinor, 525);
-        expect(create.regularCurrency, 'EUR');
+        // Price is no longer editable in the Advanced editor (issue #85) —
+        // the copy inherits the SOURCE preset's existing price (_beerPreset:
+        // 450/EUR), not any entered value (there's no price field to enter
+        // one into anymore).
+        expect(create.regularPriceMinor, _beerPreset.regularPriceMinor);
+        expect(create.regularCurrency, _beerPreset.regularCurrency);
         // sortOrder = repo.nextSortOrder() (stubbed to 2).
         expect(create.sortOrder, 2);
 

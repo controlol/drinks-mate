@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../utils/color_utils.dart';
 import '../widgets/goal_celebration_overlay.dart';
 import 'log_drink_sheet.dart';
+import 'party_session_flows.dart';
 import 'settings_screen.dart';
 import 'today_drinks_screen.dart';
 
@@ -690,9 +691,34 @@ class _LogADrinkTile extends ConsumerWidget {
   }
 
   Future<void> _quickLog(BuildContext context, WidgetRef ref) async {
-    final repo = ref.read(drinksRepositoryProvider);
+    // party-session.md §Logging from Today: an alcoholic drink attaches to
+    // an already-active session directly, instead of logging as an orphan.
+    final activeSession = preset.beverageType.isAlcoholic
+        ? ref.read(activePartySessionProvider).valueOrNull
+        : null;
     try {
-      final entryId = await repo.logDrink(preset: preset);
+      final String entryId;
+      if (activeSession != null) {
+        final partyRepo = ref.read(partySessionRepositoryProvider);
+        final resolved = await partyRepo.resolvePrice(
+          session: activeSession,
+          preset: preset,
+        );
+        final entry = await partyRepo.logAlcoholicDrink(
+          preset: preset,
+          sessionId: activeSession.id,
+          priceMinor: resolved.priceMinor,
+          currency: resolved.currency,
+          priceTokens: resolved.priceTokens,
+          tokenValueMinor: resolved.tokenValueMinor,
+          tokenValueCurrency: resolved.tokenValueCurrency,
+        );
+        entryId = entry.id;
+      } else {
+        entryId = await ref.read(drinksRepositoryProvider).logDrink(
+              preset: preset,
+            );
+      }
       if (context.mounted) {
         _showLoggedSnackBar(
           context,
@@ -703,6 +729,7 @@ class _LogADrinkTile extends ConsumerWidget {
           // Already awaited above — nothing left to race an Undo tap
           // against.
           pendingWrite: Future.value(),
+          hasActiveSession: activeSession != null,
         );
       }
     } catch (e) {
@@ -757,6 +784,7 @@ class _LogDrinkButton extends ConsumerWidget {
         name: logged.name,
         beverageType: logged.beverageType,
         pendingWrite: logged.pendingWrite,
+        hasActiveSession: logged.attachedToSession,
       );
     }
   }
@@ -770,13 +798,13 @@ class _LogDrinkButton extends ConsumerWidget {
 /// confirm path (user-experience.md §S1: "The `Logged` toast ... after any
 /// preset-tile tap in the 'Log a drink' grid or successful S2 confirm").
 ///
-/// Non-alcoholic entries get an inline Undo that soft-deletes the entry —
-/// after [pendingWrite] settles, since C6 shows this toast before the write
-/// lands and an instant Undo tap could otherwise race the insert. Alcoholic
-/// entries get a plain toast with no action: party-session.md §Logging from
-/// Today reserves that slot for a "Start session" offer instead of Undo
-/// (issue #80 — not yet wired up here, but showing Undo in the meantime
-/// would contradict the spec once it is).
+/// Non-alcoholic entries, and alcoholic entries attached to an already-active
+/// Party Session, get an inline Undo that soft-deletes the entry — after
+/// [pendingWrite] settles, since C6 shows this toast before the write lands
+/// and an instant Undo tap could otherwise race the insert. An alcoholic
+/// entry logged with **no** active session (an orphan) gets a "Start
+/// session" action in that slot instead — a toast only cleanly fits one
+/// action (party-session.md §Logging from Today).
 void _showLoggedSnackBar(
   BuildContext context,
   WidgetRef ref, {
@@ -784,13 +812,18 @@ void _showLoggedSnackBar(
   required String name,
   required BeverageType beverageType,
   required Future<void> pendingWrite,
+  required bool hasActiveSession,
 }) {
+  final offerStartSession = beverageType.isAlcoholic && !hasActiveSession;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text('Logged $name'),
       duration: const Duration(seconds: 4),
-      action: beverageType.isAlcoholic
-          ? null
+      action: offerStartSession
+          ? SnackBarAction(
+              label: 'Start session',
+              onPressed: () => startPartySessionFlow(context, ref),
+            )
           : SnackBarAction(
               label: 'Undo',
               onPressed: () async {
