@@ -147,6 +147,16 @@ class PreferencesRepository {
         ),
       );
 
+  /// Update the shared drink-preset sort mode — one preference read/written
+  /// by both the Today grid and the S2 picker (features.md F14 §Sort modes).
+  Future<void> updateDrinkSortMode(PresetSortMode mode) =>
+      _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          drinkSortMode: Value(mode.stored),
+          updatedAt: Value(DateTime.now().toUtc()),
+        ),
+      );
+
   // ---------------------------------------------------------------------------
   // UserProfile — watch / upsert
   // ---------------------------------------------------------------------------
@@ -274,6 +284,7 @@ class PreferencesRepository {
         approachingCapNotifEnabled: row.approachingCapNotifEnabled,
         soberEstimateNotifEnabled: row.soberEstimateNotifEnabled,
         alcoholicPresetsAlwaysVisible: row.alcoholicPresetsAlwaysVisible,
+        drinkSortMode: PresetSortMode.fromStored(row.drinkSortMode),
         installedAt: DateTime.fromMillisecondsSinceEpoch(
           row.installedAt,
           isUtc: true,

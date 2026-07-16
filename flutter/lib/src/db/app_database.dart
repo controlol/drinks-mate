@@ -25,7 +25,7 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 5.
+/// Phase-1 Drift database — schema version 6.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
@@ -39,6 +39,9 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 ///   alcoholicPresetsAlwaysVisible (default true) — governs whether
 ///   ManageDrinksScreen shows alcoholic presets unconditionally or only
 ///   while a party session is active.
+/// v6 (issue #78): DrinkEntries gains presetId (nullable, no FK — see the
+///   column's own doc comment); UserPreferences gains drinkSortMode
+///   (default 'recentlyUsed') — feeds the Today grid / S2 picker sort modes.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -62,7 +65,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -94,6 +97,13 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(
               userPreferencesTable,
               userPreferencesTable.alcoholicPresetsAlwaysVisible,
+            );
+          }
+          if (from < 6) {
+            await m.addColumn(drinkEntries, drinkEntries.presetId);
+            await m.addColumn(
+              userPreferencesTable,
+              userPreferencesTable.drinkSortMode,
             );
           }
         },
@@ -329,6 +339,7 @@ class AppDatabase extends _$AppDatabase {
       // Default ON — alcoholic presets are always visible in Manage Drinks
       // unless the user opts into session-only visibility (features.md F14).
       alcoholicPresetsAlwaysVisible: const Value(true),
+      drinkSortMode: const Value('recentlyUsed'),
       installedAt: now.millisecondsSinceEpoch,
       createdAt: now,
       updatedAt: now,
@@ -506,6 +517,18 @@ class AppDatabase extends _$AppDatabase {
       drinkEntries,
     )..where((t) => t.id.equals(id)))
         .write(companion);
+  }
+
+  /// Reactive stream of `(presetId, consumedAt)` pairs for every live entry
+  /// that was logged from a preset (`presetId IS NOT NULL`) — the raw feed
+  /// for [DrinksRepository.watchPresetUsageStats]'s last-used/30-day-count
+  /// aggregation (F14 §Sort modes). Aggregation itself happens in Dart, same
+  /// pattern as [watchEntriesInWindow] feeding the 7-day stat providers.
+  Stream<List<(String, DateTime)>> watchPresetEntryTimestamps() {
+    return (select(drinkEntries)
+          ..where((t) => t.deletedAt.isNull() & t.presetId.isNotNull()))
+        .watch()
+        .map((rows) => rows.map((r) => (r.presetId!, r.consumedAt)).toList());
   }
 
   /// Soft-deletes a [DrinkEntryRow] by setting [deletedAt] = [deletedAtUtc].

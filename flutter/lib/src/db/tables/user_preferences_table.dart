@@ -67,6 +67,13 @@ class UserPreferencesTable extends Table {
   BoolColumn get alcoholicPresetsAlwaysVisible =>
       boolean().withDefault(const Constant(true))();
 
+  /// Schema v6 addition. One of `manual` / `recentlyUsed` / `mostUsed`
+  /// (see `PresetSortMode` in `core`) — the sort mode shared by the Today
+  /// "Log a drink" grid and the S2 log-drink picker (features.md F14 §Sort
+  /// modes). Default `recentlyUsed`.
+  TextColumn get drinkSortMode =>
+      text().withDefault(const Constant('recentlyUsed'))();
+
   /// Epoch-milliseconds of when the local database was first created.
   /// Set once in beforeOpen; never changes.
   IntColumn get installedAt => integer()();

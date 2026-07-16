@@ -35,6 +35,8 @@ abstract final class SemanticsLabels {
   // Prefix for quick-log preset tiles — append the preset display name.
   // Example: '${SemanticsLabels.quickLogPrefix}Still water'
   static const String quickLogPrefix = 'Quick log: ';
+  static const String sortModeSelector = 'Sort drinks by';
+  static const String createPresetEntry = 'Create new preset';
 
   // ---------------------------------------------------------------------------
   // Today drinks log screen (S6)

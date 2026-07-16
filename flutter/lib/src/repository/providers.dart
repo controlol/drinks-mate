@@ -60,6 +60,55 @@ final allPresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
   return ref.watch(drinksRepositoryProvider).watchAllPresets();
 });
 
+// ---------------------------------------------------------------------------
+// Preset sort modes (F14 §Sort modes — issue #78)
+// ---------------------------------------------------------------------------
+
+/// Reactive stream of per-preset usage stats (last-used timestamp, trailing
+/// 30-day count) — the raw signal behind the Recently-used/Most-used sort
+/// modes. See [DrinksRepository.watchPresetUsageStats].
+///
+/// The underlying stream already recomputes "now" on every DB-driven
+/// emission (a logged/deleted entry), but the trailing window must also
+/// slide forward on pure time passage with no new writes — so, mirroring
+/// [todayTotalMlProvider]/[sevenDayAverageMlProvider], this re-subscribes at
+/// the next day boundary.
+final presetUsageStatsProvider =
+    StreamProvider<Map<String, PresetUsageStats>>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  final now = DateTime.now();
+  final nextBoundary = dayWindow(
+    now: now,
+    boundaryHour: prefs?.dayBoundaryHour ?? 5,
+  ).$2;
+  final timer = Timer(nextBoundary.difference(now), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref.watch(drinksRepositoryProvider).watchPresetUsageStats();
+});
+
+/// Visible presets ([visiblePresetsProvider]) ranked by the user's
+/// [UserPreferences.drinkSortMode] — the single source of ordering shared by
+/// the Today "Log a drink" grid and the S2 picker (F14 §Sort modes).
+///
+/// Resolves to an empty list until presets/usage/preferences have all loaded
+/// at least once, same "no data yet" behaviour as other `.valueOrNull ?? []`
+/// combinations in this file (e.g. [reminderReschedulerProvider]).
+final rankedVisiblePresetsProvider = Provider<List<DrinkPreset>>((ref) {
+  final presets = ref.watch(visiblePresetsProvider).valueOrNull ?? const [];
+  final usage = ref.watch(presetUsageStatsProvider).valueOrNull ?? const {};
+  final mode = ref.watch(userPreferencesProvider).valueOrNull?.drinkSortMode ??
+      PresetSortMode.recentlyUsed;
+
+  final rankedIds = rankPresetIds(
+    presetIds: [for (final p in presets) p.id],
+    sortOrders: {for (final p in presets) p.id: p.sortOrder},
+    usage: usage,
+    mode: mode,
+  );
+  final byId = {for (final p in presets) p.id: p};
+  return [for (final id in rankedIds) byId[id]!];
+});
+
 /// Stream of visible alcoholic presets — feeds the Party Mode "Log alcohol"
 /// preset picker (party-session.md §Logging an alcoholic drink).
 final visibleAlcoholicPresetsProvider = StreamProvider<List<DrinkPreset>>((

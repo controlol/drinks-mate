@@ -18,6 +18,7 @@ class DrinkEntry {
     this.iconKey,
     this.iconColor,
     this.partySessionId,
+    this.presetId,
     required this.consumedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -52,6 +53,11 @@ class DrinkEntry {
   /// FK to the owning Party Session. Null for non-alcoholic drinks and for
   /// alcoholic "orphan" drinks logged with no active session.
   final String? partySessionId;
+
+  /// Preset this entry was logged from, or null when logged without one.
+  /// Not authoritative for display (see the snapshot fields above) — only
+  /// feeds the preset-usage ranking behind the sort modes (F14 §Sort modes).
+  final String? presetId;
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;

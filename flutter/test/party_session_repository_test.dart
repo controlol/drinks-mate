@@ -173,16 +173,30 @@ class _LegacyDb extends GeneratedDatabase {
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
 }
 
+/// Same purpose as [_LegacyDb], but for hand-writing a genuine v5 schema
+/// (issue #78's "if (from < 6)" upgrade test below) — the v5 shape already
+/// has every v4 table/column plus `alcoholic_presets_always_visible`, but
+/// neither `drink_entries.preset_id` nor `user_preferences.drink_sort_mode`.
+class _LegacyDbV5 extends GeneratedDatabase {
+  _LegacyDbV5(super.executor);
+
+  @override
+  int get schemaVersion => 5;
+
+  @override
+  Iterable<TableInfo<Table, dynamic>> get allTables => const [];
+}
+
 void main() {
   // ---------------------------------------------------------------------------
   // 1. Schema migration
   // ---------------------------------------------------------------------------
 
   group('AppDatabase — schema v5 (fresh onCreate)', () {
-    test('schemaVersion is 5 (app_database.dart)', () async {
+    test('schemaVersion is 6 (app_database.dart)', () async {
       final db = _memDb();
       addTearDown(db.close);
-      expect(db.schemaVersion, 5);
+      expect(db.schemaVersion, 6);
     });
 
     test(
@@ -394,10 +408,11 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        // This test opens the *real* AppDatabase (currently schema v5), so a
-        // hand-built v3 file cascades through both the "if (from < 4)" and
-        // "if (from < 5)" onUpgrade blocks in one open — verified below.
-        expect(upgraded.schemaVersion, 5);
+        // This test opens the *real* AppDatabase (currently schema v6), so a
+        // hand-built v3 file cascades through the "if (from < 4)", "if (from
+        // < 5)", and "if (from < 6)" onUpgrade blocks in one open — verified
+        // below.
+        expect(upgraded.schemaVersion, 6);
 
         final entries = await upgraded.select(upgraded.drinkEntries).get();
         final legacyEntry = entries.singleWhere((e) => e.id == 'legacy-1');
@@ -421,6 +436,239 @@ void main() {
         // TABLE, and the beforeOpen seed populated the default row.
         final prefs = await PreferencesRepository(upgraded).getPreferences();
         expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
+      },
+    );
+  });
+
+  group('AppDatabase — v5 → v6 upgrade (onUpgrade "if (from < 6)" block)', () {
+    test(
+      'upgrading a hand-built v5 schema adds drink_entries.preset_id and '
+      'user_preferences.drink_sort_mode, with correct defaults, and '
+      'preserves pre-existing rows',
+      () async {
+        // Source: app_database.dart schema v6 doc comment — "DrinkEntries
+        // gains presetId (nullable, no FK); UserPreferences gains
+        // drinkSortMode (default 'recentlyUsed')". Column shapes below are
+        // the v5 schema (v2 drink_presets + v4 party/meal tables/columns +
+        // v5's alcoholic_presets_always_visible), taken from the table
+        // sources under lib/src/db/tables/, minus the two v6 additions under
+        // test here — mirrors the v3→v4 upgrade test's approach above.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'party_session_migration_v6_test',
+        );
+        addTearDown(() => tempDir.delete(recursive: true));
+        final dbFile = File(p.join(tempDir.path, 'legacy_v5.sqlite'));
+
+        final legacy = _LegacyDbV5(NativeDatabase(dbFile));
+        await legacy.customStatement('''
+          CREATE TABLE drink_presets (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            regular_price_minor INTEGER,
+            regular_currency TEXT,
+            icon_key TEXT NOT NULL,
+            icon_color TEXT NOT NULL,
+            is_user_created INTEGER NOT NULL,
+            is_hidden INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        // v5 shape: has the v4 party/token columns, but no preset_id yet
+        // (the v6 addition under test).
+        await legacy.customStatement('''
+          CREATE TABLE drink_entries (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            icon_key TEXT,
+            icon_color TEXT,
+            party_session_id TEXT,
+            consumed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE user_profiles (
+            id TEXT NOT NULL PRIMARY KEY,
+            gender TEXT,
+            weight_kg REAL,
+            height_cm REAL,
+            birth_date TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        // v5 shape: has alcoholic_presets_always_visible, but no
+        // drink_sort_mode yet (the other v6 addition under test).
+        await legacy.customStatement('''
+          CREATE TABLE user_preferences (
+            id TEXT NOT NULL PRIMARY KEY,
+            username TEXT,
+            daily_goal_ml INTEGER NOT NULL,
+            day_boundary_hour INTEGER NOT NULL,
+            units TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            reminder_enabled INTEGER NOT NULL,
+            reminder_start_hour INTEGER NOT NULL,
+            reminder_end_hour INTEGER NOT NULL,
+            reminder_interval_min INTEGER NOT NULL,
+            inactivity_reminder_enabled INTEGER NOT NULL,
+            weekly_summary_enabled INTEGER NOT NULL,
+            default_drink_preset_id TEXT,
+            bac_cap_grams_per_l REAL,
+            bac_on_lock_screen_enabled INTEGER NOT NULL,
+            approaching_cap_notif_enabled INTEGER NOT NULL,
+            sober_estimate_notif_enabled INTEGER NOT NULL,
+            alcoholic_presets_always_visible INTEGER NOT NULL,
+            installed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE party_sessions (
+            id TEXT NOT NULL PRIMARY KEY,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            end_reason TEXT,
+            use_session_prices INTEGER NOT NULL,
+            token_name TEXT,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE party_session_prices (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            drink_preset_id TEXT NOT NULL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE meals (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            size TEXT NOT NULL,
+            eaten_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+
+        final legacyEpoch =
+            DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch ~/ 1000;
+        await legacy.customStatement('''
+          INSERT INTO drink_entries (id, name, beverage_type, volume_ml,
+            abv_percent, price_minor, currency, price_tokens,
+            token_value_minor, token_value_currency, icon_key, icon_color,
+            party_session_id, consumed_at, created_at, updated_at, deleted_at)
+          VALUES ('legacy-entry-1', 'Legacy Beer', 'beer', 330,
+            5.0, NULL, NULL, NULL,
+            NULL, NULL, 'beer_glass', '#d97706',
+            NULL, $legacyEpoch, $legacyEpoch, $legacyEpoch, NULL);
+        ''');
+        // A hand-inserted UserPreferences singleton (id = kUserPreferencesId)
+        // with a deliberately non-default currency/alcoholicPresetsAlwaysVisible
+        // so the post-upgrade assertions below can tell "this exact row
+        // survived" apart from "beforeOpen re-seeded a fresh default row".
+        final installedAtMs = DateTime.utc(2025, 6, 1).millisecondsSinceEpoch;
+        await legacy.customStatement('''
+          INSERT INTO user_preferences (id, username, daily_goal_ml,
+            day_boundary_hour, units, currency, reminder_enabled,
+            reminder_start_hour, reminder_end_hour, reminder_interval_min,
+            inactivity_reminder_enabled, weekly_summary_enabled,
+            default_drink_preset_id, bac_cap_grams_per_l,
+            bac_on_lock_screen_enabled, approaching_cap_notif_enabled,
+            sober_estimate_notif_enabled, alcoholic_presets_always_visible,
+            installed_at, created_at, updated_at)
+          VALUES ('$kUserPreferencesId', 'legacyuser', 2500, 5, 'metric',
+            'USD', 1, 8, 22, 90, 1, 1, NULL, NULL, 1, 0, 0, 0,
+            $installedAtMs, $legacyEpoch, $legacyEpoch);
+        ''');
+        // Mark this file as schema v5 so reopening with schemaVersion 6
+        // triggers only the real onUpgrade(from: 5, to: 6) "if (from < 6)"
+        // block (the v2-v5 blocks are no-ops since `from` is already 5).
+        await legacy.customStatement('PRAGMA user_version = 5;');
+        await legacy.close();
+
+        final upgraded = AppDatabase(NativeDatabase(dbFile));
+        addTearDown(upgraded.close);
+
+        expect(upgraded.schemaVersion, 6);
+
+        // drink_entries.preset_id exists (ALTER TABLE ADD COLUMN) and is
+        // null for the pre-existing row — its other snapshot fields survive
+        // untouched.
+        final entries = await upgraded.select(upgraded.drinkEntries).get();
+        final legacyEntry =
+            entries.singleWhere((e) => e.id == 'legacy-entry-1');
+        expect(legacyEntry.name, 'Legacy Beer',
+            reason: 'pre-existing data must survive the upgrade');
+        expect(legacyEntry.presetId, isNull);
+
+        // The new column is live and usable via the repository.
+        final drinksRepo = DrinksRepository(upgraded);
+        const preset = DrinkPreset(
+          id: 'preset-for-v6-test',
+          name: 'V6 Test Beer',
+          beverageType: BeverageType.beer,
+          volumeMl: 330,
+          abvPercent: 5.0,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 1,
+        );
+        await drinksRepo.logDrink(preset: preset);
+        final newEntry = (await upgraded.select(upgraded.drinkEntries).get())
+            .singleWhere((e) => e.id != 'legacy-entry-1');
+        expect(newEntry.presetId, preset.id);
+
+        // user_preferences.drink_sort_mode exists (ALTER TABLE ADD COLUMN
+        // ... DEFAULT) and the pre-existing row's OTHER fields (currency,
+        // alcoholicPresetsAlwaysVisible) are untouched — proving this is the
+        // hand-inserted row, not a beforeOpen reseed (INSERT OR IGNORE is a
+        // no-op for an existing primary key).
+        final prefs = await PreferencesRepository(upgraded).getPreferences();
+        expect(prefs.currency, 'USD',
+            reason: 'pre-existing preferences row must survive the upgrade');
+        expect(prefs.alcoholicPresetsAlwaysVisible, isFalse,
+            reason: 'the hand-inserted value (false) must not be reset to '
+                'the seed default (true)');
+        expect(
+          prefs.drinkSortMode,
+          PresetSortMode.recentlyUsed,
+          reason: "app_database.dart's drinkSortMode column default is "
+              "'recentlyUsed' — ALTER TABLE ADD COLUMN ... DEFAULT populates "
+              'this value for every pre-existing row.',
+        );
       },
     );
   });
@@ -982,6 +1230,26 @@ void main() {
       expect(entry.iconColor, _beerPreset.iconColor);
       expect(entry.partySessionId, sessionId);
     });
+
+    test(
+      'sets presetId to the logged preset\'s id (issue #78 — feeds the '
+      'preset-usage aggregation behind Recently-used/Most-used sort modes)',
+      () async {
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+        );
+
+        expect(entry.presetId, _beerPreset.id);
+
+        final row = await db.getPartySessionById(sessionId);
+        expect(row, isNotNull); // sanity: session itself is unaffected
+        final persisted = (await db.select(db.drinkEntries).get()).singleWhere(
+          (e) => e.id == entry.id,
+        );
+        expect(persisted.presetId, _beerPreset.id);
+      },
+    );
 
     test('ABV override replaces the preset default', () async {
       // Source: party-session.md §Logging an alcoholic drink — "ABV override

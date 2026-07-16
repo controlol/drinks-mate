@@ -56,6 +56,9 @@ Widget _buildTodayScreen({
       visiblePresetsProvider.overrideWith(
         (_) => Stream.value(const <DrinkPreset>[]),
       ),
+      presetUsageStatsProvider.overrideWith(
+        (_) => Stream.value(const <String, PresetUsageStats>{}),
+      ),
       todayTotalMlProvider.overrideWith((_) => totalMlStream),
       sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
       sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),

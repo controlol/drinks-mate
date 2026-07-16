@@ -1168,6 +1168,227 @@ void main() {
         );
       },
     );
+
+    test(
+      'logDrink sets presetId to the logged preset\'s id (issue #78 — feeds '
+      'watchPresetUsageStats\' last-used/30-day-count aggregation behind '
+      'the Recently-used/Most-used sort modes)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Sort Mode Preset',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+
+        await repo.logDrink(preset: preset);
+
+        final entry = await loggedRow();
+        expect(entry.presetId, preset.id);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Group 9c: watchPresetUsageStats — last-used / trailing-30-day aggregation
+  // -------------------------------------------------------------------------
+
+  group('DrinksRepository.watchPresetUsageStats', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('empty database emits an empty map', () async {
+      final stats = await repo.watchPresetUsageStats().first;
+      expect(stats, isEmpty);
+    });
+
+    test(
+      'lastUsedAt is the all-time max consumedAt per preset; count30d only '
+      'counts entries within the trailing 30-day window ending "now" '
+      '(inclusive of both ends) — Source: drinks_repository.dart '
+      'watchPresetUsageStats doc comment',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Usage Preset',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+        final now = DateTime.utc(2026, 7, 16, 12, 0);
+
+        // Inside the 30-day window, and the most recent — must set both
+        // lastUsedAt and count toward count30d.
+        final recent = now.subtract(const Duration(days: 5));
+        await repo.logDrink(preset: preset, consumedAt: recent);
+
+        // Deliberately older than 30 days — must NOT count toward count30d,
+        // and must NOT win lastUsedAt over the more recent entry above.
+        final stale = now.subtract(const Duration(days: 45));
+        await repo.logDrink(preset: preset, consumedAt: stale);
+
+        final stats = await repo.watchPresetUsageStats(now: now).first;
+
+        expect(stats.containsKey(preset.id), isTrue);
+        expect(
+          stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(recent),
+          isTrue,
+          reason: 'lastUsedAt must be the all-time max consumedAt, not just '
+              'the max within the 30-day count window',
+        );
+        expect(
+          stats[preset.id]!.count30d,
+          1,
+          reason: 'the 45-day-old entry must not count toward count30d',
+        );
+      },
+    );
+
+    test(
+      'a backdated entry that is still the most recent updates lastUsedAt '
+      'even though it falls outside the count30d window',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Backdated Preset',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+        final now = DateTime.utc(2026, 7, 16, 12, 0);
+        // The ONLY entry for this preset — 40 days ago, outside the window.
+        final backdated = now.subtract(const Duration(days: 40));
+        await repo.logDrink(preset: preset, consumedAt: backdated);
+
+        final stats = await repo.watchPresetUsageStats(now: now).first;
+
+        expect(
+          stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(backdated),
+          isTrue,
+        );
+        expect(stats[preset.id]!.count30d, 0);
+      },
+    );
+
+    test(
+      'count30d window is inclusive of both ends: consumedAt exactly at '
+      'now-30d and exactly at now both count',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Boundary Preset',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+        final now = DateTime.utc(2026, 7, 16, 12, 0);
+        final windowStart = now.subtract(const Duration(days: 30));
+
+        await repo.logDrink(preset: preset, consumedAt: windowStart);
+        await repo.logDrink(preset: preset, consumedAt: now);
+
+        final stats = await repo.watchPresetUsageStats(now: now).first;
+
+        expect(stats[preset.id]!.count30d, 2);
+      },
+    );
+
+    test(
+      'a soft-deleted entry does not appear in usage stats at all',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Deleted Preset',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+        final now = DateTime.utc(2026, 7, 16, 12, 0);
+        await repo.logDrink(
+          preset: preset,
+          consumedAt: now.subtract(const Duration(days: 1)),
+        );
+
+        final entryId = (await db.select(db.drinkEntries).get()).single.id;
+        await repo.deleteDrinkEntry(entryId);
+
+        final stats = await repo.watchPresetUsageStats(now: now).first;
+
+        expect(
+          stats.containsKey(preset.id),
+          isFalse,
+          reason: 'F7 soft-delete: a deleted entry must not contribute to '
+              'lastUsedAt or count30d',
+        );
+      },
+    );
+
+    test(
+      'stats for two different presets are tracked independently — a heavy '
+      'user of preset A does not pollute preset B\'s stats',
+      () async {
+        final presetA = await repo.createPreset(
+          name: 'Preset A',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 1,
+        );
+        final presetB = await repo.createPreset(
+          name: 'Preset B',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 2,
+        );
+        final now = DateTime.utc(2026, 7, 16, 12, 0);
+
+        // Preset A: logged three times in the last week.
+        for (var i = 1; i <= 3; i++) {
+          await repo.logDrink(
+            preset: presetA,
+            consumedAt: now.subtract(Duration(days: i)),
+          );
+        }
+        // Preset B: logged once, longer ago.
+        await repo.logDrink(
+          preset: presetB,
+          consumedAt: now.subtract(const Duration(days: 10)),
+        );
+
+        final stats = await repo.watchPresetUsageStats(now: now).first;
+
+        expect(stats[presetA.id]!.count30d, 3);
+        expect(stats[presetB.id]!.count30d, 1);
+        expect(
+          stats[presetA.id]!.lastUsedAt!.isAtSameMomentAs(
+                now.subtract(const Duration(days: 1)),
+              ),
+          isTrue,
+        );
+        expect(
+          stats[presetB.id]!.lastUsedAt!.isAtSameMomentAs(
+                now.subtract(const Duration(days: 10)),
+              ),
+          isTrue,
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

@@ -826,6 +826,12 @@ class $DrinkEntriesTable extends DrinkEntries
   late final GeneratedColumn<String> partySessionId = GeneratedColumn<String>(
       'party_session_id', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _presetIdMeta =
+      const VerificationMeta('presetId');
+  @override
+  late final GeneratedColumn<String> presetId = GeneratedColumn<String>(
+      'preset_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _consumedAtMeta =
       const VerificationMeta('consumedAt');
   @override
@@ -865,6 +871,7 @@ class $DrinkEntriesTable extends DrinkEntries
         iconKey,
         iconColor,
         partySessionId,
+        presetId,
         consumedAt,
         createdAt,
         updatedAt,
@@ -951,6 +958,10 @@ class $DrinkEntriesTable extends DrinkEntries
           partySessionId.isAcceptableOrUnknown(
               data['party_session_id']!, _partySessionIdMeta));
     }
+    if (data.containsKey('preset_id')) {
+      context.handle(_presetIdMeta,
+          presetId.isAcceptableOrUnknown(data['preset_id']!, _presetIdMeta));
+    }
     if (data.containsKey('consumed_at')) {
       context.handle(
           _consumedAtMeta,
@@ -1010,6 +1021,8 @@ class $DrinkEntriesTable extends DrinkEntries
           .read(DriftSqlType.string, data['${effectivePrefix}icon_color']),
       partySessionId: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}party_session_id']),
+      presetId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}preset_id']),
       consumedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}consumed_at'])!,
       createdAt: attachedDatabase.typeMapping
@@ -1061,6 +1074,16 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
   /// alcoholic "orphan" drinks logged with no active session
   /// (data-model.md §Meal → Relationship to DrinkEntry).
   final String? partySessionId;
+
+  /// Preset the entry was logged from, or null when logged without one.
+  /// **Not** a foreign-key constraint (no `ON DELETE` behaviour) and never
+  /// authoritative for display — those values are the snapshot columns
+  /// above, per log immutability. This column exists solely to feed the
+  /// preset-usage aggregation (last-used timestamp, trailing 30-day count)
+  /// behind the Recently-used/Most-used sort modes (F14 §Sort modes); a
+  /// deleted preset simply stops accumulating new usage, and its historical
+  /// entries keep their id here with no cascading effect.
+  final String? presetId;
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1079,6 +1102,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       this.iconKey,
       this.iconColor,
       this.partySessionId,
+      this.presetId,
       required this.consumedAt,
       required this.createdAt,
       required this.updatedAt,
@@ -1118,6 +1142,9 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
     }
     if (!nullToAbsent || partySessionId != null) {
       map['party_session_id'] = Variable<String>(partySessionId);
+    }
+    if (!nullToAbsent || presetId != null) {
+      map['preset_id'] = Variable<String>(presetId);
     }
     map['consumed_at'] = Variable<DateTime>(consumedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
@@ -1161,6 +1188,9 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       partySessionId: partySessionId == null && nullToAbsent
           ? const Value.absent()
           : Value(partySessionId),
+      presetId: presetId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(presetId),
       consumedAt: Value(consumedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -1188,6 +1218,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       iconKey: serializer.fromJson<String?>(json['iconKey']),
       iconColor: serializer.fromJson<String?>(json['iconColor']),
       partySessionId: serializer.fromJson<String?>(json['partySessionId']),
+      presetId: serializer.fromJson<String?>(json['presetId']),
       consumedAt: serializer.fromJson<DateTime>(json['consumedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -1211,6 +1242,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       'iconKey': serializer.toJson<String?>(iconKey),
       'iconColor': serializer.toJson<String?>(iconColor),
       'partySessionId': serializer.toJson<String?>(partySessionId),
+      'presetId': serializer.toJson<String?>(presetId),
       'consumedAt': serializer.toJson<DateTime>(consumedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -1232,6 +1264,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           Value<String?> iconKey = const Value.absent(),
           Value<String?> iconColor = const Value.absent(),
           Value<String?> partySessionId = const Value.absent(),
+          Value<String?> presetId = const Value.absent(),
           DateTime? consumedAt,
           DateTime? createdAt,
           DateTime? updatedAt,
@@ -1255,6 +1288,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
         iconColor: iconColor.present ? iconColor.value : this.iconColor,
         partySessionId:
             partySessionId.present ? partySessionId.value : this.partySessionId,
+        presetId: presetId.present ? presetId.value : this.presetId,
         consumedAt: consumedAt ?? this.consumedAt,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
@@ -1286,6 +1320,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       partySessionId: data.partySessionId.present
           ? data.partySessionId.value
           : this.partySessionId,
+      presetId: data.presetId.present ? data.presetId.value : this.presetId,
       consumedAt:
           data.consumedAt.present ? data.consumedAt.value : this.consumedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -1310,6 +1345,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           ..write('iconKey: $iconKey, ')
           ..write('iconColor: $iconColor, ')
           ..write('partySessionId: $partySessionId, ')
+          ..write('presetId: $presetId, ')
           ..write('consumedAt: $consumedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -1333,6 +1369,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       iconKey,
       iconColor,
       partySessionId,
+      presetId,
       consumedAt,
       createdAt,
       updatedAt,
@@ -1354,6 +1391,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           other.iconKey == this.iconKey &&
           other.iconColor == this.iconColor &&
           other.partySessionId == this.partySessionId &&
+          other.presetId == this.presetId &&
           other.consumedAt == this.consumedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -1374,6 +1412,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
   final Value<String?> iconKey;
   final Value<String?> iconColor;
   final Value<String?> partySessionId;
+  final Value<String?> presetId;
   final Value<DateTime> consumedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -1393,6 +1432,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     this.iconKey = const Value.absent(),
     this.iconColor = const Value.absent(),
     this.partySessionId = const Value.absent(),
+    this.presetId = const Value.absent(),
     this.consumedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -1413,6 +1453,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     this.iconKey = const Value.absent(),
     this.iconColor = const Value.absent(),
     this.partySessionId = const Value.absent(),
+    this.presetId = const Value.absent(),
     required DateTime consumedAt,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -1438,6 +1479,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     Expression<String>? iconKey,
     Expression<String>? iconColor,
     Expression<String>? partySessionId,
+    Expression<String>? presetId,
     Expression<DateTime>? consumedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -1459,6 +1501,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       if (iconKey != null) 'icon_key': iconKey,
       if (iconColor != null) 'icon_color': iconColor,
       if (partySessionId != null) 'party_session_id': partySessionId,
+      if (presetId != null) 'preset_id': presetId,
       if (consumedAt != null) 'consumed_at': consumedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -1481,6 +1524,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       Value<String?>? iconKey,
       Value<String?>? iconColor,
       Value<String?>? partySessionId,
+      Value<String?>? presetId,
       Value<DateTime>? consumedAt,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt,
@@ -1500,6 +1544,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       iconKey: iconKey ?? this.iconKey,
       iconColor: iconColor ?? this.iconColor,
       partySessionId: partySessionId ?? this.partySessionId,
+      presetId: presetId ?? this.presetId,
       consumedAt: consumedAt ?? this.consumedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -1550,6 +1595,9 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     if (partySessionId.present) {
       map['party_session_id'] = Variable<String>(partySessionId.value);
     }
+    if (presetId.present) {
+      map['preset_id'] = Variable<String>(presetId.value);
+    }
     if (consumedAt.present) {
       map['consumed_at'] = Variable<DateTime>(consumedAt.value);
     }
@@ -1584,6 +1632,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
           ..write('iconKey: $iconKey, ')
           ..write('iconColor: $iconColor, ')
           ..write('partySessionId: $partySessionId, ')
+          ..write('presetId: $presetId, ')
           ..write('consumedAt: $consumedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -2180,6 +2229,14 @@ class $UserPreferencesTableTable extends UserPreferencesTable
           defaultConstraints: GeneratedColumn.constraintIsAlways(
               'CHECK ("alcoholic_presets_always_visible" IN (0, 1))'),
           defaultValue: const Constant(true));
+  static const VerificationMeta _drinkSortModeMeta =
+      const VerificationMeta('drinkSortMode');
+  @override
+  late final GeneratedColumn<String> drinkSortMode = GeneratedColumn<String>(
+      'drink_sort_mode', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('recentlyUsed'));
   static const VerificationMeta _installedAtMeta =
       const VerificationMeta('installedAt');
   @override
@@ -2218,6 +2275,7 @@ class $UserPreferencesTableTable extends UserPreferencesTable
         approachingCapNotifEnabled,
         soberEstimateNotifEnabled,
         alcoholicPresetsAlwaysVisible,
+        drinkSortMode,
         installedAt,
         createdAt,
         updatedAt
@@ -2352,6 +2410,12 @@ class $UserPreferencesTableTable extends UserPreferencesTable
               data['alcoholic_presets_always_visible']!,
               _alcoholicPresetsAlwaysVisibleMeta));
     }
+    if (data.containsKey('drink_sort_mode')) {
+      context.handle(
+          _drinkSortModeMeta,
+          drinkSortMode.isAcceptableOrUnknown(
+              data['drink_sort_mode']!, _drinkSortModeMeta));
+    }
     if (data.containsKey('installed_at')) {
       context.handle(
           _installedAtMeta,
@@ -2423,6 +2487,8 @@ class $UserPreferencesTableTable extends UserPreferencesTable
       alcoholicPresetsAlwaysVisible: attachedDatabase.typeMapping.read(
           DriftSqlType.bool,
           data['${effectivePrefix}alcoholic_presets_always_visible'])!,
+      drinkSortMode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}drink_sort_mode'])!,
       installedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}installed_at'])!,
       createdAt: attachedDatabase.typeMapping
@@ -2488,6 +2554,12 @@ class UserPreferencesRow extends DataClass
   /// `ManageDrinksScreen`'s doc comment for the full rationale.
   final bool alcoholicPresetsAlwaysVisible;
 
+  /// Schema v6 addition. One of `manual` / `recentlyUsed` / `mostUsed`
+  /// (see `PresetSortMode` in `core`) — the sort mode shared by the Today
+  /// "Log a drink" grid and the S2 log-drink picker (features.md F14 §Sort
+  /// modes). Default `recentlyUsed`.
+  final String drinkSortMode;
+
   /// Epoch-milliseconds of when the local database was first created.
   /// Set once in beforeOpen; never changes.
   final int installedAt;
@@ -2512,6 +2584,7 @@ class UserPreferencesRow extends DataClass
       required this.approachingCapNotifEnabled,
       required this.soberEstimateNotifEnabled,
       required this.alcoholicPresetsAlwaysVisible,
+      required this.drinkSortMode,
       required this.installedAt,
       required this.createdAt,
       required this.updatedAt});
@@ -2546,6 +2619,7 @@ class UserPreferencesRow extends DataClass
         Variable<bool>(soberEstimateNotifEnabled);
     map['alcoholic_presets_always_visible'] =
         Variable<bool>(alcoholicPresetsAlwaysVisible);
+    map['drink_sort_mode'] = Variable<String>(drinkSortMode);
     map['installed_at'] = Variable<int>(installedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -2578,6 +2652,7 @@ class UserPreferencesRow extends DataClass
       approachingCapNotifEnabled: Value(approachingCapNotifEnabled),
       soberEstimateNotifEnabled: Value(soberEstimateNotifEnabled),
       alcoholicPresetsAlwaysVisible: Value(alcoholicPresetsAlwaysVisible),
+      drinkSortMode: Value(drinkSortMode),
       installedAt: Value(installedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -2614,6 +2689,7 @@ class UserPreferencesRow extends DataClass
           serializer.fromJson<bool>(json['soberEstimateNotifEnabled']),
       alcoholicPresetsAlwaysVisible:
           serializer.fromJson<bool>(json['alcoholicPresetsAlwaysVisible']),
+      drinkSortMode: serializer.fromJson<String>(json['drinkSortMode']),
       installedAt: serializer.fromJson<int>(json['installedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -2645,6 +2721,7 @@ class UserPreferencesRow extends DataClass
           serializer.toJson<bool>(soberEstimateNotifEnabled),
       'alcoholicPresetsAlwaysVisible':
           serializer.toJson<bool>(alcoholicPresetsAlwaysVisible),
+      'drinkSortMode': serializer.toJson<String>(drinkSortMode),
       'installedAt': serializer.toJson<int>(installedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -2670,6 +2747,7 @@ class UserPreferencesRow extends DataClass
           bool? approachingCapNotifEnabled,
           bool? soberEstimateNotifEnabled,
           bool? alcoholicPresetsAlwaysVisible,
+          String? drinkSortMode,
           int? installedAt,
           DateTime? createdAt,
           DateTime? updatedAt}) =>
@@ -2701,6 +2779,7 @@ class UserPreferencesRow extends DataClass
             soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
         alcoholicPresetsAlwaysVisible:
             alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
+        drinkSortMode: drinkSortMode ?? this.drinkSortMode,
         installedAt: installedAt ?? this.installedAt,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
@@ -2752,6 +2831,9 @@ class UserPreferencesRow extends DataClass
       alcoholicPresetsAlwaysVisible: data.alcoholicPresetsAlwaysVisible.present
           ? data.alcoholicPresetsAlwaysVisible.value
           : this.alcoholicPresetsAlwaysVisible,
+      drinkSortMode: data.drinkSortMode.present
+          ? data.drinkSortMode.value
+          : this.drinkSortMode,
       installedAt:
           data.installedAt.present ? data.installedAt.value : this.installedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -2781,6 +2863,7 @@ class UserPreferencesRow extends DataClass
           ..write('soberEstimateNotifEnabled: $soberEstimateNotifEnabled, ')
           ..write(
               'alcoholicPresetsAlwaysVisible: $alcoholicPresetsAlwaysVisible, ')
+          ..write('drinkSortMode: $drinkSortMode, ')
           ..write('installedAt: $installedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -2808,6 +2891,7 @@ class UserPreferencesRow extends DataClass
         approachingCapNotifEnabled,
         soberEstimateNotifEnabled,
         alcoholicPresetsAlwaysVisible,
+        drinkSortMode,
         installedAt,
         createdAt,
         updatedAt
@@ -2835,6 +2919,7 @@ class UserPreferencesRow extends DataClass
           other.soberEstimateNotifEnabled == this.soberEstimateNotifEnabled &&
           other.alcoholicPresetsAlwaysVisible ==
               this.alcoholicPresetsAlwaysVisible &&
+          other.drinkSortMode == this.drinkSortMode &&
           other.installedAt == this.installedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -2860,6 +2945,7 @@ class UserPreferencesTableCompanion
   final Value<bool> approachingCapNotifEnabled;
   final Value<bool> soberEstimateNotifEnabled;
   final Value<bool> alcoholicPresetsAlwaysVisible;
+  final Value<String> drinkSortMode;
   final Value<int> installedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -2883,6 +2969,7 @@ class UserPreferencesTableCompanion
     this.approachingCapNotifEnabled = const Value.absent(),
     this.soberEstimateNotifEnabled = const Value.absent(),
     this.alcoholicPresetsAlwaysVisible = const Value.absent(),
+    this.drinkSortMode = const Value.absent(),
     this.installedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2907,6 +2994,7 @@ class UserPreferencesTableCompanion
     required bool approachingCapNotifEnabled,
     required bool soberEstimateNotifEnabled,
     this.alcoholicPresetsAlwaysVisible = const Value.absent(),
+    this.drinkSortMode = const Value.absent(),
     required int installedAt,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -2941,6 +3029,7 @@ class UserPreferencesTableCompanion
     Expression<bool>? approachingCapNotifEnabled,
     Expression<bool>? soberEstimateNotifEnabled,
     Expression<bool>? alcoholicPresetsAlwaysVisible,
+    Expression<String>? drinkSortMode,
     Expression<int>? installedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -2973,6 +3062,7 @@ class UserPreferencesTableCompanion
         'sober_estimate_notif_enabled': soberEstimateNotifEnabled,
       if (alcoholicPresetsAlwaysVisible != null)
         'alcoholic_presets_always_visible': alcoholicPresetsAlwaysVisible,
+      if (drinkSortMode != null) 'drink_sort_mode': drinkSortMode,
       if (installedAt != null) 'installed_at': installedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -2999,6 +3089,7 @@ class UserPreferencesTableCompanion
       Value<bool>? approachingCapNotifEnabled,
       Value<bool>? soberEstimateNotifEnabled,
       Value<bool>? alcoholicPresetsAlwaysVisible,
+      Value<String>? drinkSortMode,
       Value<int>? installedAt,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt,
@@ -3027,6 +3118,7 @@ class UserPreferencesTableCompanion
           soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
       alcoholicPresetsAlwaysVisible:
           alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
+      drinkSortMode: drinkSortMode ?? this.drinkSortMode,
       installedAt: installedAt ?? this.installedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -3098,6 +3190,9 @@ class UserPreferencesTableCompanion
       map['alcoholic_presets_always_visible'] =
           Variable<bool>(alcoholicPresetsAlwaysVisible.value);
     }
+    if (drinkSortMode.present) {
+      map['drink_sort_mode'] = Variable<String>(drinkSortMode.value);
+    }
     if (installedAt.present) {
       map['installed_at'] = Variable<int>(installedAt.value);
     }
@@ -3135,6 +3230,7 @@ class UserPreferencesTableCompanion
           ..write('soberEstimateNotifEnabled: $soberEstimateNotifEnabled, ')
           ..write(
               'alcoholicPresetsAlwaysVisible: $alcoholicPresetsAlwaysVisible, ')
+          ..write('drinkSortMode: $drinkSortMode, ')
           ..write('installedAt: $installedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -4992,6 +5088,7 @@ typedef $$DrinkEntriesTableCreateCompanionBuilder = DrinkEntriesCompanion
   Value<String?> iconKey,
   Value<String?> iconColor,
   Value<String?> partySessionId,
+  Value<String?> presetId,
   required DateTime consumedAt,
   required DateTime createdAt,
   required DateTime updatedAt,
@@ -5013,6 +5110,7 @@ typedef $$DrinkEntriesTableUpdateCompanionBuilder = DrinkEntriesCompanion
   Value<String?> iconKey,
   Value<String?> iconColor,
   Value<String?> partySessionId,
+  Value<String?> presetId,
   Value<DateTime> consumedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
@@ -5070,6 +5168,9 @@ class $$DrinkEntriesTableFilterComposer
   ColumnFilters<String> get partySessionId => $composableBuilder(
       column: $table.partySessionId,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get presetId => $composableBuilder(
+      column: $table.presetId, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => ColumnFilters(column));
@@ -5136,6 +5237,9 @@ class $$DrinkEntriesTableOrderingComposer
       column: $table.partySessionId,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get presetId => $composableBuilder(
+      column: $table.presetId, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => ColumnOrderings(column));
 
@@ -5197,6 +5301,9 @@ class $$DrinkEntriesTableAnnotationComposer
   GeneratedColumn<String> get partySessionId => $composableBuilder(
       column: $table.partySessionId, builder: (column) => column);
 
+  GeneratedColumn<String> get presetId =>
+      $composableBuilder(column: $table.presetId, builder: (column) => column);
+
   GeneratedColumn<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => column);
 
@@ -5249,6 +5356,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             Value<String?> iconKey = const Value.absent(),
             Value<String?> iconColor = const Value.absent(),
             Value<String?> partySessionId = const Value.absent(),
+            Value<String?> presetId = const Value.absent(),
             Value<DateTime> consumedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
@@ -5269,6 +5377,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             iconKey: iconKey,
             iconColor: iconColor,
             partySessionId: partySessionId,
+            presetId: presetId,
             consumedAt: consumedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -5289,6 +5398,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             Value<String?> iconKey = const Value.absent(),
             Value<String?> iconColor = const Value.absent(),
             Value<String?> partySessionId = const Value.absent(),
+            Value<String?> presetId = const Value.absent(),
             required DateTime consumedAt,
             required DateTime createdAt,
             required DateTime updatedAt,
@@ -5309,6 +5419,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             iconKey: iconKey,
             iconColor: iconColor,
             partySessionId: partySessionId,
+            presetId: presetId,
             consumedAt: consumedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -5575,6 +5686,7 @@ typedef $$UserPreferencesTableTableCreateCompanionBuilder
   required bool approachingCapNotifEnabled,
   required bool soberEstimateNotifEnabled,
   Value<bool> alcoholicPresetsAlwaysVisible,
+  Value<String> drinkSortMode,
   required int installedAt,
   required DateTime createdAt,
   required DateTime updatedAt,
@@ -5600,6 +5712,7 @@ typedef $$UserPreferencesTableTableUpdateCompanionBuilder
   Value<bool> approachingCapNotifEnabled,
   Value<bool> soberEstimateNotifEnabled,
   Value<bool> alcoholicPresetsAlwaysVisible,
+  Value<String> drinkSortMode,
   Value<int> installedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
@@ -5681,6 +5794,9 @@ class $$UserPreferencesTableTableFilterComposer
   ColumnFilters<bool> get alcoholicPresetsAlwaysVisible => $composableBuilder(
       column: $table.alcoholicPresetsAlwaysVisible,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get drinkSortMode => $composableBuilder(
+      column: $table.drinkSortMode, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get installedAt => $composableBuilder(
       column: $table.installedAt, builder: (column) => ColumnFilters(column));
@@ -5768,6 +5884,10 @@ class $$UserPreferencesTableTableOrderingComposer
       column: $table.alcoholicPresetsAlwaysVisible,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get drinkSortMode => $composableBuilder(
+      column: $table.drinkSortMode,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get installedAt => $composableBuilder(
       column: $table.installedAt, builder: (column) => ColumnOrderings(column));
 
@@ -5842,6 +5962,9 @@ class $$UserPreferencesTableTableAnnotationComposer
       column: $table.alcoholicPresetsAlwaysVisible,
       builder: (column) => column);
 
+  GeneratedColumn<String> get drinkSortMode => $composableBuilder(
+      column: $table.drinkSortMode, builder: (column) => column);
+
   GeneratedColumn<int> get installedAt => $composableBuilder(
       column: $table.installedAt, builder: (column) => column);
 
@@ -5900,6 +6023,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             Value<bool> approachingCapNotifEnabled = const Value.absent(),
             Value<bool> soberEstimateNotifEnabled = const Value.absent(),
             Value<bool> alcoholicPresetsAlwaysVisible = const Value.absent(),
+            Value<String> drinkSortMode = const Value.absent(),
             Value<int> installedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
@@ -5924,6 +6048,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             approachingCapNotifEnabled: approachingCapNotifEnabled,
             soberEstimateNotifEnabled: soberEstimateNotifEnabled,
             alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
+            drinkSortMode: drinkSortMode,
             installedAt: installedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -5948,6 +6073,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             required bool approachingCapNotifEnabled,
             required bool soberEstimateNotifEnabled,
             Value<bool> alcoholicPresetsAlwaysVisible = const Value.absent(),
+            Value<String> drinkSortMode = const Value.absent(),
             required int installedAt,
             required DateTime createdAt,
             required DateTime updatedAt,
@@ -5972,6 +6098,7 @@ class $$UserPreferencesTableTableTableManager extends RootTableManager<
             approachingCapNotifEnabled: approachingCapNotifEnabled,
             soberEstimateNotifEnabled: soberEstimateNotifEnabled,
             alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
+            drinkSortMode: drinkSortMode,
             installedAt: installedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,

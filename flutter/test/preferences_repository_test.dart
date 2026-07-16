@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -200,6 +201,25 @@ void main() {
           (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
           isTrue,
         );
+      },
+    );
+
+    test(
+      'updateDrinkSortMode round-trips every PresetSortMode through '
+      'getPreferences (features.md F14 §Sort modes — shared by the Today '
+      'grid and the S2 picker)',
+      () async {
+        expect(
+          (await repo.getPreferences()).drinkSortMode,
+          PresetSortMode.recentlyUsed,
+          reason: "seed default is 'recentlyUsed' (app_database.dart "
+              'drinkSortMode column default)',
+        );
+
+        for (final mode in PresetSortMode.values) {
+          await repo.updateDrinkSortMode(mode);
+          expect((await repo.getPreferences()).drinkSortMode, mode);
+        }
       },
     );
 

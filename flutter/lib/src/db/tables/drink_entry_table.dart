@@ -2,9 +2,10 @@ import 'package:drift/drift.dart';
 
 /// Drift table for drink entries — a single logged drink.
 ///
-/// Schema v2 addition; Party Session columns added in schema v4 (issue #21).
-/// All preset values are snapshotted at log time (log immutability —
-/// data-model.md §Snapshot semantics). No FK back to DrinkPreset.
+/// Schema v2 addition; Party Session columns added in schema v4 (issue #21);
+/// [presetId] added in schema v6 (issue #78). All preset values are
+/// snapshotted at log time (log immutability — data-model.md §Snapshot
+/// semantics); [presetId] is the one exception — see its own doc comment.
 ///
 /// [DataClassName] avoids a name collision with the pure-Dart domain model
 /// [DrinkEntry] in lib/src/models/drink_entry.dart.
@@ -43,6 +44,16 @@ class DrinkEntries extends Table {
   /// alcoholic "orphan" drinks logged with no active session
   /// (data-model.md §Meal → Relationship to DrinkEntry).
   TextColumn get partySessionId => text().nullable()();
+
+  /// Preset the entry was logged from, or null when logged without one.
+  /// **Not** a foreign-key constraint (no `ON DELETE` behaviour) and never
+  /// authoritative for display — those values are the snapshot columns
+  /// above, per log immutability. This column exists solely to feed the
+  /// preset-usage aggregation (last-used timestamp, trailing 30-day count)
+  /// behind the Recently-used/Most-used sort modes (F14 §Sort modes); a
+  /// deleted preset simply stops accumulating new usage, and its historical
+  /// entries keep their id here with no cascading effect.
+  TextColumn get presetId => text().nullable()();
   DateTimeColumn get consumedAt => dateTime()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
