@@ -123,7 +123,7 @@ Today's quick-log grid tiles and the [S2 log-drink drawer](./user-experience.md#
 
 The confirmation toast that follows carries a **"Start session"** action. Tapping it runs the same start-session flow described above (birthday/height prompt if needed, pricing prompt, etc.); once the session starts, the just-logged drink is absorbed into it automatically via the normal orphan-absorption rule (see [Absorbing orphan drinks](#absorbing-orphan-drinks-when-a-later-session-starts)) — since it was logged only seconds ago, its BAC has not decayed, so it is always absorbed. If the user doesn't tap "Start session," the drink stays a permanent orphan.
 
-`[OPEN]` — the existing quick-log toast also offers an Undo action (see [user-experience.md → Flow 2](./user-experience.md#flow-2--quick-log-most-common)). Does an alcoholic entry's toast offer both Undo and Start session, or does Start session replace Undo for this case? Needs a UI decision on how two actions fit in one toast without crowding it.
+The existing quick-log toast also offers an Undo action for ordinary entries (see [user-experience.md → Flow 2](./user-experience.md#flow-2--quick-log-most-common)). For an alcoholic entry, **"Start session" replaces Undo** in the toast rather than the two competing for space — a standard toast/snackbar only cleanly fits one action. If the user wants to remove the drink instead of starting a session, they can delete it from [S6](./user-experience.md#s6--today-drinks-log), which shows alcoholic entries once logged (see [S6 fix](./user-experience.md#s6--today-drinks-log)).
 
 ### Absorbing orphan drinks when a later session starts
 
@@ -343,7 +343,7 @@ The log-drink drawer ([user-experience.md → S2 Log drink](./user-experience.md
 - **ABV override** — the user can override the ABV for any entry (e.g. a strong IPA at 8%).
 - **Volume** — already part of the standard flow.
 
-The Party tab's own log-alcohol sheet (used for the "Log alcohol" action on [S7](./user-experience.md#s7--party)) additionally carries **name** and **price** fields, per-entry — the one-off, this-entry-only customisation that [S2's Advanced editor](./user-experience.md#s2--log-drink) no longer offers for any drink type. `[OPEN]` — exact interaction between a one-off per-entry price override here and the session-wide `PartySessionPrice` override from "Manage prices": does entering a price here also update the session-wide override for that preset, or does it only ever apply to this single entry?
+The Party tab's own log-alcohol sheet (used for the "Log alcohol" action on [S7](./user-experience.md#s7--party)) additionally carries **name** and **price** fields, per-entry — the one-off, this-entry-only customisation that [S2's Advanced editor](./user-experience.md#s2--log-drink) no longer offers for any drink type. A price entered here is a **one-off override for this entry only** — it never writes to the session-wide `PartySessionPrice` table, matching how a per-entry price edit works everywhere else (S6, S9): the regular preset price, the session-wide override, and a single entry's one-off override are three independent layers, each writable only from its own dedicated UI.
 
 Non-alcoholic drinks are logged exactly as outside a session and contribute to hydration as usual. They do not lower the BAC estimate (see "Hydration does not lower BAC" below).
 
