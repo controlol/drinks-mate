@@ -158,8 +158,9 @@ class _EntryRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final local = entry.consumedAt.toLocal();
-    final timeLabel =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    // Source: Parity Rulebook — "Time-of-day display format" (honours the
+    // device's 12h/24h preference rather than a hardcoded format).
+    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
     final volumeText =
         fmt?.formatVolume(entry.volumeMl.toDouble()) ?? '${entry.volumeMl} ml';
     final iconColor = entry.iconColor != null
@@ -308,8 +309,9 @@ class _EditEntrySheetState extends ConsumerState<_EditEntrySheet> {
   @override
   Widget build(BuildContext context) {
     final local = _consumedAt.toLocal();
-    final timeLabel =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    // Source: Parity Rulebook — "Time-of-day display format" (honours the
+    // device's 12h/24h preference rather than a hardcoded format).
+    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
 
     return Padding(
       padding: EdgeInsets.only(

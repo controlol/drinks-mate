@@ -239,6 +239,7 @@ Concrete, copy-pasteable rules the implementation **must** follow exactly. Numbe
 | **DrinkPreset name** | 3–30 characters. Allowed: Unicode letters `L*`, ASCII digits `0–9`, connectors `_ - .`, **ASCII space** ` `, and **parentheses `( )`**. Must start and end with a letter, digit, or parenthesis. Rejects control chars, zero-width, emoji, and other symbols. Spaces between words are permitted (e.g. "Glass of water"); parentheses support volume-suffixed names (e.g. "Beer (0.33L)"). Implemented as `validatePresetName()` in `core`. | data-model §DrinkPreset |
 | **Glass-count copy formatting** | 0.5 → `half a glass`; 1 → `a glass`; 1.5 → `1.5 glasses`; 2 → `2 glasses`. Noun follows the default drink's **beverage type** ("of water"/"of tea"), never the preset display name. | notifications §Glass formatting |
 | **BAC display** | Always labelled an **estimate**; g/L primary, mmol/L secondary; persistent disclaimer while a session is active; cap never framed as a safety/legal line. | party-session §Important; §Display units |
+| **Time-of-day display format** | Follows the **device's 12h/24h preference** (`TimeOfDay.format(context)`), not a hardcoded format — e.g. "9:30 AM" on a 12h device, "09:30" on a 24h device. Applies wherever a logged drink's time is shown or edited (S6 list, edit sheet). | user-experience S6; C6 |
 
 ### Non-colour-signal rules (a11y)
 
