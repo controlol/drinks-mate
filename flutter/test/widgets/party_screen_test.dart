@@ -170,8 +170,9 @@ class _FakeDrinksRepo extends DrinksRepository {
   final List<({String presetId, double? abvPercent})> logDrinkCalls = [];
 
   @override
-  Future<void> logDrink({
+  Future<String> logDrink({
     required DrinkPreset preset,
+    String? id,
     String? name,
     int? volumeMl,
     double? abvPercent,
@@ -180,6 +181,7 @@ class _FakeDrinksRepo extends DrinksRepository {
     DateTime? consumedAt,
   }) async {
     logDrinkCalls.add((presetId: preset.id, abvPercent: abvPercent));
+    return id ?? 'fake-entry-id';
   }
 }
 

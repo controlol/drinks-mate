@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
+import '../models/beverage_type.dart';
 import '../models/drink_preset.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
@@ -540,14 +541,16 @@ class _StatCard extends StatelessWidget {
 
 /// Number of grid columns for a given *available width* (not necessarily the
 /// full screen width — on the tablet/desktop split layout this section gets
-/// roughly half the screen). Reasonable, documented tiers per the issue's
-/// `[OPEN]` breakpoint note:
-///   < 500dp  -> 2 columns (phone)
-///   500–899  -> 3 columns (wide phone / the tablet-desktop side panel)
+/// roughly half the screen). The 600dp tier matches Material's "compact"
+/// window-size-class threshold (the same family [kTabletBreakpointWidth]'s
+/// 840dp "expanded" threshold is drawn from); 900dp has no such source —
+/// see that constant's doc comment:
+///   < 600dp  -> 2 columns (phone)
+///   600–899  -> 3 columns (wide phone / the tablet-desktop side panel)
 ///   >= 900dp -> 4 columns (a full-width tablet/desktop grid)
 int _gridColumnsForWidth(double width) {
   if (width >= 900) return 4;
-  if (width >= 500) return 3;
+  if (width >= 600) return 3;
   return 2;
 }
 
@@ -687,14 +690,19 @@ class _LogADrinkTile extends ConsumerWidget {
   }
 
   Future<void> _quickLog(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(drinksRepositoryProvider);
     try {
-      await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
+      final entryId = await repo.logDrink(preset: preset);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logged ${preset.name}'),
-            duration: const Duration(seconds: 4),
-          ),
+        _showLoggedSnackBar(
+          context,
+          ref,
+          entryId: entryId,
+          name: preset.name,
+          beverageType: preset.beverageType,
+          // Already awaited above — nothing left to race an Undo tap
+          // against.
+          pendingWrite: Future.value(),
         );
       }
     } catch (e) {
@@ -711,9 +719,9 @@ class _LogADrinkTile extends ConsumerWidget {
 // Log drink button
 // ---------------------------------------------------------------------------
 
-class _LogDrinkButton extends StatelessWidget {
+class _LogDrinkButton extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -728,25 +736,27 @@ class _LogDrinkButton extends StatelessWidget {
         child: FilledButton.icon(
           icon: const Icon(Icons.add),
           label: const Text('Log drink'),
-          onPressed: () => _openSheet(context),
+          onPressed: () => _openSheet(context, ref),
         ),
       ),
     );
   }
 
-  Future<void> _openSheet(BuildContext context) async {
-    final logged = await showModalBottomSheet<bool>(
+  Future<void> _openSheet(BuildContext context, WidgetRef ref) async {
+    final logged = await showModalBottomSheet<LoggedDrinkResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const LogDrinkSheet(),
     );
-    if (logged == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Drink logged'),
-          duration: Duration(seconds: 4),
-        ),
+    if (logged != null && context.mounted) {
+      _showLoggedSnackBar(
+        context,
+        ref,
+        entryId: logged.id,
+        name: logged.name,
+        beverageType: logged.beverageType,
+        pendingWrite: logged.pendingWrite,
       );
     }
   }
@@ -755,6 +765,44 @@ class _LogDrinkButton extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Shared "Logged {name}" toast for both the grid-tile tap and the S2
+/// confirm path (user-experience.md §S1: "The `Logged` toast ... after any
+/// preset-tile tap in the 'Log a drink' grid or successful S2 confirm").
+///
+/// Non-alcoholic entries get an inline Undo that soft-deletes the entry —
+/// after [pendingWrite] settles, since C6 shows this toast before the write
+/// lands and an instant Undo tap could otherwise race the insert. Alcoholic
+/// entries get a plain toast with no action: party-session.md §Logging from
+/// Today reserves that slot for a "Start session" offer instead of Undo
+/// (issue #80 — not yet wired up here, but showing Undo in the meantime
+/// would contradict the spec once it is).
+void _showLoggedSnackBar(
+  BuildContext context,
+  WidgetRef ref, {
+  required String entryId,
+  required String name,
+  required BeverageType beverageType,
+  required Future<void> pendingWrite,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Logged $name'),
+      duration: const Duration(seconds: 4),
+      action: beverageType.isAlcoholic
+          ? null
+          : SnackBarAction(
+              label: 'Undo',
+              onPressed: () async {
+                await pendingWrite;
+                await ref
+                    .read(drinksRepositoryProvider)
+                    .deleteDrinkEntry(entryId);
+              },
+            ),
+    ),
+  );
+}
 
 Widget _settingsButton(BuildContext context) => IconButton(
       icon: const Icon(Icons.settings_outlined),

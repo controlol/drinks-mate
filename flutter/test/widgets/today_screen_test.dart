@@ -45,8 +45,9 @@ class _FakeDrinksRepo extends DrinksRepository {
   final List<DrinkPreset> logDrinkCalls = [];
 
   @override
-  Future<void> logDrink({
+  Future<String> logDrink({
     required DrinkPreset preset,
+    String? id,
     String? name,
     int? volumeMl,
     double? abvPercent,
@@ -55,6 +56,14 @@ class _FakeDrinksRepo extends DrinksRepository {
     DateTime? consumedAt,
   }) async {
     logDrinkCalls.add(preset);
+    return id ?? 'fake-entry-id';
+  }
+
+  final List<String> deleteDrinkEntryCalls = [];
+
+  @override
+  Future<void> deleteDrinkEntry(String id) async {
+    deleteDrinkEntryCalls.add(id);
   }
 }
 
@@ -73,11 +82,16 @@ class _FakePreferencesRepo extends PreferencesRepository {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-DrinkPreset _preset(String id, String name, {required int sortOrder}) =>
+DrinkPreset _preset(
+  String id,
+  String name, {
+  required int sortOrder,
+  BeverageType beverageType = BeverageType.water,
+}) =>
     DrinkPreset(
       id: id,
       name: name,
-      beverageType: BeverageType.water,
+      beverageType: beverageType,
       volumeMl: 200,
       iconKey: 'glass',
       iconColor: '#3b82f6',
@@ -204,6 +218,66 @@ void main() {
     expect(drinksRepo.logDrinkCalls, hasLength(1));
     expect(drinksRepo.logDrinkCalls.single.id, 'p1');
   });
+
+  testWidgets(
+    'tapping a preset tile shows a Logged toast with an Undo action that '
+    'deletes the entry just logged (user-experience.md §S1: "Logged toast '
+    '... with an inline Undo affordance")',
+    (tester) async {
+      final preset = _preset('p1', 'Still Water', sortOrder: 1);
+      final drinksRepo = _FakeDrinksRepo();
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Still Water'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Logged Still Water'), findsOneWidget);
+      expect(find.widgetWithText(SnackBarAction, 'Undo'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+      await tester.pumpAndSettle();
+
+      expect(drinksRepo.deleteDrinkEntryCalls, ['fake-entry-id']);
+    },
+  );
+
+  testWidgets(
+    'tapping an alcoholic preset tile shows a Logged toast with no Undo '
+    '(party-session.md §Logging from Today reserves that toast\'s one '
+    'action slot for a future "Start session" offer, not Undo — issue #80)',
+    (tester) async {
+      final preset = _preset(
+        'p1',
+        'Beer',
+        sortOrder: 1,
+        beverageType: BeverageType.beer,
+      );
+      final drinksRepo = _FakeDrinksRepo();
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Beer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Logged Beer'), findsOneWidget);
+      expect(find.byType(SnackBarAction), findsNothing);
+    },
+  );
 
   // -------------------------------------------------------------------------
   // 3. Sort-mode dropdown writes the new mode
