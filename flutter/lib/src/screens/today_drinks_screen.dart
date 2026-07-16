@@ -13,9 +13,13 @@ import 'log_drink_sheet.dart';
 
 /// S6 — Today Drinks Log.
 ///
-/// Reached by tapping the progress card on the Today screen. Shows today's
-/// non-alcoholic entries in reverse-chronological order with per-entry edit
-/// (volumeMl and consumedAt only) and soft-delete actions.
+/// Reached by tapping the progress card on the Today screen. Shows every
+/// beverage type logged today in reverse-chronological order, with
+/// per-entry edit (volumeMl and consumedAt only) and soft-delete actions —
+/// except an alcoholic entry attached to a Party Session (`partySessionId`
+/// set), which renders read-only here; [S9 Party Session Log] is the
+/// authoritative place to edit or delete those (design/user-experience.md
+/// §S6).
 ///
 /// Immutability: snapshot fields (name, icon, ABV, price) are never exposed
 /// in the edit form — only volumeMl and consumedAt are user-editable after
@@ -145,6 +149,12 @@ class _EntryRow extends ConsumerWidget {
   final FormatService? fmt;
   final UserPreferences? prefs;
 
+  /// Session-attached alcoholic entries are read-only here — [S9 Party
+  /// Session Log] is the single authoritative place to edit or delete them
+  /// (design/user-experience.md §S6).
+  bool get _isSessionAttached =>
+      entry.beverageType.isAlcoholic && entry.partySessionId != null;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final local = entry.consumedAt.toLocal();
@@ -156,41 +166,46 @@ class _EntryRow extends ConsumerWidget {
         ? parseIconColor(entry.iconColor!) ??
             Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.primary;
+    final icon = entry.beverageType.isAlcoholic
+        ? Icons.local_bar_outlined
+        : Icons.local_drink_outlined;
 
     return Semantics(
       label: '${entry.name ?? 'Drink'}, $volumeText, $timeLabel',
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: iconColor.withAlpha(38),
-          child: Icon(Icons.local_drink_outlined, color: iconColor, size: 22),
+          child: Icon(icon, color: iconColor, size: 22),
         ),
         title: Text(entry.name ?? 'Drink'),
         subtitle: Text('$volumeText · $timeLabel'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Semantics(
-              label: SemanticsLabels.editEntryButton,
-              button: true,
-              excludeSemantics: true,
-              child: IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () => _showEditSheet(context, ref),
-                tooltip: 'Edit',
+        trailing: _isSessionAttached
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Semantics(
+                    label: SemanticsLabels.editEntryButton,
+                    button: true,
+                    excludeSemantics: true,
+                    child: IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditSheet(context, ref),
+                      tooltip: 'Edit',
+                    ),
+                  ),
+                  Semantics(
+                    label: SemanticsLabels.deleteEntryButton,
+                    button: true,
+                    excludeSemantics: true,
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _confirmDelete(context, ref),
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Semantics(
-              label: SemanticsLabels.deleteEntryButton,
-              button: true,
-              excludeSemantics: true,
-              child: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _confirmDelete(context, ref),
-                tooltip: 'Delete',
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -293,4 +293,86 @@ void main() {
           'confirms deletion (S6 spec: soft-delete)',
     );
   });
+
+  // -------------------------------------------------------------------------
+  // 7. Session-attached alcoholic entries are read-only (no Edit/Delete)
+  //
+  // Source: design/user-experience.md §S6: "Tapping a row opens an
+  // edit/delete affordance for that entry, for every entry except an
+  // alcoholic drink attached to a Party Session (partySessionId set) — those
+  // rows are read-only here." A normal (non-session-attached) entry, and an
+  // orphan alcoholic entry (isAlcoholic but no partySessionId), must still
+  // show both actions — the read-only rule keys off partySessionId, not off
+  // beverageType.isAlcoholic alone.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'session-attached alcoholic entry has no Edit/Delete tooltips, while a '
+    'normal entry and an orphan alcoholic entry in the same list still do',
+    (tester) async {
+      final repo = _FakeRepo();
+      final now = DateTime.utc(2026, 6, 23, 12, 0);
+
+      // Alcoholic entry attached to a Party Session — must render read-only.
+      final sessionAttached = DrinkEntry(
+        id: 'e-session',
+        name: 'Session Beer',
+        beverageType: BeverageType.beer, // isAlcoholic == true
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 23, 10, 0),
+        createdAt: now,
+        updatedAt: now,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        partySessionId: 'test-session-1',
+      );
+
+      // Ordinary hydration entry — must remain fully editable/deletable.
+      final normal = _entry(
+        id: 'e-normal',
+        name: 'Plain Water',
+        consumedAt: DateTime.utc(2026, 6, 23, 9, 0),
+      );
+
+      // Orphan alcoholic entry — alcoholic but NOT session-attached
+      // (partySessionId == null). This is the discriminating case: the S6
+      // read-only rule keys off partySessionId, not off isAlcoholic alone
+      // (design/user-experience.md §S6 / design/party-session.md §Logging
+      // alcohol when no session is active — orphan alcoholic entries are
+      // fully editable here). Without this case a regression that made
+      // _isSessionAttached depend only on beverageType.isAlcoholic would
+      // still pass the two-entry version of this test.
+      final orphanAlcoholic = DrinkEntry(
+        id: 'e-orphan',
+        name: 'Orphan Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 23, 8, 0),
+        createdAt: now,
+        updatedAt: now,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        // partySessionId intentionally omitted (null) — orphan.
+      );
+
+      await tester.pumpWidget(
+        _buildScreen(
+          entries: [sessionAttached, normal, orphanAlcoholic],
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      // All three rows render.
+      expect(find.text('Session Beer'), findsOneWidget);
+      expect(find.text('Plain Water'), findsOneWidget);
+      expect(find.text('Orphan Beer'), findsOneWidget);
+
+      // Exactly two Edit and two Delete tooltips exist — one pair each for
+      // the normal entry and the orphan alcoholic entry; none for the
+      // session-attached alcoholic entry, which renders read-only.
+      expect(find.byTooltip('Edit'), findsNWidgets(2));
+      expect(find.byTooltip('Delete'), findsNWidgets(2));
+    },
+  );
 }
