@@ -14,10 +14,12 @@ import 'preset_editor_screen.dart';
 
 /// Result popped by [LogDrinkSheet] on a successful log: the id of the
 /// [DrinkEntry] just written (so a caller-shown toast can wire an Undo
-/// action to the right row), the name it was logged under, and [beverageType]
-/// (an alcoholic entry gets no Undo — party-session.md §Logging from Today
-/// reserves the toast's one action slot for a future "Start session" offer,
-/// not both). Null if the sheet was dismissed without logging.
+/// action to the right row), the name it was logged under, [beverageType],
+/// and whether it attached directly to an already-active Party Session
+/// ([attachedToSession] — party-session.md §Logging from Today). An
+/// alcoholic entry that did **not** attach to a session (a fresh orphan)
+/// gets no Undo — the toast's one action slot instead offers "Start
+/// session". Null if the sheet was dismissed without logging.
 ///
 /// [pendingWrite] resolves when the [DrinkEntry] (and, for the "save and
 /// confirm" / "save as copy" paths, the preset write it depends on) has
@@ -28,6 +30,7 @@ typedef LoggedDrinkResult = ({
   String id,
   String name,
   BeverageType beverageType,
+  bool attachedToSession,
   Future<void> pendingWrite,
 });
 
@@ -84,6 +87,12 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     if (volume == null || volume <= 0) return;
     _submitting = true;
 
+    // party-session.md §Logging from Today: an alcoholic drink attaches to
+    // an already-active session directly, instead of logging as an orphan.
+    final activeSession = preset.beverageType.isAlcoholic
+        ? ref.read(activePartySessionProvider).valueOrNull
+        : null;
+
     // C6: close immediately; write settles in background. The id is
     // generated up front (not returned by logDrink) so it's available for
     // the pop *before* the write completes. `write()` is invoked (not
@@ -93,17 +102,41 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     final entryId = const Uuid().v4();
     final repo = ref.read(drinksRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
-    Future<void> write() => repo.logDrink(
+    Future<void> write() async {
+      if (activeSession != null) {
+        final partyRepo = ref.read(partySessionRepositoryProvider);
+        final resolved = await partyRepo.resolvePrice(
+          session: activeSession,
+          preset: preset,
+        );
+        await partyRepo.logAlcoholicDrink(
+          id: entryId,
+          preset: preset,
+          sessionId: activeSession.id,
+          volumeMl: volume,
+          consumedAt: _consumedAt,
+          priceMinor: resolved.priceMinor,
+          currency: resolved.currency,
+          priceTokens: resolved.priceTokens,
+          tokenValueMinor: resolved.tokenValueMinor,
+          tokenValueCurrency: resolved.tokenValueCurrency,
+        );
+      } else {
+        await repo.logDrink(
           id: entryId,
           preset: preset,
           volumeMl: volume,
           consumedAt: _consumedAt,
         );
+      }
+    }
+
     final pendingWrite = write();
     Navigator.of(context).pop<LoggedDrinkResult>((
       id: entryId,
       name: preset.name,
       beverageType: preset.beverageType,
+      attachedToSession: activeSession != null,
       pendingWrite: pendingWrite,
     ));
     try {
@@ -115,8 +148,9 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     }
   }
 
-  /// Opens the S2 Advanced editor (user-experience.md §S2: "an additional
-  /// editor for name, ABV (alcoholic drinks only), and price").
+  /// Opens the S2 Advanced editor (user-experience.md §S2 Phase 2: "an
+  /// additional editor for `name` and `ABV` (alcoholic drinks only)" — price
+  /// is not set here at log time, for any drink type).
   Future<void> _openAdvanced() async {
     final preset = _selected;
     if (preset == null) return;
@@ -144,6 +178,12 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     if (volume == null || volume <= 0) return;
     _submitting = true;
 
+    // party-session.md §Logging from Today: an alcoholic drink attaches to
+    // an already-active session directly, instead of logging as an orphan.
+    final activeSession = preset.beverageType.isAlcoholic
+        ? ref.read(activePartySessionProvider).valueOrNull
+        : null;
+
     // C6: close immediately; writes settle in background. The id and the
     // effective logged name are both knowable synchronously from [result]
     // (every branch below logs under `result.name`, or
@@ -158,64 +198,81 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
         ? (result.newPresetName ?? result.name)
         : result.name;
     final repo = ref.read(drinksRepositoryProvider);
+    final partyRepo = ref.read(partySessionRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
+
+    // Logs the entry against [loggedPreset] — through the active session
+    // when one is active (resolving that session's price, party-session.md
+    // §Logging an alcoholic drink), or as a plain/orphan entry at
+    // [loggedPreset]'s regular price otherwise. Price is no longer set here
+    // at log time for any drink type (user-experience.md §S2 Phase 2).
+    Future<void> logEntry(DrinkPreset loggedPreset, {String? name}) async {
+      if (activeSession != null) {
+        final resolved = await partyRepo.resolvePrice(
+          session: activeSession,
+          preset: loggedPreset,
+        );
+        await partyRepo.logAlcoholicDrink(
+          id: entryId,
+          preset: loggedPreset,
+          sessionId: activeSession.id,
+          name: name,
+          volumeMl: volume,
+          abvPercent: result.abvPercent,
+          consumedAt: _consumedAt,
+          priceMinor: resolved.priceMinor,
+          currency: resolved.currency,
+          priceTokens: resolved.priceTokens,
+          tokenValueMinor: resolved.tokenValueMinor,
+          tokenValueCurrency: resolved.tokenValueCurrency,
+        );
+      } else {
+        await repo.logDrink(
+          id: entryId,
+          preset: loggedPreset,
+          name: name,
+          volumeMl: volume,
+          abvPercent: result.abvPercent,
+          consumedAt: _consumedAt,
+        );
+      }
+    }
 
     Future<void> write() async {
       switch (result.action) {
         case _AdvancedAction.confirmOnly:
           // "Confirm — logs the drink with the entered values for this
           // entry only. The underlying preset is unchanged."
-          await repo.logDrink(
-            id: entryId,
-            preset: preset,
-            name: result.name,
-            volumeMl: volume,
-            abvPercent: result.abvPercent,
-            // Explicit Optional.value (not the Optional.absent default) so
-            // a cleared price field logs this entry with no price instead
-            // of silently falling back to the preset's stored price.
-            priceMinor: Optional.value(result.priceMinor),
-            currency: Optional.value(result.currency),
-            consumedAt: _consumedAt,
-          );
+          await logEntry(preset, name: result.name);
         case _AdvancedAction.saveAndConfirm:
           // "Save and confirm — writes the advanced values back to the
-          // preset (overwriting it), then logs the drink."
+          // preset (overwriting it), then logs the drink." Price is left
+          // untouched (Optional.absent, not Optional.value(null)) — it's no
+          // longer editable from this editor.
           await repo.updatePreset(
             id: preset.id,
             name: result.name,
             abvPercent: Optional.value(result.abvPercent),
-            regularPriceMinor: Optional.value(result.priceMinor),
-            regularCurrency: Optional.value(result.currency),
           );
           final updated = await repo.getPresetById(preset.id) ?? preset;
-          await repo.logDrink(
-            id: entryId,
-            preset: updated,
-            volumeMl: volume,
-            consumedAt: _consumedAt,
-          );
+          await logEntry(updated);
         case _AdvancedAction.saveAsCopyAndConfirm:
           // "Save as copy and confirm — creates a new preset with the
           // advanced values ..., then logs the drink against the new
-          // preset."
+          // preset." The copy inherits the source preset's price — price
+          // isn't one of the advanced values edited here anymore.
           final copy = await repo.createPreset(
             name: result.newPresetName ?? result.name,
             beverageType: preset.beverageType,
             volumeMl: volume,
             abvPercent: result.abvPercent,
-            regularPriceMinor: result.priceMinor,
-            regularCurrency: result.currency,
+            regularPriceMinor: preset.regularPriceMinor,
+            regularCurrency: preset.regularCurrency,
             iconKey: preset.iconKey,
             iconColor: preset.iconColor,
             sortOrder: await repo.nextSortOrder(),
           );
-          await repo.logDrink(
-            id: entryId,
-            preset: copy,
-            volumeMl: volume,
-            consumedAt: _consumedAt,
-          );
+          await logEntry(copy);
       }
     }
 
@@ -224,6 +281,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
       id: entryId,
       name: loggedName,
       beverageType: preset.beverageType,
+      attachedToSession: activeSession != null,
       pendingWrite: pendingWrite,
     ));
     try {
@@ -558,7 +616,7 @@ class _TimeButton extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// S2 Advanced editor — name, ABV (alcoholic only), price
+// S2 Advanced editor — name, ABV (alcoholic only)
 // ---------------------------------------------------------------------------
 
 /// The three exit paths of the Advanced editor (user-experience.md §S2).
@@ -572,25 +630,24 @@ class _AdvancedEditResult {
     required this.action,
     required this.name,
     this.abvPercent,
-    this.priceMinor,
-    this.currency,
     this.newPresetName,
   });
 
   final _AdvancedAction action;
   final String name;
   final double? abvPercent;
-  final int? priceMinor;
-  final String? currency;
 
   /// User-confirmed name for the new preset — only set for
   /// [_AdvancedAction.saveAsCopyAndConfirm].
   final String? newPresetName;
 }
 
-/// user-experience.md §S2 Advanced editor: "an additional editor for name,
-/// ABV (alcoholic drinks only), and price ... the icon and colour are not
-/// editable here."
+/// user-experience.md §S2 Advanced editor: "an additional editor for `name`
+/// and `ABV` (alcoholic drinks only) ... the icon and colour are not
+/// editable here. Price is not set here at log time, for any drink type —
+/// the entry logs at the preset's regular price ... It can still be
+/// overridden afterwards on a per-entry basis" (from S6, or S9 for
+/// session-attached alcoholic drinks).
 class _AdvancedEditorSheet extends ConsumerStatefulWidget {
   const _AdvancedEditorSheet({required this.preset});
 
@@ -604,7 +661,6 @@ class _AdvancedEditorSheet extends ConsumerStatefulWidget {
 class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _abvCtrl;
-  late final TextEditingController _priceCtrl;
   String? _nameError;
 
   bool get _isAlcoholic => widget.preset.beverageType.isAlcoholic;
@@ -615,11 +671,6 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
     final preset = widget.preset;
     _nameCtrl = TextEditingController(text: preset.name);
     _abvCtrl = TextEditingController(text: preset.abvPercent?.toString() ?? '');
-    _priceCtrl = TextEditingController(
-      text: preset.regularPriceMinor != null
-          ? (preset.regularPriceMinor! / 100).toStringAsFixed(2)
-          : '',
-    );
     _nameError = _validateName(_nameCtrl.text);
     _nameCtrl.addListener(_onNameChanged);
   }
@@ -629,7 +680,6 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
     _nameCtrl.removeListener(_onNameChanged);
     _nameCtrl.dispose();
     _abvCtrl.dispose();
-    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -648,26 +698,11 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
       final abv = double.tryParse(_abvCtrl.text);
       if (abv == null || abv < 0) return false;
     }
-    if (_priceCtrl.text.isNotEmpty) {
-      final price = double.tryParse(_priceCtrl.text);
-      if (price == null || price < 0) return false;
-    }
     return true;
   }
 
   double? get _abvPercent =>
       _isAlcoholic ? double.tryParse(_abvCtrl.text) : null;
-
-  int? get _priceMinor {
-    final major = double.tryParse(_priceCtrl.text);
-    return major == null ? null : (major * 100).round();
-  }
-
-  String? get _currency {
-    if (_priceMinor == null) return null;
-    return widget.preset.regularCurrency ??
-        ref.read(userPreferencesProvider).valueOrNull?.currency;
-  }
 
   Future<void> _finish(_AdvancedAction action) async {
     if (!_canConfirm) return;
@@ -682,8 +717,6 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
         action: action,
         name: _nameCtrl.text,
         abvPercent: _abvPercent,
-        priceMinor: _priceMinor,
-        currency: _currency,
         newPresetName: newPresetName,
       ),
     );
@@ -782,19 +815,6 @@ class _AdvancedEditorSheetState extends ConsumerState<_AdvancedEditorSheet> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  TextField(
-                    key: const Key('advanced_editor_price_field'),
-                    controller: _priceCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'Price (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
                 ],
               ),
             ),

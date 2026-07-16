@@ -71,12 +71,30 @@ class _FakePartySessionRepo extends PartySessionRepository {
   _FakePartySessionRepo() : super(AppDatabase(NativeDatabase.memory()));
 
   final List<({String sessionId, MealSize size})> addMealCalls = [];
-  final List<({String sessionId, String presetId})> logAlcoholicDrinkCalls = [];
+  final List<
+      ({
+        String sessionId,
+        String presetId,
+        String? name,
+        int? priceMinor,
+        String? currency,
+      })> logAlcoholicDrinkCalls = [];
   final List<DateTime?> startSessionCalls = [];
 
   /// Deterministic id so tests can assert on it without reading it back off
   /// a returned value threaded through several awaits.
   String nextSessionId = 'new-session-1';
+
+  /// Sentinel session-wide resolved price — deliberately distinct from any
+  /// price a test enters into [AlcoholicDrinkSelection.priceMinor], so
+  /// item-6 tests can tell "the entered price was used" apart from "this
+  /// sentinel leaked through" (i.e. that a one-off entered price correctly
+  /// bypasses [resolvePrice] — party_screen.dart `_handleLogAlcohol` doc
+  /// comment).
+  static const sentinelResolvedPrice = ResolvedDrinkPrice(
+    priceMinor: 999999,
+    currency: 'SEK',
+  );
 
   /// Tracks the most recently started fake session so [getSessionById] (used
   /// by the start-session flow to refresh its in-memory copy after the
@@ -116,9 +134,18 @@ class _FakePartySessionRepo extends PartySessionRepository {
   }
 
   @override
+  Future<ResolvedDrinkPrice> resolvePrice({
+    required PartySession session,
+    required DrinkPreset preset,
+  }) async =>
+      sentinelResolvedPrice;
+
+  @override
   Future<DrinkEntry> logAlcoholicDrink({
     required DrinkPreset preset,
     required String sessionId,
+    String? id,
+    String? name,
     int? volumeMl,
     double? abvPercent,
     DateTime? consumedAt,
@@ -129,11 +156,17 @@ class _FakePartySessionRepo extends PartySessionRepository {
     String? tokenValueCurrency,
     DateTime? now,
   }) async {
-    logAlcoholicDrinkCalls.add((sessionId: sessionId, presetId: preset.id));
+    logAlcoholicDrinkCalls.add((
+      sessionId: sessionId,
+      presetId: preset.id,
+      name: name,
+      priceMinor: priceMinor,
+      currency: currency,
+    ));
     final at = now ?? DateTime.now();
     return DrinkEntry(
-      id: 'fake-logged-entry',
-      name: preset.name,
+      id: id ?? 'fake-logged-entry',
+      name: name ?? preset.name,
       beverageType: preset.beverageType,
       volumeMl: volumeMl ?? preset.volumeMl,
       abvPercent: abvPercent ?? preset.abvPercent,
@@ -167,7 +200,14 @@ class _FakePartySessionRepo extends PartySessionRepository {
 class _FakeDrinksRepo extends DrinksRepository {
   _FakeDrinksRepo() : super(AppDatabase(NativeDatabase.memory()));
 
-  final List<({String presetId, double? abvPercent})> logDrinkCalls = [];
+  final List<
+      ({
+        String presetId,
+        double? abvPercent,
+        String? name,
+        Optional<int?> priceMinor,
+        Optional<String?> currency,
+      })> logDrinkCalls = [];
 
   @override
   Future<String> logDrink({
@@ -180,7 +220,13 @@ class _FakeDrinksRepo extends DrinksRepository {
     Optional<String?> currency = const Optional.absent(),
     DateTime? consumedAt,
   }) async {
-    logDrinkCalls.add((presetId: preset.id, abvPercent: abvPercent));
+    logDrinkCalls.add((
+      presetId: preset.id,
+      abvPercent: abvPercent,
+      name: name,
+      priceMinor: priceMinor,
+      currency: currency,
+    ));
     return id ?? 'fake-entry-id';
   }
 }
@@ -648,7 +694,18 @@ void main() {
 
         expect(
           repo.logAlcoholicDrinkCalls,
-          contains((sessionId: session.id, presetId: _beerPreset.id)),
+          contains((
+            sessionId: session.id,
+            presetId: _beerPreset.id,
+            // Name field left at its pre-filled default (the preset's own
+            // name) — party_log_drink_sheet.dart pre-fills `_nameCtrl` from
+            // the picked preset.
+            name: 'Test Beer',
+            // Price field left blank — falls through to
+            // PartySessionRepository.resolvePrice() (the fake's sentinel).
+            priceMinor: _FakePartySessionRepo.sentinelResolvedPrice.priceMinor,
+            currency: _FakePartySessionRepo.sentinelResolvedPrice.currency,
+          )),
         );
 
         // Meal prompt (party_screen.dart _showMealPrompt).
@@ -791,7 +848,13 @@ void main() {
         expect(repo.startSessionCalls, hasLength(1));
         expect(
           repo.logAlcoholicDrinkCalls,
-          contains((sessionId: 'started-2', presetId: _beerPreset.id)),
+          contains((
+            sessionId: 'started-2',
+            presetId: _beerPreset.id,
+            name: 'Test Beer',
+            priceMinor: _FakePartySessionRepo.sentinelResolvedPrice.priceMinor,
+            currency: _FakePartySessionRepo.sentinelResolvedPrice.currency,
+          )),
         );
 
         // The per-drink meal prompt fires after the drink is logged into
@@ -835,7 +898,15 @@ void main() {
 
         expect(
           drinksRepo.logDrinkCalls,
-          contains((presetId: _beerPreset.id, abvPercent: 5.0)),
+          contains((
+            presetId: _beerPreset.id,
+            abvPercent: 5.0,
+            name: 'Test Beer',
+            // Price field left blank -> Optional.absent(), not an explicit
+            // clear (party_screen.dart _logOrphanDrink doc comment).
+            priceMinor: const Optional<int?>.absent(),
+            currency: const Optional<String?>.absent(),
+          )),
         );
         expect(repo.startSessionCalls, isEmpty);
         expect(repo.logAlcoholicDrinkCalls, isEmpty);
@@ -885,8 +956,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // _startPartySessionFlow's under-18 dialog (no actions, dismissed by
-        // tapping the barrier) — party_screen.dart's `_isUnder18` gate.
+        // startPartySessionFlow's under-18 dialog (no actions, dismissed by
+        // tapping the barrier) — party_session_flows.dart's `isUnder18` gate.
         expect(
           find.text('Party Mode requires you to be 18 or older'),
           findsOneWidget,
@@ -899,12 +970,240 @@ void main() {
         // "Don't start a session" branch.
         expect(
           drinksRepo.logDrinkCalls,
-          contains((presetId: _beerPreset.id, abvPercent: 5.0)),
+          contains((
+            presetId: _beerPreset.id,
+            abvPercent: 5.0,
+            name: 'Test Beer',
+            priceMinor: const Optional<int?>.absent(),
+            currency: const Optional<String?>.absent(),
+          )),
         );
         expect(repo.startSessionCalls, isEmpty);
         expect(repo.logAlcoholicDrinkCalls, isEmpty);
         expect(find.text('Did you eat recently?'), findsNothing);
         expect(find.text('Drink logged'), findsOneWidget);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 3c. Name/price override entered in the Party log-drink sheet (issue #85)
+  // -------------------------------------------------------------------------
+
+  group(
+      'Name/price override entered in PartyLogDrinkSheet (party-session.md '
+      '§Logging an alcoholic drink (during a session))', () {
+    testWidgets(
+      'active session (useSessionPrices on): an entered name+price is used '
+      'verbatim, bypassing PartySessionRepository.resolvePrice() entirely '
+      '(party_screen.dart _handleLogAlcohol doc: "takes priority over ... '
+      'the session-wide PartySessionPrice table")',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = PartySession(
+          id: 's1',
+          startedAt: _workedConsumedAt,
+          useSessionPrices: true,
+          createdAt: _workedConsumedAt,
+          updatedAt: _workedConsumedAt,
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        // PartyLogDrinkSheet's confirm phase (Name/Volume/ABV/Price/Time) is
+        // taller than the default 800x600 test surface, and PartyScreen
+        // itself sits in the tree behind the modal — widen the surface so
+        // every field is on-screen without needing to scroll a specific
+        // (fragile-to-target) Scrollable among several.
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('party_log_drink_name_field')),
+          'Party Beer',
+        );
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('party_log_drink_price_field')),
+          '6.00',
+        );
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+        await tester.pumpAndSettle();
+
+        expect(repo.logAlcoholicDrinkCalls, hasLength(1));
+        final call = repo.logAlcoholicDrinkCalls.single;
+        expect(call.name, 'Party Beer');
+        // The entered price (600/EUR), NOT the fake's sentinel
+        // resolvePrice() value — proves the one-off override bypassed
+        // resolvePrice() rather than falling through to it.
+        expect(call.priceMinor, 600);
+        expect(call.currency, 'EUR');
+        expect(
+          call.priceMinor,
+          isNot(_FakePartySessionRepo.sentinelResolvedPrice.priceMinor),
+        );
+      },
+    );
+
+    testWidgets(
+      'active session: leaving the price field blank still resolves via '
+      'the normal session-price/regular-price path (regression — must not '
+      'break existing pricing tests)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = PartySession(
+          id: 's1',
+          startedAt: _workedConsumedAt,
+          useSessionPrices: true,
+          createdAt: _workedConsumedAt,
+          updatedAt: _workedConsumedAt,
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+        // Price field left blank — only the (required) name stays at its
+        // pre-filled default.
+        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+        await tester.pumpAndSettle();
+
+        expect(repo.logAlcoholicDrinkCalls, hasLength(1));
+        final call = repo.logAlcoholicDrinkCalls.single;
+        expect(
+          call.priceMinor,
+          _FakePartySessionRepo.sentinelResolvedPrice.priceMinor,
+        );
+        expect(
+          call.currency,
+          _FakePartySessionRepo.sentinelResolvedPrice.currency,
+        );
+      },
+    );
+
+    testWidgets(
+      'orphan path (no active session): an entered name+price is honored on '
+      'the logged entry',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final drinksRepo = _FakeDrinksRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        // See the "used verbatim" test above for why the surface is widened.
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            drinksRepo: drinksRepo,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('party_log_drink_name_field')),
+          'Orphan Beer',
+        );
+        await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('party_log_drink_price_field')),
+          '4.50',
+        );
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Start a Party Session first?'), findsOneWidget);
+        await tester.tap(find.text("Don't start a session"));
+        await tester.pumpAndSettle();
+
+        expect(drinksRepo.logDrinkCalls, hasLength(1));
+        final call = drinksRepo.logDrinkCalls.single;
+        expect(call.name, 'Orphan Beer');
+        expect(call.priceMinor, const Optional.value(450));
+        expect(call.currency, const Optional.value('EUR'));
+      },
+    );
+
+    testWidgets(
+      'orphan path: leaving name/price at defaults falls back to the '
+      'preset\'s own name and regular price (Optional.absent, not an '
+      'explicit clear)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final drinksRepo = _FakeDrinksRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            drinksRepo: drinksRepo,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Start a Party Session first?'), findsOneWidget);
+        await tester.tap(find.text("Don't start a session"));
+        await tester.pumpAndSettle();
+
+        expect(drinksRepo.logDrinkCalls, hasLength(1));
+        final call = drinksRepo.logDrinkCalls.single;
+        expect(call.name, 'Test Beer');
+        expect(call.priceMinor, const Optional<int?>.absent());
+        expect(call.currency, const Optional<String?>.absent());
       },
     );
   });

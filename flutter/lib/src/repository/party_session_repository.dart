@@ -244,6 +244,13 @@ class PartySessionRepository {
   /// [preset.beverageType] must be alcoholic (party-session.md: alcoholic
   /// types are "only logged during an active Party Session").
   ///
+  /// [id] lets a caller generate the entry's id up front (C6: pop a sheet
+  /// before the write settles, e.g. [LogDrinkSheet]'s advanced-editor
+  /// confirm-only path attaching to an active session) — defaults to a fresh
+  /// uuid, mirroring [DrinksRepository.logDrink]. [name] is a one-off,
+  /// this-entry-only override (party-session.md §Logging an alcoholic drink
+  /// (during a session)); defaults to [preset.name] when omitted.
+  ///
   /// Money and tokens are mutually exclusive per drink (data-model.md
   /// §DrinkEntry): pass at most one of ([priceMinor] + [currency]) or
   /// ([priceTokens] + optionally [tokenValueMinor] + [tokenValueCurrency]).
@@ -252,6 +259,8 @@ class PartySessionRepository {
   Future<DrinkEntry> logAlcoholicDrink({
     required DrinkPreset preset,
     required String sessionId,
+    String? id,
+    String? name,
     int? volumeMl,
     double? abvPercent,
     DateTime? consumedAt,
@@ -268,6 +277,13 @@ class PartySessionRepository {
         'preset.beverageType',
         'Must be alcoholic to log into a Party Session',
       );
+    }
+    if (name != null) {
+      final result = validatePresetName(name);
+      if (!result.isValid) {
+        throw ArgumentError.value(name, 'name', result.error);
+      }
+      name = normalizeNfc(name);
     }
     if (priceMinor != null && priceTokens != null) {
       throw ArgumentError(
@@ -292,12 +308,13 @@ class PartySessionRepository {
 
     final nowUtc = (now ?? DateTime.now()).toUtc();
     final consumedAtUtc = (consumedAt ?? nowUtc).toUtc();
-    final id = _uuid.v4();
+    final entryId = id ?? _uuid.v4();
+    final resolvedName = name ?? preset.name;
     final resolvedAbv = abvPercent ?? preset.abvPercent;
     await _db.insertDrinkEntry(
       DrinkEntriesCompanion.insert(
-        id: id,
-        name: Value(preset.name),
+        id: entryId,
+        name: Value(resolvedName),
         beverageType: preset.beverageType.stored,
         volumeMl: volumeMl ?? preset.volumeMl,
         abvPercent: Value(resolvedAbv),
@@ -316,8 +333,8 @@ class PartySessionRepository {
       ),
     );
     return DrinkEntry(
-      id: id,
-      name: preset.name,
+      id: entryId,
+      name: resolvedName,
       beverageType: preset.beverageType,
       volumeMl: volumeMl ?? preset.volumeMl,
       abvPercent: resolvedAbv,

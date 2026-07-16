@@ -278,7 +278,7 @@ flowchart TD
 ### Flow 3 — Detailed log
 
 1. User opens the app and taps "Log drink".
-2. User picks a preset, optionally tweaks volume / time, optionally opens the Advanced editor for name / ABV / price.
+2. User picks a preset, optionally tweaks volume / time, optionally opens the Advanced editor for name / ABV.
 3. User confirms; the drink is added to today's list and progress updates.
 
 ```mermaid
@@ -292,7 +292,7 @@ flowchart TD
     G --> H[Adjust volume / time inline]
     H --> I{Open Advanced?}
     I -->|No| J[Tap Confirm]
-    I -->|Yes| K[Advanced editor: name, ABV, price]
+    I -->|Yes| K[Advanced editor: name, ABV]
     K --> L{Choose exit path}
     L -->|Back| G
     L -->|Confirm| J

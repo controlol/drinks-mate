@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,20 +7,34 @@ import '../models/drink_preset.dart';
 import '../repository/providers.dart';
 import '../utils/color_utils.dart';
 
-/// A confirmed alcoholic-drink pick from [PartyLogDrinkSheet] — volume and
-/// ABV may have been overridden from the preset's defaults.
+/// A confirmed alcoholic-drink pick from [PartyLogDrinkSheet] — volume, ABV,
+/// name and price may have been overridden from the preset's defaults.
+///
+/// [name] and [priceMinor]/[currency] are one-off, this-entry-only
+/// overrides (party-session.md §Logging an alcoholic drink (during a
+/// session)) — they never write back to the preset or to the session-wide
+/// `PartySessionPrice` table. [priceMinor] is null when the user left the
+/// price field blank, meaning "resolve the usual way" (session price, else
+/// the preset's regular price) — the caller decides that resolution, not
+/// this sheet.
 class AlcoholicDrinkSelection {
   const AlcoholicDrinkSelection({
     required this.preset,
+    required this.name,
     required this.volumeMl,
     required this.abvPercent,
     required this.consumedAt,
+    this.priceMinor,
+    this.currency,
   });
 
   final DrinkPreset preset;
+  final String name;
   final int volumeMl;
   final double abvPercent;
   final DateTime consumedAt;
+  final int? priceMinor;
+  final String? currency;
 }
 
 /// Party Mode's log-drink sheet, filtered to alcoholic presets
@@ -41,19 +56,26 @@ class _PartyLogDrinkSheetState extends ConsumerState<PartyLogDrinkSheet> {
   DrinkPreset? _selected;
   late TextEditingController _volumeCtrl;
   late TextEditingController _abvCtrl;
+  late TextEditingController _nameCtrl;
+  late TextEditingController _priceCtrl;
   DateTime _consumedAt = DateTime.now();
+  String? _nameError;
 
   @override
   void initState() {
     super.initState();
     _volumeCtrl = TextEditingController();
     _abvCtrl = TextEditingController();
+    _nameCtrl = TextEditingController();
+    _priceCtrl = TextEditingController();
   }
 
   @override
   void dispose() {
     _volumeCtrl.dispose();
     _abvCtrl.dispose();
+    _nameCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -62,11 +84,38 @@ class _PartyLogDrinkSheetState extends ConsumerState<PartyLogDrinkSheet> {
       _selected = preset;
       _volumeCtrl.text = preset.volumeMl.toString();
       _abvCtrl.text = preset.abvPercent?.toString() ?? '';
+      _nameCtrl.text = preset.name;
+      _priceCtrl.text = '';
+      _nameError = null;
       _consumedAt = DateTime.now();
     });
   }
 
   void _back() => setState(() => _selected = null);
+
+  void _onNameChanged(String value) {
+    final result = value.isEmpty
+        ? const UsernameValidation.invalid('Name is required')
+        : validatePresetName(value);
+    setState(() => _nameError = result.isValid ? null : result.error);
+  }
+
+  /// One-off, this-entry-only price override (party-session.md §Logging an
+  /// alcoholic drink (during a session)) — null when the field is left
+  /// blank, meaning the caller should resolve the price the usual way
+  /// instead (session price, else the preset's regular price).
+  int? get _priceMinor {
+    if (_priceCtrl.text.isEmpty) return null;
+    final major = double.tryParse(_priceCtrl.text);
+    return major == null ? null : (major * 100).round();
+  }
+
+  String? get _currency {
+    final preset = _selected;
+    if (_priceMinor == null || preset == null) return null;
+    return preset.regularCurrency ??
+        ref.read(userPreferencesProvider).valueOrNull?.currency;
+  }
 
   void _confirm() {
     final preset = _selected;
@@ -74,12 +123,20 @@ class _PartyLogDrinkSheetState extends ConsumerState<PartyLogDrinkSheet> {
     final volume = int.tryParse(_volumeCtrl.text);
     final abv = double.tryParse(_abvCtrl.text);
     if (volume == null || volume <= 0 || abv == null || abv <= 0) return;
+    if (_nameError != null) return;
+    if (_priceCtrl.text.isNotEmpty) {
+      final price = double.tryParse(_priceCtrl.text);
+      if (price == null || price < 0) return;
+    }
     Navigator.of(context).pop(
       AlcoholicDrinkSelection(
         preset: preset,
+        name: _nameCtrl.text,
         volumeMl: volume,
         abvPercent: abv,
         consumedAt: _consumedAt,
+        priceMinor: _priceMinor,
+        currency: _currency,
       ),
     );
   }
@@ -100,7 +157,11 @@ class _PartyLogDrinkSheetState extends ConsumerState<PartyLogDrinkSheet> {
               preset: _selected!,
               volumeCtrl: _volumeCtrl,
               abvCtrl: _abvCtrl,
+              nameCtrl: _nameCtrl,
+              nameError: _nameError,
+              priceCtrl: _priceCtrl,
               consumedAt: _consumedAt,
+              onNameChanged: _onNameChanged,
               onTimeChanged: (dt) => setState(() => _consumedAt = dt),
               onBack: _back,
               onConfirm: _confirm,
@@ -163,7 +224,11 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
     required this.preset,
     required this.volumeCtrl,
     required this.abvCtrl,
+    required this.nameCtrl,
+    required this.nameError,
+    required this.priceCtrl,
     required this.consumedAt,
+    required this.onNameChanged,
     required this.onTimeChanged,
     required this.onBack,
     required this.onConfirm,
@@ -172,7 +237,11 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
   final DrinkPreset preset;
   final TextEditingController volumeCtrl;
   final TextEditingController abvCtrl;
+  final TextEditingController nameCtrl;
+  final String? nameError;
+  final TextEditingController priceCtrl;
   final DateTime consumedAt;
+  final ValueChanged<String> onNameChanged;
   final ValueChanged<DateTime> onTimeChanged;
   final VoidCallback onBack;
   final VoidCallback onConfirm;
@@ -201,6 +270,18 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               const SizedBox(height: 8),
+              Text('Name', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('party_log_drink_name_field'),
+                controller: nameCtrl,
+                onChanged: onNameChanged,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  errorText: nameError,
+                ),
+              ),
+              const SizedBox(height: 20),
               Text(
                 'Volume (ml)',
                 style: Theme.of(context).textTheme.labelLarge,
@@ -232,6 +313,22 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
+              Text(
+                'Price (optional, this entry only)',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('party_log_drink_price_field'),
+                controller: priceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 20),
               Text('Time', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 8),
               _TimeButton(consumedAt: consumedAt, onChanged: onTimeChanged),
@@ -246,7 +343,7 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
             MediaQuery.of(context).padding.bottom + 16,
           ),
           child: FilledButton(
-            onPressed: onConfirm,
+            onPressed: nameError == null ? onConfirm : null,
             child: const Text('Confirm'),
           ),
         ),

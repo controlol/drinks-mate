@@ -23,10 +23,14 @@ import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
+import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/optional.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
+import 'package:drinks_mate/src/models/user_profile.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/preferences_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/today_screen.dart';
@@ -75,6 +79,94 @@ class _FakePreferencesRepo extends PreferencesRepository {
   @override
   Future<void> updateDrinkSortMode(PresetSortMode mode) async {
     updateDrinkSortModeCalls.add(mode);
+  }
+}
+
+/// Records logAlcoholicDrink/startSession calls instead of touching the DB —
+/// mirrors party_screen_test.dart's `_FakePartySessionRepo`.
+class _FakePartySessionRepo extends PartySessionRepository {
+  _FakePartySessionRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<({String sessionId, String presetId})> logAlcoholicDrinkCalls = [];
+  final List<DateTime?> startSessionCalls = [];
+
+  /// Deterministic id so tests can assert on it without reading it back off
+  /// a returned value threaded through several awaits.
+  String nextSessionId = 'new-session-1';
+
+  /// Tracks the most recently started fake session so [getSessionById] (used
+  /// by the start-session flow to refresh its in-memory copy after the
+  /// pricing prompt) can resolve it without touching the real DB.
+  PartySession? _lastSession;
+
+  @override
+  Future<PartySession> startSession({
+    DateTime? startedAt,
+    bool useSessionPrices = false,
+    String? tokenName,
+    int? tokenValueMinor,
+    String? tokenValueCurrency,
+    DateTime? now,
+  }) async {
+    startSessionCalls.add(startedAt);
+    final at = now ?? DateTime.now();
+    final session = PartySession(
+      id: nextSessionId,
+      startedAt: startedAt ?? at,
+      useSessionPrices: useSessionPrices,
+      tokenName: tokenName,
+      tokenValueMinor: tokenValueMinor,
+      tokenValueCurrency: tokenValueCurrency,
+      createdAt: at,
+      updatedAt: at,
+    );
+    _lastSession = session;
+    return session;
+  }
+
+  @override
+  Future<PartySession> getSessionById(String id) async {
+    final session = _lastSession;
+    if (session != null && session.id == id) return session;
+    throw StateError('PartySession $id not found.');
+  }
+
+  @override
+  Future<ResolvedDrinkPrice> resolvePrice({
+    required PartySession session,
+    required DrinkPreset preset,
+  }) async =>
+      const ResolvedDrinkPrice();
+
+  @override
+  Future<DrinkEntry> logAlcoholicDrink({
+    required DrinkPreset preset,
+    required String sessionId,
+    String? id,
+    String? name,
+    int? volumeMl,
+    double? abvPercent,
+    DateTime? consumedAt,
+    int? priceMinor,
+    String? currency,
+    int? priceTokens,
+    int? tokenValueMinor,
+    String? tokenValueCurrency,
+    DateTime? now,
+  }) async {
+    logAlcoholicDrinkCalls.add((sessionId: sessionId, presetId: preset.id));
+    final at = now ?? DateTime.now();
+    return DrinkEntry(
+      id: id ?? 'fake-party-entry-id',
+      name: name ?? preset.name,
+      beverageType: preset.beverageType,
+      volumeMl: volumeMl ?? preset.volumeMl,
+      abvPercent: abvPercent ?? preset.abvPercent,
+      partySessionId: sessionId,
+      consumedAt: consumedAt ?? at,
+      createdAt: at,
+      updatedAt: at,
+    );
   }
 }
 
@@ -128,6 +220,21 @@ UserPreferences _makePrefs({
   );
 }
 
+final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+/// 18+ profile (party-session.md §Starting a session gate) — used by the
+/// "Start session" toast-action tests, which exercise
+/// `startPartySessionFlow`'s under-18 check.
+UserProfile _makeAdultProfile() => UserProfile(
+      id: 'profile-1',
+      gender: 'male',
+      weightKg: 75,
+      heightCm: 180,
+      birthDate: '1996-06-01',
+      createdAt: _epoch,
+      updatedAt: _epoch,
+    );
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -138,11 +245,22 @@ Widget _buildTodayScreen({
   required DrinksRepository drinksRepo,
   required PreferencesRepository preferencesRepo,
   Map<String, PresetUsageStats> usage = const {},
+  // party-session.md §Logging from Today (issue #85): an active session is
+  // null by default — most existing tests never touch Party Session state.
+  PartySession? activeSession,
+  PartySessionRepository? partyRepo,
+  UserProfile? profile,
 }) {
   return ProviderScope(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(drinksRepo),
       preferencesRepositoryProvider.overrideWithValue(preferencesRepo),
+      if (partyRepo != null)
+        partySessionRepositoryProvider.overrideWithValue(partyRepo),
+      activePartySessionProvider.overrideWith(
+        (_) => Stream.value(activeSession),
+      ),
+      userProfileProvider.overrideWith((_) => Stream.value(profile)),
       visiblePresetsProvider.overrideWith(
         (_) => Stream.value(visiblePresets),
       ),
@@ -157,6 +275,73 @@ Widget _buildTodayScreen({
     ],
     child: const MaterialApp(home: TodayScreen()),
   );
+}
+
+/// Same overrides as [_buildTodayScreen], but returns the underlying
+/// [ProviderContainer] with `userProfileProvider`/`activePartySessionProvider`
+/// pre-warmed (`.future` awaited) before any pump.
+///
+/// Needed only by tests that exercise `_quickLog`'s `ref.read(...)` of these
+/// two providers (today_screen.dart, issue #85): in the real app both are
+/// already warm by the time Today is interactive, because [AppShell]'s
+/// `IndexedStack` builds `PartyScreen` (which `ref.watch`es both) alongside
+/// `TodayScreen` from app start (shell.dart doc comment: "keeps all three
+/// screens alive"). This test pumps `TodayScreen` in isolation, so without
+/// pre-warming, the very first `ref.read` on a freshly-created StreamProvider
+/// observes `AsyncLoading` (valueOrNull == null) until a microtask flushes —
+/// which is too late for `_quickLog`'s synchronous-looking `ref.read(...)`
+/// checks and `startPartySessionFlow`'s `if (profile == null) return null;`
+/// guard.
+Future<ProviderContainer> _buildWarmContainer({
+  required List<DrinkPreset> visiblePresets,
+  required UserPreferences prefs,
+  required DrinksRepository drinksRepo,
+  required PreferencesRepository preferencesRepo,
+  PartySession? activeSession,
+  PartySessionRepository? partyRepo,
+  UserProfile? profile,
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      drinksRepositoryProvider.overrideWithValue(drinksRepo),
+      preferencesRepositoryProvider.overrideWithValue(preferencesRepo),
+      if (partyRepo != null)
+        partySessionRepositoryProvider.overrideWithValue(partyRepo),
+      activePartySessionProvider.overrideWith(
+        (_) => Stream.value(activeSession),
+      ),
+      userProfileProvider.overrideWith((_) => Stream.value(profile)),
+      visiblePresetsProvider.overrideWith(
+        (_) => Stream.value(visiblePresets),
+      ),
+      presetUsageStatsProvider.overrideWith(
+        (_) => Stream.value(const <String, PresetUsageStats>{}),
+      ),
+      todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
+      sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
+      sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),
+      userPreferencesProvider.overrideWith((_) => Stream.value(prefs)),
+      goalCelebrationGuardProvider.overrideWithValue(
+        InMemoryGoalCelebrationGuard(),
+      ),
+    ],
+  );
+  await container.read(userProfileProvider.future);
+  await container.read(activePartySessionProvider.future);
+  return container;
+}
+
+Future<void> _pumpTodayScreen(
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: TodayScreen()),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -249,35 +434,149 @@ void main() {
     },
   );
 
-  testWidgets(
-    'tapping an alcoholic preset tile shows a Logged toast with no Undo '
-    '(party-session.md §Logging from Today reserves that toast\'s one '
-    'action slot for a future "Start session" offer, not Undo — issue #80)',
-    (tester) async {
-      final preset = _preset(
-        'p1',
-        'Beer',
-        sortOrder: 1,
-        beverageType: BeverageType.beer,
-      );
-      final drinksRepo = _FakeDrinksRepo();
-      await tester.pumpWidget(
-        _buildTodayScreen(
+  // -------------------------------------------------------------------------
+  // 2b. Alcoholic quick-log — Party Session attach/orphan branching (issue
+  // #85: today_screen.dart's _quickLog checks activePartySessionProvider
+  // before logging an alcoholic preset).
+  // -------------------------------------------------------------------------
+
+  group(
+      'Alcoholic quick-log — Party Session branching (party-session.md '
+      '§Logging from Today)', () {
+    testWidgets(
+      'no active session: logs via DrinksRepository as an orphan, toast '
+      'shows "Start session" (not Undo)',
+      (tester) async {
+        final preset = _preset(
+          'p1',
+          'Beer',
+          sortOrder: 1,
+          beverageType: BeverageType.beer,
+        );
+        final drinksRepo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildWarmContainer(
           visiblePresets: [preset],
           prefs: _makePrefs(),
           drinksRepo: drinksRepo,
           preferencesRepo: _FakePreferencesRepo(),
-        ),
-      );
-      await tester.pumpAndSettle();
+          partyRepo: partyRepo,
+          activeSession: null,
+        );
+        addTearDown(container.dispose);
+        await _pumpTodayScreen(tester, container);
 
-      await tester.tap(find.text('Beer'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('Beer'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Logged Beer'), findsOneWidget);
-      expect(find.byType(SnackBarAction), findsNothing);
-    },
-  );
+        expect(find.text('Logged Beer'), findsOneWidget);
+        // Orphan entry — logged via the plain DrinksRepository, not the
+        // Party Session repository.
+        expect(drinksRepo.logDrinkCalls, hasLength(1));
+        expect(partyRepo.logAlcoholicDrinkCalls, isEmpty);
+        // "Start session" fills the toast's one action slot instead of
+        // Undo — party_session.md §Logging from Today.
+        expect(find.widgetWithText(SnackBarAction, 'Undo'), findsNothing);
+        expect(
+          find.widgetWithText(SnackBarAction, 'Start session'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping "Start session" on the orphan toast invokes '
+      'startPartySessionFlow, which starts a new Party Session',
+      (tester) async {
+        final preset = _preset(
+          'p1',
+          'Beer',
+          sortOrder: 1,
+          beverageType: BeverageType.beer,
+        );
+        final drinksRepo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildWarmContainer(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+          partyRepo: partyRepo,
+          activeSession: null,
+          // 18+ with a birthDate already set — startPartySessionFlow skips
+          // straight to repo.startSession() (party_session_flows.dart).
+          profile: _makeAdultProfile(),
+        );
+        addTearDown(container.dispose);
+        await _pumpTodayScreen(tester, container);
+
+        await tester.tap(find.text('Beer'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Start session'));
+        await tester.pumpAndSettle();
+
+        // Post-start pricing prompt (party-session.md §Starting a session);
+        // skip it to complete the flow.
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
+        await tester.pumpAndSettle();
+
+        expect(partyRepo.startSessionCalls, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'active session: attaches via PartySessionRepository.logAlcoholicDrink '
+      '(partySessionId set), toast shows the ordinary Undo action (not '
+      '"Start session")',
+      (tester) async {
+        final preset = _preset(
+          'p1',
+          'Beer',
+          sortOrder: 1,
+          beverageType: BeverageType.beer,
+        );
+        final drinksRepo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final session = PartySession(
+          id: 'active-session-1',
+          startedAt: _epoch,
+          useSessionPrices: false,
+          createdAt: _epoch,
+          updatedAt: _epoch,
+        );
+        final container = await _buildWarmContainer(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+          partyRepo: partyRepo,
+          activeSession: session,
+        );
+        addTearDown(container.dispose);
+        await _pumpTodayScreen(tester, container);
+
+        await tester.tap(find.text('Beer'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Logged Beer'), findsOneWidget);
+        expect(drinksRepo.logDrinkCalls, isEmpty);
+        expect(partyRepo.logAlcoholicDrinkCalls, [
+          (sessionId: 'active-session-1', presetId: 'p1'),
+        ]);
+        // Attached to an active session — the ordinary Undo action shows,
+        // not "Start session" (issue #85: this now includes alcoholic
+        // entries attached to an active session, which previously got no
+        // action at all).
+        expect(
+          find.widgetWithText(SnackBarAction, 'Start session'),
+          findsNothing,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Undo'), findsOneWidget);
+      },
+    );
+  });
 
   // -------------------------------------------------------------------------
   // 3. Sort-mode dropdown writes the new mode

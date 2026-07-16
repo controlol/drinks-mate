@@ -1264,6 +1264,112 @@ void main() {
       expect(entry.abvPercent, isNot(_beerPreset.abvPercent));
     });
 
+    test(
+      'an explicit id is honored on both the returned and persisted '
+      'DrinkEntry (mirrors DrinksRepository.logDrink\'s id param — issue '
+      '#85: lets a caller generate the id up front, e.g. so a popped '
+      'LoggedDrinkResult is available before the write settles)',
+      () async {
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+          id: 'caller-provided-id',
+        );
+
+        expect(entry.id, 'caller-provided-id');
+        final persisted = (await db.select(db.drinkEntries).get()).singleWhere(
+          (e) => e.id == 'caller-provided-id',
+        );
+        expect(persisted.id, 'caller-provided-id');
+      },
+    );
+
+    test(
+      'omitting id still generates a fresh uuid (regression: id must stay '
+      'optional)',
+      () async {
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+        );
+
+        expect(entry.id, isNotEmpty);
+        expect(entry.id, isNot('caller-provided-id'));
+      },
+    );
+
+    test(
+      'a name override replaces the preset\'s name on the logged/persisted '
+      'entry (party-session.md §Logging an alcoholic drink (during a '
+      'session) — a one-off, this-entry-only override, same shape as '
+      'DrinksRepository.logDrink\'s name param; see '
+      'drinks_repository_test.dart "logDrink name/priceMinor/currency '
+      'overrides" group for the pattern this mirrors)',
+      () async {
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+          name: 'Entry-only Name',
+        );
+
+        expect(entry.name, 'Entry-only Name');
+        final persisted = (await db.select(db.drinkEntries).get()).singleWhere(
+          (e) => e.id == entry.id,
+        );
+        expect(persisted.name, 'Entry-only Name');
+      },
+    );
+
+    test(
+      'name override is NFC-normalized before persisting (same convention '
+      'as DrinksRepository.logDrink\'s name override — username.dart '
+      'normalizeNfc doc: "visually identical inputs produce the same '
+      'stored bytes")',
+      () async {
+        // NFD form of 'café' — 'e' followed by a combining acute accent
+        // (U+0301) instead of the precomposed 'é' (U+00E9). Written via
+        // explicit \u{} escapes (not a literal combining-mark character) so
+        // the source bytes can't get silently re-normalized to NFC by an
+        // editor/tool round-trip.
+        const nfdName = 'Cafe\u{0301} Latte';
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+          name: nfdName,
+        );
+
+        expect(entry.name, normalizeNfc(nfdName));
+        expect(entry.name, isNot(equals(nfdName)));
+      },
+    );
+
+    test(
+      'omitting name still defaults to preset.name (regression)',
+      () async {
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+        );
+
+        expect(entry.name, _beerPreset.name);
+      },
+    );
+
+    test(
+      'an invalid name throws ArgumentError, same as '
+      'DrinksRepository.logDrink\'s name override (validatePresetName)',
+      () async {
+        expect(
+          () => repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: sessionId,
+            name: 'ab', // < 3 runes — validatePresetName's structural error.
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
     test('rejects a non-alcoholic preset', () async {
       expect(
         () =>
