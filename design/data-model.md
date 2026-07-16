@@ -300,6 +300,8 @@ Display conversion to imperial (fl oz, lb, in, °F where relevant) happens at th
 
 When the user enters a value in imperial in the UI (e.g. "12 fl oz"), the UI converts to metric before writing to the database. Round-tripping (imperial → metric → imperial) may lose minor precision; this is acceptable.
 
+Volume has two distinct display precisions depending on context: single-drink / entry-field displays show the nearest **integer ml** (metric) / 1 decimal place (fl oz), while daily-progress headlines (today's total, daily goal, history totals) always show litres (metric) regardless of magnitude — there is no ml fallback below 1 000 ml — to **1 decimal place, trailing `.0` omitted for whole litres** (e.g. "0.2 L", "1.4 L", "2 L"); imperial always shows 1 decimal place. See the table below.
+
 ### Display precision
 
 These rules apply whenever a numeric value is shown in the UI, regardless of the user's unit preference.
@@ -308,7 +310,8 @@ All rounding uses **half-away-from-zero** (round 0.5 up for positive values).
 
 | Value | Metric display | Imperial display |
 | ----- | -------------- | ---------------- |
-| Volume | nearest integer ml | 1 decimal place (fl oz) |
+| Volume — single-drink / entry field | nearest integer ml | 1 decimal place (fl oz) |
+| Volume — daily-progress headline (today card, history totals) | always litres regardless of magnitude; 1 decimal place, trailing `.0` omitted for whole litres (e.g. "0.2 L", "1.4 L", "2 L") | always 1 decimal place (fl oz) |
 | Mass | 1 decimal place (kg) | 1 decimal place (lb) |
 | Height | 1 decimal place (cm) | nearest inch, split into ft + in |
 

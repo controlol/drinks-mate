@@ -82,6 +82,53 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // formatLargeVolume
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatLargeVolume — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('zero', () {
+      expect(svc.formatLargeVolume(0), equals('0 L'));
+    });
+
+    test('sub-1000ml still renders as litres, not ml', () {
+      expect(svc.formatLargeVolume(240.0), equals('0.2 L'));
+    });
+
+    test('500 ml → 0.5 L', () {
+      expect(svc.formatLargeVolume(500.0), equals('0.5 L'));
+    });
+
+    test('1400 ml → 1.4 L', () {
+      expect(svc.formatLargeVolume(1400.0), equals('1.4 L'));
+    });
+
+    test('whole litres omit the trailing .0 (2000 ml → 2 L)', () {
+      expect(svc.formatLargeVolume(2000.0), equals('2 L'));
+    });
+  });
+
+  group('FormatService.formatLargeVolume — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('zero', () {
+      expect(svc.formatLargeVolume(0), equals('0.0 fl oz'));
+    });
+
+    test('240 ml → 8.1 fl oz', () {
+      expect(svc.formatLargeVolume(240.0), equals('8.1 fl oz'));
+    });
+
+    test('2000 ml → 67.6 fl oz', () {
+      // 2000 / 29.5735295625 = 67.628..., rounds to 67.6
+      expect(svc.formatLargeVolume(2000.0), equals('67.6 fl oz'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // formatMass
   // -------------------------------------------------------------------------
 
