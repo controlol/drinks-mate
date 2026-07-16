@@ -541,14 +541,16 @@ class _StatCard extends StatelessWidget {
 
 /// Number of grid columns for a given *available width* (not necessarily the
 /// full screen width — on the tablet/desktop split layout this section gets
-/// roughly half the screen). Reasonable, documented tiers per the issue's
-/// `[OPEN]` breakpoint note:
-///   < 500dp  -> 2 columns (phone)
-///   500–899  -> 3 columns (wide phone / the tablet-desktop side panel)
+/// roughly half the screen). The 600dp tier matches Material's "compact"
+/// window-size-class threshold (the same family [kTabletBreakpointWidth]'s
+/// 840dp "expanded" threshold is drawn from); 900dp has no such source —
+/// see that constant's doc comment:
+///   < 600dp  -> 2 columns (phone)
+///   600–899  -> 3 columns (wide phone / the tablet-desktop side panel)
 ///   >= 900dp -> 4 columns (a full-width tablet/desktop grid)
 int _gridColumnsForWidth(double width) {
   if (width >= 900) return 4;
-  if (width >= 500) return 3;
+  if (width >= 600) return 3;
   return 2;
 }
 

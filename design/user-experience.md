@@ -29,9 +29,9 @@ Tab bar visibility:
 
 Phase 1 targets phone-sized screens as the primary case (see [designer-brief.md → Design principles](./designer-brief.md#design-principles)), but the S1 Today screen defines three width tiers so the app degrades gracefully on larger surfaces (tablets, unfolded foldables, split-screen/multi-window):
 
-1. **Phone (default), < 500dp.** Single vertical column. The "Log a drink" grid (see S1 below) shows **two tiles per row**.
-2. **Wide phone / narrow tablet, 500–839dp.** Still a single vertical column, but the "Log a drink" grid gains a **third column**.
-3. **Tablet / desktop width, ≥ 840dp** (matching Material's "expanded" window-size-class threshold). Two-column page layout, split **evenly** (50/50): the progress card and stat cards stay in the left column, and the entire "Log a drink" section (heading, sort dropdown, grid) moves to sit **beside** them in the right column, instead of appearing below them in the vertical stack. Within that narrower right-hand column the grid itself grows to a **fourth column** once its own available width crosses 900dp — i.e. the grid's column count is driven by the section's own rendered width, not the full screen width, so it can differ from what a bare width check against the screen would suggest on a page that's already split two ways.
+1. **Phone (default), < 600dp** (matching Material's "compact" window-size-class threshold). Single vertical column. The "Log a drink" grid (see S1 below) shows **two tiles per row**.
+2. **Wide phone / narrow tablet, 600–839dp.** Still a single vertical column, but the "Log a drink" grid gains a **third column**.
+3. **Tablet / desktop width, ≥ 840dp** (matching Material's "expanded" window-size-class threshold). Two-column page layout, split **evenly** (50/50): the progress card and stat cards stay in the left column, and the entire "Log a drink" section (heading, sort dropdown, grid) moves to sit **beside** them in the right column, instead of appearing below them in the vertical stack. Within that narrower right-hand column the grid itself grows to a **fourth column** once its own available width crosses 900dp (this last figure isn't drawn from Material's scale, unlike the other two) — i.e. the grid's column count is driven by the section's own rendered width, not the full screen width, so it can differ from what a bare width check against the screen would suggest on a page that's already split two ways.
 
 ## Screens
 
