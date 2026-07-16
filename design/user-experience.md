@@ -25,6 +25,16 @@ Tab bar visibility:
 - **Hidden** when the S2 Log drink drawer is open — the drawer covers it.
 - Hidden when a full-screen route is pushed from a tab (e.g. Today Drinks Log, day drill-down, Settings).
 
+## Responsive layout
+
+Phase 1 targets phone-sized screens as the primary case (see [designer-brief.md → Design principles](./designer-brief.md#design-principles)), but the S1 Today screen defines three width tiers so the app degrades gracefully on larger surfaces (tablets, unfolded foldables, split-screen/multi-window):
+
+1. **Phone (default).** Single vertical column. The "Log a drink" grid (see S1 below) shows **two tiles per row**.
+2. **Wide phone / narrow tablet.** Still a single vertical column, but the "Log a drink" grid gains **more columns** as width allows.
+3. **Tablet / desktop width.** Two-column page layout: the progress card and stat cards stay on the left, and the entire "Log a drink" section (heading, sort dropdown, grid) moves to sit **beside** them on the right, instead of appearing below them in the vertical stack.
+
+`[OPEN]` — exact breakpoints (in logical pixels) for tiers 2 and 3, and the exact column counts per tier.
+
 ## Screens
 
 ### S1 — Today (home)
@@ -43,10 +53,13 @@ Content, top to bottom:
 - Two **stat cards side-by-side** below the progress card:
   - **7-day daily average** — the user's mean daily intake across the last 7 completed days (excluding today). Format: numeric + unit, e.g. `1.8 L`.
   - **Days on goal (last 7)** — count of days in the last 7 completed days where intake met or exceeded the daily goal. Format: `n/7`, e.g. `5/7`.
-- A row of **quick-log preset shortcuts** — small tiles, each showing a preset's icon and name. Tapping a tile logs that preset immediately at the current time with a `Logged` toast and undo affordance (see Toast below). The row surfaces the user's most-used presets, seeded with defaults until usage data accumulates. See [features.md → F14](./features.md#f14--drink-presets-and-customisation).
-- A **full-width "Log drink" button** persistent at the bottom of the screen (within the standard horizontal padding, sitting above the tab bar). Tapping it opens the [S2 Log drink](#s2--log-drink) drawer. This is the path for any drink not in the quick-log row, including new presets.
+- A **"Log a drink" section**:
+  - A **header row** with the "Log a drink" title on the left and a **sort-mode dropdown** on the right: `Manual`, `Recently used` (default), `Most used`. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation) for the ranking rules.
+  - Below the header, a **vertically-scrolling grid** of the **top 8** presets by the selected mode — small tiles, each showing a preset's icon and name. Tapping a tile logs that preset immediately at the current time with a `Logged` toast and undo affordance (see Toast below). Seeded with defaults until usage data accumulates. Two tiles per row on phone-width screens; wider screens show more columns — see [Responsive layout](#responsive-layout) above. See [features.md → F14](./features.md#f14--drink-presets-and-customisation).
+  - **On tablet/desktop-width screens**, the whole "Log a drink" section moves out of the vertical stack and sits beside the progress card and stat cards instead of below them — see [Responsive layout](#responsive-layout).
+- A **full-width "Log drink" button** persistent at the bottom of the screen (within the standard horizontal padding, sitting above the tab bar). Tapping it opens the [S2 Log drink](#s2--log-drink) drawer. This is the path for any drink not in the "Log a drink" grid, including new presets.
 
-The `Logged` toast appears at the bottom of the screen (above the tab bar) for 4 seconds with an inline Undo affordance after any quick-log tap or successful S2 confirm.
+The `Logged` toast appears at the bottom of the screen (above the tab bar) for 4 seconds with an inline Undo affordance after any preset-tile tap in the "Log a drink" grid or successful S2 confirm.
 
 ### S2 — Log drink
 
@@ -57,7 +70,7 @@ Reached from the full-width **"Log drink"** button at the bottom of the [S1 Toda
 #### Phase 1 — Pick a drink
 
 - A **search field** at the top filters the preset list by name as the user types.
-- A **scrollable list** of all visible drink presets (default + user-created, excluding hidden), each row showing its icon (in its configured colour) and its name. The list is grouped or ordered to surface the user's most-used presets near the top.
+- A **scrollable list** of all visible drink presets (default + user-created, excluding hidden), each row showing its icon (in its configured colour) and its name. The list uses the same **sort mode** selected on the S1 "Log a drink" grid (Manual / Recently used / Most used) — see [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation).
 - A **"Create new preset"** action at the end of the list opens the create-preset flow (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)).
 
 Tapping a preset advances the drawer to phase 2.
@@ -201,7 +214,7 @@ Starting a session may open profile prompts (birthday, optional height) and the 
 1. User opens the app for the first time.
 2. Onboarding (S5) runs — under 30 seconds end to end.
 3. User lands on the today view (S1) with their goal set and progress at 0.
-4. User logs their first drink via a quick-log preset or the full-width Log drink button.
+4. User logs their first drink via a tile in the "Log a drink" grid or the full-width Log drink button.
 
 The 60-second goal from the success criteria applies here.
 
@@ -214,7 +227,7 @@ flowchart TD
     E --> F[Notification permission prompt]
     F --> G[S1 Today — progress at 0]
     G --> H{Log first drink?}
-    H -->|Quick-log preset| I[Drink logged · progress updates]
+    H -->|Grid tile| I[Drink logged · progress updates]
     H -->|Tap Log drink button| J[S2 Log drink drawer]
     J --> I
 ```
@@ -222,15 +235,15 @@ flowchart TD
 ### Flow 2 — Quick log (most common)
 
 1. User opens the app.
-2. Taps a quick-log preset on the today view (e.g. "200 ml water").
+2. Taps a preset tile in the "Log a drink" grid on the today view (e.g. "200 ml water").
 3. The drink is logged at the current time. Progress updates immediately. A brief toast or similar confirms the action with an undo affordance.
 
-Two taps total (open the app, tap the preset).
+Two taps total (open the app, tap the tile).
 
 ```mermaid
 flowchart TD
     A[App opened] --> B[S1 Today view]
-    B --> C[Tap quick-log preset]
+    B --> C[Tap preset tile in Log a drink grid]
     C --> D[DrinkEntry written · consumedAt = now]
     D --> E[Progress indicator updates]
     E --> F[Toast with Undo]
@@ -296,7 +309,7 @@ flowchart TD
     A[Reminder fires · interval elapsed · below goal · active hours · not silenced] --> B[Notification shown]
     B --> C{User action}
     C -->|Tap body| D[App opens on S1]
-    D --> E[Manual log via quick-log or S2]
+    D --> E[Manual log via Log a drink grid or S2]
     C -->|Tap quick-log action| F[Default DrinkPreset logged at now · no app launch]
     C -->|Dismiss / ignore| G[No retry · wait for next scheduled trigger]
     E --> H[Reminder timer reset]

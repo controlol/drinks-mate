@@ -13,7 +13,7 @@ The user can record a drink by:
 - Picking a **drink preset** (default or custom — see [F14](#f14--drink-presets-and-customisation)). The preset supplies name, beverage type, volume, ABV, icon, and optional price. The user can adjust volume or ABV before confirming.
 - Adjusting the **time** of consumption. Defaults to "now"; the user can adjust to log retroactively.
 
-Logging must be reachable in at most two taps from the home screen for the most common cases (e.g. tapping the "Glass of water" quick-log preset on the today view).
+Logging must be reachable in at most two taps from the home screen for the most common cases (e.g. tapping the "Glass of water" tile in the today view's "Log a drink" grid).
 
 **See also:** screen flow in [user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink); each logged drink is stored as a [DrinkEntry](./data-model.md#drinkentry).
 
@@ -35,8 +35,8 @@ The home screen is reached via the **Today** tab in the bottom navigation. It sh
 - Two **stat cards** side-by-side under the progress card:
   - **7-day daily average** — mean daily intake across the last 7 completed days.
   - **Days on goal (last 7)** — count of days in the last 7 completed days where intake met or exceeded the daily goal, formatted as `n/7`.
-- A row of **quick-log shortcuts** — drink presets (see [F14](#f14--drink-presets-and-customisation)). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
-- A **full-width "Log drink" button** persistent at the bottom of the screen, opening the full log-drink drawer (F1). This is the path for any drink not in the quick-log row, including new presets.
+- A **"Log a drink" section** — drink presets (see [F14](#f14--drink-presets-and-customisation)) shown as a vertically-scrolling grid of up to **8** preset tiles. Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time re-ranks based on the selected sort mode. A **sort-mode dropdown** next to the section heading lets the user choose the ranking: Manual, Recently used (default), or Most used. See [F14 → Sort modes](#f14--drink-presets-and-customisation). On wider screens the section sits beside the progress card and stat cards instead of below them — see [user-experience.md → S1](./user-experience.md#s1--today-home) for the layout tiers.
+- A **full-width "Log drink" button** persistent at the bottom of the screen, opening the full log-drink drawer (F1). This is the path for any drink not in the "Log a drink" grid, including new presets.
 
 Today's drink list is **not** rendered inline on the Today screen. The user reaches it by tapping the progress card, which navigates to a dedicated Today Drinks Log screen where each entry can be edited or deleted. Edits and deletes recompute the progress card on return.
 
@@ -122,7 +122,7 @@ The settings screen exposes every persisted preference. The canonical grouping, 
 
 ### F14 — Drink presets and customisation
 
-Drink presets are named, pre-configured shortcuts that combine a beverage type, a volume, an ABV, an optional price, and an icon + colour. They are the **primary way the user enters drinks** — both via quick-log on the today view and via the log-drink screen.
+Drink presets are named, pre-configured shortcuts that combine a beverage type, a volume, an ABV, an optional price, and an icon + colour. They are the **primary way the user enters drinks** — both via the "Log a drink" grid on the today view and via the log-drink screen.
 
 #### Default presets (shipped with the app)
 
@@ -145,7 +145,7 @@ Non-alcoholic:
 
 Alcoholic:
 
-These are always selectable via quick-log and the S2 log-drink picker regardless of session state, matching [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active) ("alcohol can always be logged; the app just prompts to start a session"). The **Manage Drinks** screen (below) is the only screen that ever hides them, and only when the user has turned off the "Always show alcoholic drinks" setting (default ON) — see [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
+These are always selectable via the Today "Log a drink" grid and the S2 log-drink picker regardless of session state, matching [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active) ("alcohol can always be logged; the app just prompts to start a session"). The **Manage Drinks** screen (below) is the only screen that ever hides them, and only when the user has turned off the "Always show alcoholic drinks" setting (default ON) — see [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
 
 | Name                   | Beverage type | Volume | ABV | Icon        |
 | ---------------------- | ------------- | ------ | --- | ----------- |
@@ -178,10 +178,26 @@ Icons use a two-shade structure (silhouette + inner-detail) both rendered from t
 
 #### Where presets appear
 
-- **Today view (S1):** the quick-log row shows a small selection of presets — the user's most-used ones, with seeded defaults until usage data accumulates.
-- **Log-drink screen (S2):** the full preset list is shown as the primary picker. Tapping a preset pre-fills volume + beverage type + ABV; the user can still tweak volume or ABV before confirming.
-- **Settings:** a "Manage drinks" section lets the user reorder, edit, hide, delete, and create presets.
+- **Today view (S1):** the "Log a drink" grid shows up to **8** presets — ranked by the selected sort mode (see below), with seeded defaults until usage data accumulates.
+- **Log-drink screen (S2):** the full preset list is shown as the primary picker, ordered by the same sort mode as the Today grid. Tapping a preset pre-fills volume + beverage type + ABV; the user can still tweak volume or ABV before confirming.
+- **Settings:** a "Manage drinks" section lets the user reorder, edit, hide, delete, and create presets. This reorder action defines the **Manual** sort mode's order.
 - **Notification quick-log:** the user's chosen default preset is logged when the notification action is tapped.
+
+#### Sort modes (Today grid & S2 picker)
+
+One **sort mode**, picked from a dropdown next to the "Log a drink" heading on S1, drives two surfaces: the **Today "Log a drink" grid** (S1), which shows its top **8** presets by this ranking, and the **S2 log-drink picker's full list**, which shows every visible preset in the same ranking. Three modes:
+
+1. **Manual** — the order set on the "Manage drinks" screen (drag-to-reorder), i.e. `DrinkPreset.sortOrder` ascending; the grid shows the first 8.
+2. **Recently used** (**default**) — most-recently-logged preset first, based on the most recent non-deleted `DrinkEntry` attributed to each preset (`consumedAt`, descending). Presets never logged rank after every used preset, ordered by `sortOrder` among themselves.
+3. **Most used** — highest count of non-deleted `DrinkEntry` records attributed to the preset **within the trailing 30 days** (relative to now) first. Presets with zero uses in the window rank after every used preset, ordered by `sortOrder` among themselves.
+
+Both modes key off **`consumedAt`** (when the drink was drunk), not `createdAt` (when the entry was logged) — this matches every other stat in the app (daily totals, history charts, pace), which are all bucketed by `consumedAt`. A retroactively-backdated entry therefore does not jump a preset to the top of "Recently used" just because the user happened to log it today; it slots into the ranking as if it had been logged at the time it was consumed, and may already sit outside the 30-day "Most used" window.
+
+**Ties** — equal last-used timestamp in mode 2, or equal 30-day usage count in mode 3 — are broken by `sortOrder` ascending, the same order used by mode 1. This also defines the cold-start behaviour: with no logged drinks at all, every preset ties at zero, so all three modes degrade to the manual/seeded order (i.e. the first 8 by `sortOrder`) until the user starts logging.
+
+Hidden presets (`isHidden = true`) never appear in either surface, regardless of sort mode. `[OPEN]` — whether the count of 8 on the Today grid stays fixed across the responsive tiers in [user-experience.md → Responsive layout](./user-experience.md#responsive-layout) or grows on wider screens.
+
+**See also:** [data-model.md → DrinkEntry `presetId`](./data-model.md#drinkentry) for how usage is attributed to a preset without compromising log immutability, and [→ UserPreferences `drinkSortMode`](./data-model.md#userpreferences) for where the chosen mode is persisted.
 
 #### Storage and historical accuracy
 

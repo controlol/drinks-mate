@@ -31,7 +31,7 @@ Two practical implications fall out of this:
 
 The product overview lists four goals; the visual design directly serves all of them.
 
-1. **Fast logging.** Two taps from app launch to a logged drink, for the common case. The home screen must therefore expose a row of one-tap "quick-log" presets and a single prominent "Log drink" action — both within thumb reach on a phone held one-handed.
+1. **Fast logging.** Two taps from app launch to a logged drink, for the common case. The home screen must therefore expose a grid of one-tap "Log a drink" presets and a single prominent "Log drink" action — both within thumb reach on a phone held one-handed.
 2. **Steady intake, not end-of-day cramming.** Reminders nudge the user every ~90 minutes during their active hours. The progress display on the home screen has to communicate "are you on pace right now?" — not just "did you hit your goal today?" — so a user opening the app mid-afternoon understands their state at a glance.
 3. **An honest picture.** The app records what was drunk, not just how much. Drinks have types (water, coffee, tea, beer, etc.) and the user should be able to see the breakdown of their habits over time.
 4. **Out of the way.** Onboarding is short. Every screen has a sensible default. Nothing nags. The visual tone should feel encouraging, not clinical or scolding — closer to a friendly companion than a fitness tracker.
@@ -43,7 +43,7 @@ The first release is considered successful if a new user can log their first dri
 Four principles apply to every screen.
 
 1. **Logging is the primary action.** Treat it as such in layout, weight, and colour. Everything else competes for the leftover attention.
-2. **One thumb, one hand.** Primary actions live in the lower half of the screen so the app is usable one-handed on a phone of any size.
+2. **One thumb, one hand.** Primary actions live in the lower half of the screen so the app is usable one-handed on a phone of any size. This governs the phone-width layout specifically; the tablet/desktop-width layout (S1, see below) relaxes it since one-handed reach is not the constraint on a device held with two hands or propped up.
 3. **Glanceable progress.** The user must understand their hydration status within roughly a second of opening the app. Use a clear, large visual indicator (the horizontal progress bar with a pace marker, see Design Language) with the numeric value and goal alongside, plus a short status pill that says whether the user is on pace, behind, or ahead.
 4. **Forgiving.** Every logged drink can be edited or deleted. Mistakes are normal and easy to fix. Toasts after a log should expose an undo affordance.
 
@@ -63,8 +63,9 @@ The default screen on launch and the home of the experience. Hydration only — 
 
 - A **progress card** at the top of the page. The card contains the big intake numeric on the left (e.g. `1.4 L`), the daily goal as a smaller secondary value alongside (e.g. `/ 2.1 L`), a short **status pill** in the top-right of the card reading `On pace` / `Behind` / `Ahead`, and a **horizontal progress bar** below that fills the full card width. The bar carries a **vertical tick line** marking the linear-pace position — where intake "should be" by now in the user's active hours. The bar fill colour shifts between brand (on/ahead) and behind-pace colour. Tapping the entire card opens the Today Drinks Log (S6) as a full-screen push.
 - Two **stat cards side-by-side** under the progress card: a 7-day daily average and a "days on goal" count in the last 7 days (`n/7` format).
-- A horizontal row of **quick-log preset shortcuts** — tap one to log that drink immediately at the current time. The row promotes the user's most-used presets to the front; defaults seed it until usage data accumulates.
-- A **full-width "Log drink" button** persistent at the bottom of the screen (same horizontal padding as the rest of the screen, sitting above the tab bar). This opens the S2 Log drink drawer and is the path for any drink not already in the quick-log row, including new presets.
+- A **"Log a drink" section** — a header row carries the "Log a drink" title plus a **sort-mode dropdown** (Manual / Recently used (default) / Most used) on the right. Below it, a vertically-scrolling grid of the **top 8** presets by the selected sort mode — tap one to log that drink immediately at the current time. Two tiles per row at phone width; wider screens show more columns.
+- **On tablet/desktop-width screens**, the entire "Log a drink" section (heading, dropdown, grid) relocates to sit **beside** the progress card and stat cards instead of below them, forming a two-column page. `[OPEN]` — exact breakpoints and column counts; see [user-experience.md → Responsive layout](./user-experience.md#responsive-layout).
+- A **full-width "Log drink" button** persistent at the bottom of the screen (same horizontal padding as the rest of the screen, sitting above the tab bar). This opens the S2 Log drink drawer and is the path for any drink not already in the "Log a drink" grid, including new presets.
 
 Today's drink list is **not** rendered inline here. It lives on S6 (Today Drinks Log), reached by tapping the progress card.
 
@@ -72,7 +73,7 @@ Today's drink list is **not** rendered inline here. It lives on S6 (Today Drinks
 
 Reached from the full-width "Log drink" button at the bottom of the Today screen. Presented as a drawer that opens from the bottom of the screen and can expand to take up the whole screen. The tab bar is covered while the drawer is open. The drawer has two phases:
 
-1. **Pick a drink** — a search field at the top, then a scrollable list of all visible drink presets (icon + name), with the user's most-used presets near the top, and a "Create new preset" action at the end.
+1. **Pick a drink** — a search field at the top, then a scrollable list of all visible drink presets (icon + name) ordered by the same sort mode as the Today grid, and a "Create new preset" action at the end.
 2. **Edit and confirm** — the selected preset is shown at the top so the user can confirm what they picked. Inline quick edits for volume and time sit in the middle. An action row at the bottom carries a large full-width "Confirm" button with a smaller "Advanced" button to its left.
 
 The Advanced editor reveals editable fields for name, ABV, and price. Crucially, the designer should plan for three save paths beyond plain confirm: "Confirm" (one-off variation), "Save and confirm" (overwrite the underlying preset), and "Save as copy and confirm" (create a new preset). These typically appear as a split button or a small menu attached to the primary save action.
@@ -116,7 +117,7 @@ Reached from the **Party** tab in the bottom navigation. The screen has three st
 Six flows shape the experience. Detailed step lists and Mermaid diagrams are in [user-experience.md → Key flows](./user-experience.md#key-flows).
 
 - **First-time use** — install, onboard, land on the Today screen with progress at 0, log the first drink. Under 60 seconds total.
-- **Quick log (most common)** — open the app, tap a preset in the quick-log row on Today, see progress update. Two taps total.
+- **Quick log (most common)** — open the app, tap a preset tile in the "Log a drink" grid on Today, see progress update. Two taps total.
 - **Detailed log** — tap the full-width "Log drink" button at the bottom of Today, pick a preset in the drawer, optionally tweak volume / time, optionally open the Advanced editor, confirm.
 - **Correcting a mistake** — tap the progress card on Today to open the Today Drinks Log (S6), tap an entry, edit or delete, return to Today and watch progress recompute.
 - **Responding to a reminder** — tap the notification body to open the app on Today, or tap the inline "Log {default drink}" action to log without opening the app at all.
@@ -237,7 +238,7 @@ These primitives recur across the app and have specific requirements:
 
 - **Progress card (Today):** full page width within standard padding. Contains, in order: a header row with the large intake numeric on the left, the goal as a smaller secondary value alongside, and a status pill (`On pace` / `Behind` / `Ahead`) anchored to the **top-right** of the card. Below the header row, a **horizontal progress bar** filling the entire card width (within the card's own padding). The bar carries a **vertical tick line** marking the linear-pace position. The entire card is a tappable surface that opens S6 Today Drinks Log on press.
 - **Stat card pair (Today):** two cards side-by-side under the progress card, equal width. Each shows a label and a single bold numeric — 7-day average, days-on-goal-in-last-7.
-- **Quick-log tile row (Today):** horizontally scrollable row of preset tiles. Each tile shows the preset's icon (tinted) and name. Taps log immediately.
+- **"Log a drink" section (Today):** header row (title + sort-mode dropdown) above a vertically-scrolling grid of the top 8 preset tiles by the selected sort mode. Each tile shows the preset's icon (tinted) and name; taps log immediately. Two tiles per row at phone width, more on wider screens. On tablet/desktop-width screens the whole section sits beside the progress card and stat cards rather than below them.
 - **Full-width primary button:** persistent at the bottom of pages that need a primary action (Today's "Log drink", Party's "Start party session"). Full page width within standard horizontal padding. Sits above the bottom tab bar. Uses the honey accent.
 - **Status pill:** short label only (`On pace` / `Behind` / `Ahead`). No quantified copy in the pill itself. Magnitude is implied by the bar fill versus the tick marker.
 - **Pace marker:** thin vertical tick line on the progress bar. Must remain visible against both the on-pace fill colour and the behind-pace fill colour, so the tick uses a non-fill-colour treatment.
@@ -279,3 +280,4 @@ The following points are not yet decided and remain the designer's to propose or
 - Confetti particle palette balance (azure-honey-mint mix) and density for the goal-met celebration.
 - Dark-mode behaviour for the Party tab's emerald accent — depth shift, mint surface tint, or accent only.
 - Reduce-motion equivalents for the log-feedback bar animation (instant fill versus brief crossfade).
+- Exact breakpoints and grid column counts for the new "Log a drink" responsive tiers (phone → wide phone → tablet/desktop), and the exact two-column proportions when the section sits beside the progress card and stat cards. See [user-experience.md → Responsive layout](./user-experience.md#responsive-layout).
