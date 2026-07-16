@@ -29,11 +29,9 @@ Tab bar visibility:
 
 Phase 1 targets phone-sized screens as the primary case (see [designer-brief.md → Design principles](./designer-brief.md#design-principles)), but the S1 Today screen defines three width tiers so the app degrades gracefully on larger surfaces (tablets, unfolded foldables, split-screen/multi-window):
 
-1. **Phone (default).** Single vertical column. The "Log a drink" grid (see S1 below) shows **two tiles per row**.
-2. **Wide phone / narrow tablet.** Still a single vertical column, but the "Log a drink" grid gains **more columns** as width allows.
-3. **Tablet / desktop width.** Two-column page layout: the progress card and stat cards stay on the left, and the entire "Log a drink" section (heading, sort dropdown, grid) moves to sit **beside** them on the right, instead of appearing below them in the vertical stack.
-
-`[OPEN]` — exact breakpoints (in logical pixels) for tiers 2 and 3, and the exact column counts per tier.
+1. **Phone (default), < 500dp.** Single vertical column. The "Log a drink" grid (see S1 below) shows **two tiles per row**.
+2. **Wide phone / narrow tablet, 500–839dp.** Still a single vertical column, but the "Log a drink" grid gains a **third column**.
+3. **Tablet / desktop width, ≥ 840dp** (matching Material's "expanded" window-size-class threshold). Two-column page layout, split **evenly** (50/50): the progress card and stat cards stay in the left column, and the entire "Log a drink" section (heading, sort dropdown, grid) moves to sit **beside** them in the right column, instead of appearing below them in the vertical stack. Within that narrower right-hand column the grid itself grows to a **fourth column** once its own available width crosses 900dp — i.e. the grid's column count is driven by the section's own rendered width, not the full screen width, so it can differ from what a bare width check against the screen would suggest on a page that's already split two ways.
 
 ## Screens
 
@@ -69,9 +67,10 @@ Reached from the full-width **"Log drink"** button at the bottom of the [S1 Toda
 
 #### Phase 1 — Pick a drink
 
-- A **search field** at the top filters the preset list by name as the user types.
-- A **scrollable list** of all visible drink presets (default + user-created, excluding hidden), each row showing its icon (in its configured colour) and its name. The list uses the same **sort mode** selected on the S1 "Log a drink" grid (Manual / Recently used / Most used) — see [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation).
-- A **"Create new preset"** action at the end of the list opens the create-preset flow (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)).
+- A **header row** with the "Log a drink" title on the left and its own **sort-mode dropdown** on the right (`Manual` / `Recently used` / `Most used`) — the same shared `drinkSortMode` preference the S1 grid's dropdown reads and writes (one setting, two independent controls), so changing it here also re-ranks the S1 grid. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation).
+- A **search field** below the header filters the preset list by name as the user types.
+- A **"Create new preset" entry** at the **top** of the list (immediately below the search field, before any preset row) opens the create-preset flow directly — this is a dedicated Phase-1 entry point, distinct from the indirect "save as copy" route in Phase 2's Advanced editor (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)).
+- A **scrollable list** of all visible drink presets (default + user-created, excluding hidden), each row showing its icon (in its configured colour) and its name, ordered by the sort mode selected above.
 
 Tapping a preset advances the drawer to phase 2.
 

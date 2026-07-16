@@ -185,7 +185,7 @@ Icons use a two-shade structure (silhouette + inner-detail) both rendered from t
 
 #### Sort modes (Today grid & S2 picker)
 
-One **sort mode**, picked from a dropdown next to the "Log a drink" heading on S1, drives two surfaces: the **Today "Log a drink" grid** (S1), which shows its top **8** presets by this ranking, and the **S2 log-drink picker's full list**, which shows every visible preset in the same ranking. Three modes:
+One **sort mode** — a single `drinkSortMode` preference — drives two surfaces: the **Today "Log a drink" grid** (S1), which shows its top **8** presets by this ranking, and the **S2 log-drink picker's full list**, which shows every visible preset in the same ranking. Each surface has its own dropdown next to its own "Log a drink" heading (S1's grid header, S2 Phase 1's header); either one changes the shared preference, so picking a mode on one surface re-ranks the other too. Three modes:
 
 1. **Manual** — the order set on the "Manage drinks" screen (drag-to-reorder), i.e. `DrinkPreset.sortOrder` ascending; the grid shows the first 8.
 2. **Recently used** (**default**) — most-recently-logged preset first, based on the most recent non-deleted `DrinkEntry` attributed to each preset (`consumedAt`, descending). Presets never logged rank after every used preset, ordered by `sortOrder` among themselves.
@@ -195,7 +195,7 @@ Both modes key off **`consumedAt`** (when the drink was drunk), not `createdAt` 
 
 **Ties** — equal last-used timestamp in mode 2, or equal 30-day usage count in mode 3 — are broken by `sortOrder` ascending, the same order used by mode 1. This also defines the cold-start behaviour: with no logged drinks at all, every preset ties at zero, so all three modes degrade to the manual/seeded order (i.e. the first 8 by `sortOrder`) until the user starts logging.
 
-Hidden presets (`isHidden = true`) never appear in either surface, regardless of sort mode. `[OPEN]` — whether the count of 8 on the Today grid stays fixed across the responsive tiers in [user-experience.md → Responsive layout](./user-experience.md#responsive-layout) or grows on wider screens.
+Hidden presets (`isHidden = true`) never appear in either surface, regardless of sort mode. The Today grid's count of **8** is a fixed constant — it does not grow on wider responsive tiers; only the column count changes (see [user-experience.md → Responsive layout](./user-experience.md#responsive-layout)), so more columns just mean fewer, wider rows for the same 8 presets.
 
 **See also:** [data-model.md → DrinkEntry `presetId`](./data-model.md#drinkentry) for how usage is attributed to a preset without compromising log immutability, and [→ UserPreferences `drinkSortMode`](./data-model.md#userpreferences) for where the chosen mode is persisted.
 
