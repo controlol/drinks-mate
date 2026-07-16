@@ -263,7 +263,7 @@ flowchart TD
 2. Taps a preset tile in the "Log a drink" grid on the today view (e.g. "200 ml water").
 3. The drink is logged at the current time. Progress updates immediately. A brief toast or similar confirms the action with an undo affordance.
 
-Two taps total (open the app, tap the tile). For an alcoholic preset, the drink still logs immediately (as an orphan drink) and the toast additionally offers a "Start session" action — see [party-session.md → Logging from Today](./party-session.md#logging-from-today-quick-log-tile-and-s2-drawer).
+Two taps total (open the app, tap the tile). Alcoholic presets still log immediately; the toast swaps in "Start session" for Undo only when no session is active yet — see [party-session.md → Logging from Today](./party-session.md#logging-from-today-quick-log-tile-and-s2-drawer).
 
 ```mermaid
 flowchart TD

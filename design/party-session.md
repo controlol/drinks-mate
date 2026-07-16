@@ -119,11 +119,10 @@ The choice is presented every time alcohol is logged outside an active session v
 
 #### Logging from Today (quick-log tile and S2 drawer)
 
-Today's quick-log grid tiles and the [S2 log-drink drawer](./user-experience.md#s2--log-drink) log an alcoholic entry **immediately**, without blocking on a start-session prompt first — consistent with how every other drink logs in 1–3 taps (see [user-experience.md → Flow 2 Quick log](./user-experience.md#flow-2--quick-log-most-common)). The drink is recorded as an **orphan drink** right away, exactly as if the user had tapped "Don't start a session" on the Party tab's prompt.
+Today's quick-log grid tiles and the [S2 log-drink drawer](./user-experience.md#s2--log-drink) log an alcoholic entry **immediately**, never blocking on a start-session prompt — consistent with every other drink's 1–3 tap flow (see [Flow 2](./user-experience.md#flow-2--quick-log-most-common)).
 
-The confirmation toast that follows carries a **"Start session"** action. Tapping it runs the same start-session flow described above (birthday/height prompt if needed, pricing prompt, etc.); once the session starts, the just-logged drink is absorbed into it automatically via the normal orphan-absorption rule (see [Absorbing orphan drinks](#absorbing-orphan-drinks-when-a-later-session-starts)) — since it was logged only seconds ago, its BAC has not decayed, so it is always absorbed. If the user doesn't tap "Start session," the drink stays a permanent orphan.
-
-The existing quick-log toast also offers an Undo action for ordinary entries (see [user-experience.md → Flow 2](./user-experience.md#flow-2--quick-log-most-common)). For an alcoholic entry, **"Start session" replaces Undo** in the toast rather than the two competing for space — a standard toast/snackbar only cleanly fits one action. If the user wants to remove the drink instead of starting a session, they can delete it from [S6](./user-experience.md#s6--today-drinks-log), which shows alcoholic entries once logged (see [S6 fix](./user-experience.md#s6--today-drinks-log)).
+- **No active session:** the drink logs as an orphan, and its toast offers **"Start session"** in place of the usual Undo (one action fits a toast). Tapping it starts a session and absorbs the drink immediately, since its BAC hasn't decayed yet. Left un-started, the drink stays an orphan but isn't locked out — any later session still absorbs it under the normal rule (see [Absorbing orphan drinks](#absorbing-orphan-drinks-when-a-later-session-starts)). To remove it instead, delete it from [S6](./user-experience.md#s6--today-drinks-log).
+- **A session is already active:** the drink attaches to it directly, same as the Party tab's own "Log alcohol" action, and the BAC estimate updates. The toast is ordinary — Undo, no "Start session".
 
 ### Absorbing orphan drinks when a later session starts
 
