@@ -1189,6 +1189,52 @@ void main() {
         expect(entry.presetId, preset.id);
       },
     );
+
+    test(
+      'logDrink returns a freshly generated id when none is supplied, and '
+      'that id matches the written row (S2 quick-tap toast needs the id '
+      'back to wire an Undo action)',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Undo-able Drink',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+
+        final returnedId = await repo.logDrink(preset: preset);
+
+        final entry = await loggedRow();
+        expect(returnedId, entry.id);
+      },
+    );
+
+    test(
+      'logDrink writes under a caller-supplied id instead of generating one '
+      '— S2\'s "pop before the write settles" flow needs the id known '
+      'synchronously, before this future resolves',
+      () async {
+        final preset = await repo.createPreset(
+          name: 'Caller-Id Drink',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          iconKey: 'glass',
+          iconColor: '#3b82f6',
+          sortOrder: 99,
+        );
+
+        final returnedId = await repo.logDrink(
+          preset: preset,
+          id: 'caller-supplied-id',
+        );
+
+        expect(returnedId, 'caller-supplied-id');
+        final entry = await loggedRow();
+        expect(entry.id, 'caller-supplied-id');
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

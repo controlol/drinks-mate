@@ -58,6 +58,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 typedef _LogDrinkCall = ({
   DrinkPreset preset,
+  String? id,
   String? name,
   int? volumeMl,
   double? abvPercent,
@@ -116,8 +117,9 @@ class _FakeDrinksRepo extends DrinksRepository {
   Stream<List<DrinkPreset>> watchAllPresets() => Stream.value(existingPresets);
 
   @override
-  Future<void> logDrink({
+  Future<String> logDrink({
     required DrinkPreset preset,
+    String? id,
     String? name,
     int? volumeMl,
     double? abvPercent,
@@ -127,12 +129,14 @@ class _FakeDrinksRepo extends DrinksRepository {
   }) async {
     logDrinkCalls.add((
       preset: preset,
+      id: id,
       name: name,
       volumeMl: volumeMl,
       abvPercent: abvPercent,
       priceMinor: priceMinor,
       currency: currency,
     ));
+    return id ?? 'fake-entry-id';
   }
 
   @override
@@ -462,6 +466,66 @@ void main() {
 
     expect(repo.updatePresetCalls, isEmpty);
     expect(repo.createPresetCalls, isEmpty);
+  });
+
+  testWidgets(
+      'plain Confirm pops a non-null LoggedDrinkResult carrying the logged '
+      'entry\'s id and name (regression: the sheet used to call '
+      'Navigator.pop() with no value, so the S1/S2 caller\'s '
+      '`if (result != null)` toast check was always false and the '
+      '"Drink logged" toast never appeared)', (
+    tester,
+  ) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_beerPreset],
+    );
+    addTearDown(container.dispose);
+
+    LoggedDrinkResult? poppedResult;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    poppedResult =
+                        await Navigator.of(context).push<LoggedDrinkResult>(
+                      MaterialPageRoute<LoggedDrinkResult>(
+                        // Bounded height mirrors _pumpSheet — LogDrinkSheet's
+                        // DraggableScrollableSheet needs a finite height,
+                        // which a real showModalBottomSheet call always
+                        // provides but a bare full-page route doesn't.
+                        builder: (_) => const Scaffold(
+                          body: SizedBox(height: 700, child: LogDrinkSheet()),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await _pickPreset(tester, 'Craft Lager');
+    await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(poppedResult, isNotNull);
+    expect(poppedResult!.name, 'Craft Lager');
+    expect(repo.logDrinkCalls, hasLength(1));
+    expect(poppedResult!.id, repo.logDrinkCalls.single.id);
   });
 
   // -------------------------------------------------------------------------

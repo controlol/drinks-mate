@@ -2,13 +2,34 @@ import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../a11y/semantics_labels.dart';
+import '../models/beverage_type.dart';
 import '../models/drink_preset.dart';
 import '../models/optional.dart';
 import '../repository/providers.dart';
 import '../utils/color_utils.dart';
 import 'preset_editor_screen.dart';
+
+/// Result popped by [LogDrinkSheet] on a successful log: the id of the
+/// [DrinkEntry] just written (so a caller-shown toast can wire an Undo
+/// action to the right row), the name it was logged under, and [beverageType]
+/// (an alcoholic entry gets no Undo — party-session.md §Logging from Today
+/// reserves the toast's one action slot for a future "Start session" offer,
+/// not both). Null if the sheet was dismissed without logging.
+///
+/// [pendingWrite] resolves when the [DrinkEntry] (and, for the "save and
+/// confirm" / "save as copy" paths, the preset write it depends on) has
+/// actually landed — C6 pops the sheet before that settles, so a caller
+/// wiring Undo to [id] must await [pendingWrite] first, or a fast tap can
+/// race the insert and silently no-op instead of deleting anything.
+typedef LoggedDrinkResult = ({
+  String id,
+  String name,
+  BeverageType beverageType,
+  Future<void> pendingWrite,
+});
 
 /// S2 — Log drink bottom sheet.
 ///
@@ -63,16 +84,30 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     if (volume == null || volume <= 0) return;
     _submitting = true;
 
-    // C6: close immediately; write settles in background.
+    // C6: close immediately; write settles in background. The id is
+    // generated up front (not returned by logDrink) so it's available for
+    // the pop *before* the write completes. `write()` is invoked (not
+    // awaited) before the pop so its Future can ride along in the popped
+    // result — a caller wiring Undo to `entryId` must await it first, or a
+    // fast tap could race the insert.
+    final entryId = const Uuid().v4();
     final repo = ref.read(drinksRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
+    Future<void> write() => repo.logDrink(
+          id: entryId,
+          preset: preset,
+          volumeMl: volume,
+          consumedAt: _consumedAt,
+        );
+    final pendingWrite = write();
+    Navigator.of(context).pop<LoggedDrinkResult>((
+      id: entryId,
+      name: preset.name,
+      beverageType: preset.beverageType,
+      pendingWrite: pendingWrite,
+    ));
     try {
-      await repo.logDrink(
-        preset: preset,
-        volumeMl: volume,
-        consumedAt: _consumedAt,
-      );
+      await pendingWrite;
     } catch (e) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Failed to log drink')),
@@ -109,16 +144,29 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
     if (volume == null || volume <= 0) return;
     _submitting = true;
 
-    // C6: close immediately; writes settle in background.
+    // C6: close immediately; writes settle in background. The id and the
+    // effective logged name are both knowable synchronously from [result]
+    // (every branch below logs under `result.name`, or
+    // `result.newPresetName ?? result.name` for the copy path) — no need to
+    // await the write to pop a useful result. `write()` runs the whole
+    // branch (which for saveAndConfirm/saveAsCopyAndConfirm is itself a
+    // multi-step preset write *then* the entry write) as a single Future,
+    // invoked before the pop so a caller wiring Undo to `entryId` can await
+    // it and not race the insert.
+    final entryId = const Uuid().v4();
+    final loggedName = result.action == _AdvancedAction.saveAsCopyAndConfirm
+        ? (result.newPresetName ?? result.name)
+        : result.name;
     final repo = ref.read(drinksRepositoryProvider);
     final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
-    try {
+
+    Future<void> write() async {
       switch (result.action) {
         case _AdvancedAction.confirmOnly:
           // "Confirm — logs the drink with the entered values for this
           // entry only. The underlying preset is unchanged."
           await repo.logDrink(
+            id: entryId,
             preset: preset,
             name: result.name,
             volumeMl: volume,
@@ -142,6 +190,7 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
           );
           final updated = await repo.getPresetById(preset.id) ?? preset;
           await repo.logDrink(
+            id: entryId,
             preset: updated,
             volumeMl: volume,
             consumedAt: _consumedAt,
@@ -162,11 +211,23 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
             sortOrder: await repo.nextSortOrder(),
           );
           await repo.logDrink(
+            id: entryId,
             preset: copy,
             volumeMl: volume,
             consumedAt: _consumedAt,
           );
       }
+    }
+
+    final pendingWrite = write();
+    Navigator.of(context).pop<LoggedDrinkResult>((
+      id: entryId,
+      name: loggedName,
+      beverageType: preset.beverageType,
+      pendingWrite: pendingWrite,
+    ));
+    try {
+      await pendingWrite;
     } catch (e) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Failed to log drink')),

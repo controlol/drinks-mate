@@ -325,13 +325,20 @@ class DrinksRepository {
   /// must call [updatePreset] first and pass the refreshed preset in.
   /// [consumedAt] defaults to now.
   ///
+  /// [id], when provided, is used as the new entry's id instead of a
+  /// freshly generated one — callers that pop a UI element *before* this
+  /// future settles (S2's "close immediately, write in background" pattern)
+  /// need the id up front to wire a post-log Undo action to the right row.
+  /// Returns the id actually used (generated or caller-supplied).
+  ///
   /// Throws [ArgumentError] if the effective price is non-null while the
   /// effective currency is null (data-model.md `DrinkEntry.currency`:
   /// "Required when priceMinor is set"), or if [name] fails
   /// [validatePresetName] — the same rule `createPreset`/`updatePreset`
   /// enforce, since `DrinkEntry.name` follows the same Parity Rulebook shape.
-  Future<void> logDrink({
+  Future<String> logDrink({
     required DrinkPreset preset,
+    String? id,
     String? name,
     int? volumeMl,
     double? abvPercent,
@@ -350,10 +357,11 @@ class DrinksRepository {
     if (effectivePriceMinor != null && effectiveCurrency == null) {
       throw ArgumentError('currency is required when priceMinor is set');
     }
+    final entryId = id ?? _uuid.v4();
     final now = DateTime.now().toUtc();
     final consumed = consumedAt?.toUtc() ?? now;
     final companion = DrinkEntriesCompanion.insert(
-      id: _uuid.v4(),
+      id: entryId,
       name: Value(name ?? preset.name),
       beverageType: preset.beverageType.stored,
       volumeMl: volumeMl ?? preset.volumeMl,
@@ -368,6 +376,7 @@ class DrinksRepository {
       updatedAt: now,
     );
     await _db.insertDrinkEntry(companion);
+    return entryId;
   }
 
   /// Reactive stream of per-preset usage stats (last-used timestamp,
