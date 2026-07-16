@@ -92,10 +92,18 @@ PartySession _session({String id = 's1', DateTime? endedAt}) {
   );
 }
 
+/// Build a testable HistoryDayScreen wrapped in ProviderScope with all
+/// required providers overridden.
+///
+/// [alwaysUse24HourFormat] drives `MediaQuery.alwaysUse24HourFormat`, which
+/// is what `TimeOfDay.format(context)` actually keys off (not [Locale]) —
+/// see the "Time-of-day display format" Parity Rulebook row. Mirrors
+/// today_drinks_screen_test.dart's `_buildScreen` helper.
 Widget _buildScreen({
   List<DrinkEntry> entries = const [],
   List<SessionDaySummary> summaries = const [],
   UserPreferences? prefs,
+  bool alwaysUse24HourFormat = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -112,6 +120,11 @@ Widget _buildScreen({
       ),
     ],
     child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+        child: child!,
+      ),
       home: HistoryDayScreen(dayStart: _dayStart, dayEnd: _dayEnd),
     ),
   );
@@ -149,14 +162,69 @@ void main() {
     expect(find.text('Lager'), findsOneWidget);
     expect(find.text('Water'), findsOneWidget);
     // Times shown in local time — entries are UTC here and the test
-    // environment is UTC by default, so 20:30/08:00 local == UTC. Match
-    // the full subtitle text (not a bare "330 ml"/"250 ml" substring),
-    // since the hydration header above also renders a bare volume value
-    // that can coincidentally match one of these.
-    expect(find.text('330 ml · 20:30'), findsOneWidget);
-    expect(find.text('250 ml · 08:00'), findsOneWidget);
+    // environment is UTC by default, so 20:30/08:00 local == UTC. The
+    // default MediaQuery in this harness is 12h (alwaysUse24HourFormat:
+    // false), so TimeOfDay.format(context) renders AM/PM strings, not
+    // "HH:mm" — Source: Parity Rulebook "Time-of-day display format"
+    // (issue #46). Match the full subtitle text (not a bare "330 ml"/
+    // "250 ml" substring), since the hydration header above also renders a
+    // bare volume value that can coincidentally match one of these.
+    expect(find.text('330 ml · 8:30 PM'), findsOneWidget);
+    expect(find.text('250 ml · 8:00 AM'), findsOneWidget);
     expect(find.byType(ListTile), findsNWidgets(2));
   });
+
+  // -------------------------------------------------------------------------
+  // 1b. Entry time label honours the device's 12h/24h preference
+  //     (Parity Rulebook: "Time-of-day display format", issue #46) — this
+  //     was the second of the two call sites fixed alongside S6.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'entry time renders 12h AM/PM when alwaysUse24HourFormat=false',
+    (tester) async {
+      final entries = [
+        _entry(
+          id: 'e1',
+          beverageType: BeverageType.water,
+          volumeMl: 250,
+          consumedAt: DateTime.utc(2026, 6, 22, 9, 30),
+          name: 'Water',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        _buildScreen(entries: entries, alwaysUse24HourFormat: false),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining('9:30 AM'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'entry time renders 24h when alwaysUse24HourFormat=true',
+    (tester) async {
+      final entries = [
+        _entry(
+          id: 'e1',
+          beverageType: BeverageType.water,
+          volumeMl: 250,
+          consumedAt: DateTime.utc(2026, 6, 22, 9, 30),
+          name: 'Water',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        _buildScreen(entries: entries, alwaysUse24HourFormat: true),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining('09:30'), findsWidgets);
+    },
+  );
 
   testWidgets(
       'entry order follows the provider (newest-first, per '

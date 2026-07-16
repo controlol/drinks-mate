@@ -51,10 +51,10 @@ class FormatService {
   /// headline".
   String formatLargeVolume(double ml) {
     if (_isImperial) return '${_fmt1dp(mlToFlOz(ml))} fl oz';
-    final litres = ml / 1000;
-    return litres == litres.truncateToDouble()
-        ? '${litres.toInt()} L'
-        : '${litres.toStringAsFixed(1)} L';
+    final rounded = double.parse((ml / 1000).toStringAsFixed(1));
+    return rounded == rounded.truncateToDouble()
+        ? '${rounded.toInt()} L'
+        : '${rounded.toStringAsFixed(1)} L';
   }
 
   // ---------------------------------------------------------------------------

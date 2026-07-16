@@ -142,8 +142,9 @@ class _DayEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final local = entry.consumedAt.toLocal();
-    final timeLabel =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    // Source: Parity Rulebook — "Time-of-day display format" (honours the
+    // device's 12h/24h preference rather than a hardcoded format).
+    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
     final volumeText =
         fmt?.formatVolume(entry.volumeMl.toDouble()) ?? '${entry.volumeMl} ml';
     final name = entry.name ?? entry.beverageType.displayName;

@@ -108,6 +108,55 @@ void main() {
     test('whole litres omit the trailing .0 (2000 ml → 2 L)', () {
       expect(svc.formatLargeVolume(2000.0), equals('2 L'));
     });
+
+    // Regression: formatLargeVolume used to compare the *unrounded*
+    // ml/1000 double against its truncation to decide whether to omit the
+    // trailing ".0". That missed values that round UP to a whole litre at
+    // 1dp but aren't an exact multiple of 1000 ml. The fix rounds to 1dp
+    // first (`(ml / 1000).toStringAsFixed(1)`), then checks if *that*
+    // rounded value is a whole litre. Source: Parity Rulebook → "Metric
+    // display precision — daily-progress headline" (1 decimal place,
+    // trailing ".0" omitted for whole litres).
+    group('near-whole-litre rounding (regression)', () {
+      // Each of these divides to a value in [1.95, 2.05) that rounds to
+      // "2.0" at 1dp — verified directly via
+      // `(ml/1000).toStringAsFixed(1)` (not back-filled from the old,
+      // buggy output) before being asserted here.
+      for (final ml in [1970.0, 1980.0, 1995.0, 2030.0, 2049.0]) {
+        test('$ml ml rounds up to whole litres → 2 L', () {
+          expect(svc.formatLargeVolume(ml), equals('2 L'));
+        });
+      }
+
+      test('1949 ml stays below the rounding boundary → 1.9 L', () {
+        // 1949 / 1000 = 1.949 → "1.9" at 1dp; sits just below the
+        // round-up-to-2 boundary, confirming the fix doesn't over-collapse
+        // near-2 values that should stay at 1.9.
+        expect(svc.formatLargeVolume(1949.0), equals('1.9 L'));
+      });
+
+      test(
+        '1950 ml (exact half-boundary) → 1.9 L, not 2 L',
+        () {
+          // 1950 / 1000 = 1.95 exactly as a *mathematical* value, but the
+          // nearest representable double is fractionally below 1.95, so
+          // Dart's `toStringAsFixed(1)` rounds it DOWN to "1.9" rather than
+          // "2.0" (round-half-away-from-zero only applies to values that
+          // are exactly representable at the half boundary; verified
+          // directly against `(1950.0 / 1000).toStringAsFixed(1)`, not
+          // assumed from IEEE-754 half-to-even reasoning). This is the
+          // sharpest edge of the fix: it proves the implementation is
+          // rounding the *actual* double, not doing decimal-exact math.
+          expect(svc.formatLargeVolume(1950.0), equals('1.9 L'));
+        },
+      );
+
+      test('999 ml rounds up to a whole litre from below → 1 L', () {
+        // 999 / 1000 = 0.999, rounds to 1.0 at 1dp — mirrors the "rounds up
+        // to whole" case one order of magnitude down.
+        expect(svc.formatLargeVolume(999.0), equals('1 L'));
+      });
+    });
   });
 
   group('FormatService.formatLargeVolume — imperial', () {

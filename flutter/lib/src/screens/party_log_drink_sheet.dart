@@ -361,8 +361,9 @@ class _TimeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final local = consumedAt.toLocal();
-    final label =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    // Source: Parity Rulebook — "Time-of-day display format" (honours the
+    // device's 12h/24h preference rather than a hardcoded format).
+    final label = TimeOfDay.fromDateTime(local).format(context);
     return OutlinedButton.icon(
       icon: const Icon(Icons.schedule),
       label: Text(label),
