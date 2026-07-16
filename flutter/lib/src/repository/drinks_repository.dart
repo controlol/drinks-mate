@@ -756,9 +756,9 @@ class DrinksRepository {
 
   /// Reactive stream of today's logged entries in reverse-chronological order.
   ///
-  /// Only non-alcoholic entries are included — this screen is reached from the
-  /// hydration progress card (issue #15 scope: non-alcoholic only).
-  /// Soft-deleted entries are excluded.
+  /// Every beverage type is included — hydration and alcoholic entries alike
+  /// (design/user-experience.md §S6; design/party-session.md §Logging alcohol
+  /// when no session is active). Soft-deleted entries are excluded.
   Stream<List<DrinkEntry>> watchTodayEntries({
     DateTime? now,
     int boundaryHour = 5,
@@ -767,15 +767,12 @@ class DrinksRepository {
       now: now ?? DateTime.now(),
       boundaryHour: boundaryHour,
     );
-    final nonAlcoholicTypes = BeverageType.values
-        .where((t) => !t.isAlcoholic)
-        .map((t) => t.stored)
-        .toList();
+    final allTypes = BeverageType.values.map((t) => t.stored).toList();
     return _db
         .watchEntriesInWindowFull(
           window.$1.toUtc(),
           window.$2.toUtc(),
-          nonAlcoholicTypes,
+          allTypes,
         )
         .map((rows) => rows.map(_rowToEntry).toList());
   }

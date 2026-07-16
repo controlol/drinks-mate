@@ -289,7 +289,8 @@ final goalCelebrationGuardProvider = Provider<GoalCelebrationGuard>((ref) {
 // Today entries provider (issue #15)
 // ---------------------------------------------------------------------------
 
-/// Reactive stream of today's non-alcoholic drink entries, newest-first.
+/// Reactive stream of today's drink entries, newest-first — every beverage
+/// type, hydration and alcoholic alike (design/user-experience.md §S6).
 ///
 /// Used by the S6 Today Drinks Log screen. Re-subscribes at each day boundary
 /// so the query window rolls over without requiring an app restart.

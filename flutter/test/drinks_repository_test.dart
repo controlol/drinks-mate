@@ -1671,12 +1671,14 @@ void main() {
     });
 
     // -----------------------------------------------------------------------
-    // Alcoholic entries must be excluded (disjoint flows)
-    // Source: data-model.md §BeverageType: "strictly disjoint flows"
-    // S6 spec: "non-alcoholic only (same BeverageType filter as watchTodayTotalMl)"
+    // Alcoholic entries must be included — every beverage type shows here.
+    // Source: design/user-experience.md §S6: "A list of today's logged
+    // drinks... of every beverage type — hydration and alcoholic entries
+    // alike."; design/party-session.md §Logging alcohol when no session is
+    // active (orphan alcoholic entries still surface in the Today log).
     // -----------------------------------------------------------------------
     test(
-      'excludes alcoholic entries (BeverageType.beer, isAlcoholic == true)',
+      'includes alcoholic entries (BeverageType.beer, isAlcoholic == true)',
       () async {
         const beerPreset = DrinkPreset(
           id: 'test-beer-preset-s6',
@@ -1699,10 +1701,46 @@ void main() {
             await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
         expect(
           entries,
-          isEmpty,
-          reason: 'Alcoholic entries must never appear in watchTodayEntries — '
-              'the two flows are strictly disjoint (data-model.md §BeverageType)',
+          hasLength(1),
+          reason: 'Alcoholic entries must appear in watchTodayEntries '
+              'alongside hydration entries — every beverage type is shown '
+              '(design/user-experience.md §S6)',
         );
+        expect(entries.single.beverageType, equals(BeverageType.beer));
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Session-attached alcoholic entries are still visible here — S6 only
+    // gates *editability* on partySessionId (read-only rows), not list
+    // membership. Source: design/user-experience.md §S6: "those rows are
+    // read-only here" (i.e. they still appear, just without edit/delete).
+    // -----------------------------------------------------------------------
+    test(
+      'includes alcoholic entries with a partySessionId set (session-attached)',
+      () async {
+        await db.insertDrinkEntry(
+          DrinkEntriesCompanion.insert(
+            id: 'session-attached-entry',
+            beverageType: BeverageType.beer.stored,
+            volumeMl: 250,
+            partySessionId: const Value('test-session-1'),
+            consumedAt: DateTime(2026, 6, 23, 9, 0).toUtc(),
+            createdAt: DateTime(2026, 6, 23, 9, 0).toUtc(),
+            updatedAt: DateTime(2026, 6, 23, 9, 0).toUtc(),
+          ),
+        );
+
+        final entries =
+            await repo.watchTodayEntries(now: now, boundaryHour: 5).first;
+        expect(
+          entries,
+          hasLength(1),
+          reason: 'watchTodayEntries visibility is not gated by '
+              'partySessionId — only S6\'s read-only rendering is '
+              '(design/user-experience.md §S6)',
+        );
+        expect(entries.single.partySessionId, equals('test-session-1'));
       },
     );
 
