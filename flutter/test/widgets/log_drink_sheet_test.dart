@@ -35,6 +35,7 @@
 // that triggers it, or it would observe AsyncLoading and compute sortOrder
 // from an empty list regardless of the fixture.
 
+import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
@@ -42,8 +43,10 @@ import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/preferences_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/log_drink_sheet.dart';
+import 'package:drinks_mate/src/screens/preset_editor_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -195,6 +198,19 @@ class _FakeDrinksRepo extends DrinksRepository {
   }
 }
 
+/// Records [updateDrinkSortMode] calls instead of touching the DB — same
+/// pattern as [_FakeDrinksRepo] above.
+class _FakePreferencesRepo extends PreferencesRepository {
+  _FakePreferencesRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<PresetSortMode> updateDrinkSortModeCalls = [];
+
+  @override
+  Future<void> updateDrinkSortMode(PresetSortMode mode) async {
+    updateDrinkSortModeCalls.add(mode);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -255,23 +271,47 @@ const _waterPreset = DrinkPreset(
   sortOrder: 1,
 );
 
+/// A second non-alcoholic fixture — used alongside [_waterPreset] for the
+/// search-filtering tests below (distinct, non-overlapping names).
+const _winePreset = DrinkPreset(
+  id: 'preset-wine',
+  name: 'Glass of wine',
+  beverageType: BeverageType.wine,
+  volumeMl: 175,
+  abvPercent: 12.0,
+  iconKey: 'wine_glass',
+  iconColor: '#be185d',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 2,
+);
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
 
 /// Builds a [ProviderContainer] wired to [repo], with [visiblePresets] fixed
 /// (deterministic phase-1 list) and allPresetsProvider/userPreferencesProvider
-/// pre-warmed (see file header).
+/// pre-warmed (see file header). [preferencesRepo] defaults to a recording
+/// fake (never a real [PreferencesRepository], which would open a real
+/// on-disk [AppDatabase] via `_appDatabaseProvider`).
 Future<ProviderContainer> _buildContainer({
   required _FakeDrinksRepo repo,
   required List<DrinkPreset> visiblePresets,
   UserPreferences? prefs,
+  PreferencesRepository? preferencesRepo,
 }) async {
   final container = ProviderContainer(
     overrides: [
       drinksRepositoryProvider.overrideWithValue(repo),
+      preferencesRepositoryProvider.overrideWithValue(
+        preferencesRepo ?? _FakePreferencesRepo(),
+      ),
       visiblePresetsProvider.overrideWith(
         (ref) => Stream.value(visiblePresets),
+      ),
+      presetUsageStatsProvider.overrideWith(
+        (ref) => Stream.value(const <String, PresetUsageStats>{}),
       ),
       userPreferencesProvider.overrideWith(
         (ref) => Stream.value(prefs ?? _prefs()),
@@ -941,6 +981,178 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.createPresetCalls.single.name, 'Craft Lager Copy');
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 9. Phase 1 search field (issue #78)
+  // -------------------------------------------------------------------------
+
+  group('Phase 1 search field (issue #78)', () {
+    testWidgets(
+      'typing in the search field filters tiles to matching names only, '
+      'case-insensitively',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset, _winePreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        expect(find.text('Craft Lager'), findsOneWidget);
+        expect(find.text('Glass of water'), findsOneWidget);
+        expect(find.text('Glass of wine'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'WINE', // uppercase — must still match 'Glass of wine'
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsNothing);
+        expect(find.text('Glass of water'), findsNothing);
+        expect(find.text('Glass of wine'), findsOneWidget);
+        // "Create new preset" tile always stays, regardless of the filter.
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'clearing the search field restores the full preset list',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset, _winePreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'wine',
+        );
+        await tester.pump();
+        expect(find.text('Craft Lager'), findsNothing);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          '',
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsOneWidget);
+        expect(find.text('Glass of water'), findsOneWidget);
+        expect(find.text('Glass of wine'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a query matching nothing leaves only the "Create new preset" tile',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'nonexistent drink name',
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsNothing);
+        expect(find.text('Glass of water'), findsNothing);
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. "Create new preset" entry (issue #78)
+  // -------------------------------------------------------------------------
+
+  group('"Create new preset" entry (issue #78)', () {
+    testWidgets(
+      'the tile is present as the first phase-1 list item',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+        expect(find.text('Create new preset'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping the tile pushes a route containing PresetEditorScreen',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.tap(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PresetEditorScreen), findsOneWidget);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Phase 1 sort-mode dropdown (issue #78)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'changing the phase-1 sort-mode dropdown calls updateDrinkSortMode with '
+    'the selected mode',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final preferencesRepo = _FakePreferencesRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+        preferencesRepo: preferencesRepo,
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+
+      await tester.tap(find.byType(DropdownButton<PresetSortMode>));
+      await tester.pumpAndSettle();
+      // The closed dropdown already renders the current selection's label
+      // ("Recently used"), and DropdownButton pre-builds every item off
+      // stage for layout — use `.last` to hit the open overlay's item.
+      await tester.tap(find.text('Most used').last);
+      await tester.pumpAndSettle();
+
+      expect(preferencesRepo.updateDrinkSortModeCalls, [
+        PresetSortMode.mostUsed,
+      ]);
     },
   );
 }

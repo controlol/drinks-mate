@@ -283,7 +283,8 @@ class DrinksRepository {
     if (row == null) throw StateError('Preset $id not found.');
     if (!row.isUserCreated) {
       throw StateError(
-          'Cannot delete a seeded (non-user-created) preset: $id.');
+        'Cannot delete a seeded (non-user-created) preset: $id.',
+      );
     }
     await _db.softDeletePreset(id, DateTime.now().toUtc());
   }
@@ -361,11 +362,62 @@ class DrinksRepository {
       currency: Value(effectiveCurrency),
       iconKey: Value(preset.iconKey),
       iconColor: Value(preset.iconColor),
+      presetId: Value(preset.id),
       consumedAt: consumed,
       createdAt: now,
       updatedAt: now,
     );
     await _db.insertDrinkEntry(companion);
+  }
+
+  /// Reactive stream of per-preset usage stats (last-used timestamp,
+  /// trailing 30-day count), keyed by preset id — feeds [rankPresetIds] for
+  /// the Recently-used/Most-used sort modes (F14 §Sort modes).
+  ///
+  /// [now] is injected for deterministic tests; defaults to the wall clock,
+  /// **re-read on every emission** (not captured once at subscription time)
+  /// so the trailing window actually keeps sliding for the life of a
+  /// long-lived subscription — e.g. a drink logged the moment it's consumed
+  /// must land inside its own window, not be excluded by a "now" frozen from
+  /// whenever the stream first started. Both signals key off live entries'
+  /// `consumedAt` (never `createdAt`), aggregated in Dart from a single
+  /// watched row set — same pattern as the 7-day stat streams above.
+  Stream<Map<String, PresetUsageStats>> watchPresetUsageStats({DateTime? now}) {
+    return _db.watchPresetEntryTimestamps().map((timestamps) {
+      final nowUtc = (now ?? DateTime.now()).toUtc();
+      final windowStartUtc = nowUtc.subtract(const Duration(days: 30));
+      return _aggregateUsageStats(
+        timestamps,
+        windowStartUtc: windowStartUtc,
+        nowUtc: nowUtc,
+      );
+    });
+  }
+
+  static Map<String, PresetUsageStats> _aggregateUsageStats(
+    List<(String, DateTime)> timestamps, {
+    required DateTime windowStartUtc,
+    required DateTime nowUtc,
+  }) {
+    final lastUsed = <String, DateTime>{};
+    final count30d = <String, int>{};
+    for (final (presetId, consumedAt) in timestamps) {
+      final existing = lastUsed[presetId];
+      if (existing == null || consumedAt.isAfter(existing)) {
+        lastUsed[presetId] = consumedAt;
+      }
+      if (!consumedAt.isBefore(windowStartUtc) && !consumedAt.isAfter(nowUtc)) {
+        count30d[presetId] = (count30d[presetId] ?? 0) + 1;
+      }
+    }
+    final ids = {...lastUsed.keys, ...count30d.keys};
+    return {
+      for (final id in ids)
+        id: PresetUsageStats(
+          lastUsedAt: lastUsed[id],
+          count30d: count30d[id] ?? 0,
+        ),
+    };
   }
 
   /// Reactive stream of today's hydration total in ml.
@@ -783,6 +835,7 @@ class DrinksRepository {
         iconKey: row.iconKey,
         iconColor: row.iconColor,
         partySessionId: row.partySessionId,
+        presetId: row.presetId,
         consumedAt: row.consumedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

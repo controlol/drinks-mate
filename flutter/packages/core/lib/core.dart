@@ -14,6 +14,7 @@ export 'src/day_boundary.dart';
 export 'src/hydration.dart';
 export 'src/icon_color.dart';
 export 'src/pace.dart';
+export 'src/preset_ranking.dart';
 export 'src/units.dart';
 export 'src/username.dart';
 export 'src/notification_guard.dart';

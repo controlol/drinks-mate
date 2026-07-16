@@ -15,13 +15,19 @@ import 'log_drink_sheet.dart';
 import 'settings_screen.dart';
 import 'today_drinks_screen.dart';
 
-/// Today tab — F3 home screen (issue #13).
+/// Today tab — F3 home screen (issue #13; Log-a-drink grid: issue #78).
 ///
-/// Layout (top to bottom):
+/// Layout, below [kTabletBreakpointWidth] (top to bottom):
 ///   1. Progress card — intake vs goal, pace tick, status pill (taps → S6 log).
 ///   2. Stat card pair — 7-day daily average and days-on-goal n/7.
-///   3. Quick-log row — horizontally scrollable preset shortcuts.
+///   3. Log-a-drink section — sort-mode dropdown + a vertically-scrolling
+///      grid of the top [kLogADrinkGridSize] presets by the selected mode
+///      (Manual / Recently used / Most used — F14 §Sort modes).
 ///   4. "Log drink" button — full-width, opens S2 sheet.
+///
+/// At or above [kTabletBreakpointWidth], 1–2 sit in a left column beside the
+/// Log-a-drink section on the right, with the "Log drink" button still
+/// full-width at the bottom (user-experience.md §Responsive layout).
 ///
 /// Also listens for the first intake-crosses-goal event each day and shows
 /// the full-screen [GoalCelebrationOverlay] (issue #14).
@@ -90,27 +96,57 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
         title: const Text('Today'),
         actions: [_settingsButton(context)],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ProgressCard(),
-          const SizedBox(height: 12),
-          _StatCardRow(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Quick log',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          _QuickLogRow(),
-          const Spacer(),
-          _LogDrinkButton(),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Tablet/desktop: the Log-a-drink section sits beside the progress
+          // + stat cards instead of below them (user-experience.md
+          // §Responsive layout; breakpoint chosen to match Material's
+          // "expanded" window-size class, ≥840dp — see the PR description
+          // for the full breakpoint table).
+          final isWide = constraints.maxWidth >= kTabletBreakpointWidth;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isWide)
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _ProgressCard(),
+                            const SizedBox(height: 12),
+                            _StatCardRow(),
+                          ],
+                        ),
+                      ),
+                      Expanded(child: _LogADrinkSection()),
+                    ],
+                  ),
+                )
+              else ...[
+                _ProgressCard(),
+                const SizedBox(height: 12),
+                _StatCardRow(),
+                Expanded(child: _LogADrinkSection()),
+              ],
+              _LogDrinkButton(),
+            ],
+          );
+        },
       ),
     );
   }
 }
+
+/// Below this width, the Today screen stacks the Log-a-drink section under
+/// the progress/stat cards; at or above it, they sit side by side. Matches
+/// Material's "expanded" window-size-class threshold (≥840dp) — a
+/// reasonable, documented choice per the issue's `[OPEN]` breakpoint note,
+/// not a value pinned by the design docs.
+const double kTabletBreakpointWidth = 840;
 
 // ---------------------------------------------------------------------------
 // Progress card
@@ -498,35 +534,116 @@ class _StatCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Quick-log row
+// Log-a-drink section — responsive grid + sort-mode dropdown (F3/F14 §Sort
+// modes, issue #78). Replaces the old horizontally-scrolling quick-log row.
 // ---------------------------------------------------------------------------
 
-class _QuickLogRow extends ConsumerWidget {
+/// Number of grid columns for a given *available width* (not necessarily the
+/// full screen width — on the tablet/desktop split layout this section gets
+/// roughly half the screen). Reasonable, documented tiers per the issue's
+/// `[OPEN]` breakpoint note:
+///   < 500dp  -> 2 columns (phone)
+///   500–899  -> 3 columns (wide phone / the tablet-desktop side panel)
+///   >= 900dp -> 4 columns (a full-width tablet/desktop grid)
+int _gridColumnsForWidth(double width) {
+  if (width >= 900) return 4;
+  if (width >= 500) return 3;
+  return 2;
+}
+
+/// How many top-ranked presets the grid shows (features.md F14 §Sort modes).
+const int kLogADrinkGridSize = 8;
+
+class _LogADrinkSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final presetsAsync = ref.watch(visiblePresetsProvider);
-    return SizedBox(
-      height: 96,
-      child: presetsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => const SizedBox.shrink(),
-        data: (presets) {
-          final shown = presets.take(5).toList();
-          return ListView.separated(
-            scrollDirection: Axis.horizontal,
+    final presets = ref.watch(rankedVisiblePresetsProvider);
+    final mode =
+        ref.watch(userPreferencesProvider).valueOrNull?.drinkSortMode ??
+            PresetSortMode.recentlyUsed;
+    final shown = presets.take(kLogADrinkGridSize).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Log a drink',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              _SortModeDropdown(
+                mode: mode,
+                onChanged: (newMode) => ref
+                    .read(preferencesRepositoryProvider)
+                    .updateDrinkSortMode(newMode),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: shown.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, i) => _QuickLogTile(preset: shown[i]),
-          );
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = _gridColumnsForWidth(constraints.maxWidth);
+                return GridView.builder(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: shown.length,
+                  itemBuilder: (context, i) => _LogADrinkTile(preset: shown[i]),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SortModeDropdown extends StatelessWidget {
+  const _SortModeDropdown({required this.mode, required this.onChanged});
+
+  final PresetSortMode mode;
+  final ValueChanged<PresetSortMode> onChanged;
+
+  static const _labels = {
+    PresetSortMode.manual: 'Manual',
+    PresetSortMode.recentlyUsed: 'Recently used',
+    PresetSortMode.mostUsed: 'Most used',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: SemanticsLabels.sortModeSelector,
+      child: DropdownButton<PresetSortMode>(
+        value: mode,
+        underline: const SizedBox.shrink(),
+        onChanged: (value) {
+          if (value != null) onChanged(value);
         },
+        items: [
+          for (final entry in _labels.entries)
+            DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        ],
       ),
     );
   }
 }
 
-class _QuickLogTile extends ConsumerWidget {
-  const _QuickLogTile({required this.preset});
+class _LogADrinkTile extends ConsumerWidget {
+  const _LogADrinkTile({required this.preset});
 
   final DrinkPreset preset;
 
@@ -539,7 +656,6 @@ class _QuickLogTile extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: () => _quickLog(context, ref),
         child: Container(
-          width: 80,
           decoration: BoxDecoration(
             border: Border.all(
               color: Theme.of(context).colorScheme.outlineVariant,
