@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/app.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
@@ -54,6 +55,9 @@ Widget _appWithFakeStreams() {
       // and therefore its cleanup timer never fires mid-teardown.
       visiblePresetsProvider.overrideWith(
         (_) => Stream.value(const <DrinkPreset>[]),
+      ),
+      presetUsageStatsProvider.overrideWith(
+        (_) => Stream.value(const <String, PresetUsageStats>{}),
       ),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
       sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
@@ -128,7 +132,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_appWithFakeStreams());
     await tester.pump(); // let StreamProvider emit the first value
-    expect(find.text('Quick log'), findsOneWidget);
+    expect(find.text('Log a drink'), findsOneWidget);
     expect(find.text('Log drink'), findsOneWidget);
   });
 
@@ -138,7 +142,7 @@ void main() {
         .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     // Today screen is initially visible.
-    expect(find.text('Quick log'), findsOneWidget);
+    expect(find.text('Log a drink'), findsOneWidget);
 
     // Tap the History tab.
     final navBar = find.byType(NavigationBar);
@@ -150,7 +154,7 @@ void main() {
     // History screen visible (empty state — the overridden providers above
     // emit an empty bucket list); Today content gone.
     expect(find.text('No drinks logged in this period'), findsOneWidget);
-    expect(find.text('Quick log'), findsNothing);
+    expect(find.text('Log a drink'), findsNothing);
   });
 
   testWidgets('tapping Party tab switches screen', (tester) async {

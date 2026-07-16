@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../a11y/semantics_labels.dart';
 import '../models/drink_preset.dart';
 import '../models/optional.dart';
 import '../repository/providers.dart';
 import '../utils/color_utils.dart';
+import 'preset_editor_screen.dart';
 
 /// S2 — Log drink bottom sheet.
 ///
@@ -198,40 +200,146 @@ class _LogDrinkSheetState extends ConsumerState<LogDrinkSheet> {
 // Phase 1 — Preset picker
 // ---------------------------------------------------------------------------
 
-class _PickPhase extends ConsumerWidget {
+class _PickPhase extends ConsumerStatefulWidget {
   const _PickPhase({required this.scrollController, required this.onPick});
 
   final ScrollController scrollController;
   final ValueChanged<DrinkPreset> onPick;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final presetsAsync = ref.watch(visiblePresetsProvider);
+  ConsumerState<_PickPhase> createState() => _PickPhaseState();
+}
+
+class _PickPhaseState extends ConsumerState<_PickPhase> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(
+      () => setState(() => _query = _searchCtrl.text.trim().toLowerCase()),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createPreset() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => const PresetEditorScreen()),
+    );
+    // No further action needed: visiblePresetsProvider is a reactive stream,
+    // so the list below already refreshes with the new preset once created.
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final presets = ref.watch(rankedVisiblePresetsProvider);
+    final mode =
+        ref.watch(userPreferencesProvider).valueOrNull?.drinkSortMode ??
+            PresetSortMode.recentlyUsed;
+    final filtered = _query.isEmpty
+        ? presets
+        : presets.where((p) => p.name.toLowerCase().contains(_query)).toList();
+
     return Column(
       children: [
         _SheetHandle(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Text(
-            'Log a drink',
-            style: Theme.of(context).textTheme.titleLarge,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Log a drink',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              _SortModeDropdown(
+                mode: mode,
+                onChanged: (newMode) => ref
+                    .read(preferencesRepositoryProvider)
+                    .updateDrinkSortMode(newMode),
+              ),
+            ],
           ),
         ),
-        Expanded(
-          child: presetsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (presets) => ListView.builder(
-              controller: scrollController,
-              itemCount: presets.length,
-              itemBuilder: (context, i) => _PresetTile(
-                preset: presets[i],
-                onTap: () => onPick(presets[i]),
-              ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: TextField(
+            key: const Key('log_drink_search_field'),
+            controller: _searchCtrl,
+            decoration: const InputDecoration(
+              hintText: 'Search drinks',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+              isDense: true,
             ),
           ),
         ),
+        Expanded(
+          child: ListView.builder(
+            controller: widget.scrollController,
+            itemCount: filtered.length + 1,
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                return Semantics(
+                  label: SemanticsLabels.createPresetEntry,
+                  button: true,
+                  child: ListTile(
+                    key: const Key('log_drink_create_preset_tile'),
+                    leading: const Icon(Icons.add_circle_outline),
+                    title: const Text('Create new preset'),
+                    onTap: _createPreset,
+                  ),
+                );
+              }
+              final preset = filtered[i - 1];
+              return _PresetTile(
+                preset: preset,
+                onTap: () => widget.onPick(preset),
+              );
+            },
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Sort-mode dropdown shared by the Today grid and this picker (F14 §Sort
+/// modes) — same three modes, same label text.
+class _SortModeDropdown extends StatelessWidget {
+  const _SortModeDropdown({required this.mode, required this.onChanged});
+
+  final PresetSortMode mode;
+  final ValueChanged<PresetSortMode> onChanged;
+
+  static const _labels = {
+    PresetSortMode.manual: 'Manual',
+    PresetSortMode.recentlyUsed: 'Recently used',
+    PresetSortMode.mostUsed: 'Most used',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: SemanticsLabels.sortModeSelector,
+      child: DropdownButton<PresetSortMode>(
+        value: mode,
+        underline: const SizedBox.shrink(),
+        onChanged: (value) {
+          if (value != null) onChanged(value);
+        },
+        items: [
+          for (final entry in _labels.entries)
+            DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        ],
+      ),
     );
   }
 }
