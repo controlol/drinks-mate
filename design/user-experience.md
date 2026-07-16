@@ -82,11 +82,11 @@ The selected preset is shown at the top (icon, name) so the user can confirm wha
 - **Quick edits** — `volume` and `time` (defaults to now). Both inline, low-friction.
 - **Action row** — at the very bottom of the drawer:
   - **Primary "Confirm" button**, large and full-width by default.
-  - **A smaller "Advanced" button to the left of Confirm**, opening an additional editor for `name`, `ABV` (alcoholic drinks only), and `price`. Only fields the user is likely to want to tweak per-entry — the icon and colour are not editable here; those belong to the preset itself and are changed in "Manage drinks".
+  - **A smaller "Advanced" button to the left of Confirm**, opening an additional editor for `name` and `ABV` (alcoholic drinks only). Only fields the user is likely to want to tweak per-entry — the icon and colour are not editable here; those belong to the preset itself and are changed in "Manage drinks". **Price is not set here at log time, for any drink type** — the entry logs at the preset's regular price (set in "Manage drinks"). It can still be overridden afterwards on a per-entry basis: from [S6](#s6--today-drinks-log) for ordinary entries, or from [S9 Party Session Log](#s9--party-session-log) for alcoholic drinks attached to a Party Session (independent of that session's own session-wide pricing — see [party-session.md → Pricing during a session](./party-session.md#pricing-during-a-session)).
 
 #### Advanced editor
 
-Opening the Advanced editor reveals fields for `name`, `ABV`, and `price`. After making changes the user has three exit paths:
+Opening the Advanced editor reveals fields for `name` and `ABV`. After making changes the user has three exit paths:
 
 1. **Back** — discards the advanced edits and returns to phase 2 with the preset's original values.
 2. **Confirm** — logs the drink with the entered values **for this entry only**. The underlying preset is unchanged. This is the most common path when the user just needs a one-off variation (e.g. "this particular beer is 7% instead of 5%").
@@ -173,8 +173,8 @@ Reached by tapping the progress card on [S1 Today](#s1--today-home). Presented a
 Content:
 
 - The same progress card as on Today (read-only at the top, for orientation), or a slimmer summary header carrying today's total intake and goal. Either way, the user keeps their bearings on where they are versus goal while reviewing entries.
-- A **list of today's logged drinks**, newest first. Each row shows the drink's icon (tinted in its configured colour), name, volume, and time of consumption.
-- Tapping a row opens an **edit / delete** affordance for that entry. Editable fields are volume, name, ABV (alcoholic drinks only), price, and time. Delete is a soft-delete with confirmation.
+- A **list of today's logged drinks**, newest first, of every beverage type — hydration and alcoholic entries alike. Each row shows the drink's icon (tinted in its configured colour), name, volume, and time of consumption.
+- Tapping a row opens an **edit / delete** affordance for that entry, for every entry **except** an alcoholic drink attached to a Party Session (`partySessionId` set) — those rows are read-only here; edit or delete them from [S9 Party Session Log](#s9--party-session-log) instead, the single authoritative place for session-attached drinks. Editable fields (where editing is allowed) are volume, name, ABV (alcoholic drinks only), price, and time. Delete is a soft-delete with confirmation.
 - An empty state appears when the user has logged nothing yet today: an illustration plus a friendly one-line prompt and a button to log a drink (opens the S2 drawer).
 
 Entries edited or deleted here cause the progress card on S1 to recompute on return.
@@ -198,14 +198,38 @@ The first time the user opens the Party tab, the screen presents a brief explain
 After the user has seen the explainer at least once (i.e. has ever opened the Party tab before, regardless of whether they started a session), the explainer is no longer shown by default. Instead:
 
 - A **full-width "Start party session" button** at the top of the content area.
-- A **past sessions list** below the button. Each row shows session date / range, peak BAC, number of alcoholic drinks, and how the session ended (manual / auto). Tapping a row drills into a session summary view.
+- A **past sessions list** below the button. Each row shows session date / range, peak BAC, number of alcoholic drinks, and how the session ended (manual / auto). Tapping a row opens [S9 — Party Session Log](#s9--party-session-log) in its read-only, ended-session mode.
 - An "i" / info affordance on the header re-opens the explainer if the user wants to revisit it.
 
 #### Active session
 
-When a session is active, the Party tab displays the active-session view. Its full content list — current BAC in g/L with mmol/L alongside, BAC line chart, cap progress, drinks-this-session count, total grams of alcohol, time elapsed, meal indicator, session-prices control, session totals, and the End session action — is the canonical [party-session.md → Party tab during a session](./party-session.md#party-tab-during-a-session) list. Treat that list as authoritative; this S7 description does not duplicate it.
+When a session is active, the Party tab displays the active-session view. Its full content list — current BAC in g/L with mmol/L alongside, BAC line chart, cap progress, drinks-this-session count, total grams of alcohol, time elapsed, meal indicator, session-prices control, session totals, and the End session action — is the canonical [party-session.md → Party tab during a session](./party-session.md#party-tab-during-a-session) list. Treat that list as authoritative; this S7 description does not duplicate it. The drinks-count / total-grams line is tappable and opens [S9 — Party Session Log](#s9--party-session-log) in its editable, active-session mode.
 
 Starting a session may open profile prompts (birthday, optional height) and the meal / pricing prompts before reaching the active view — see [party-session.md → Starting a session](./party-session.md#starting-a-session).
+
+### S9 — Party Session Log
+
+Functional spec: [features.md → F12 Party Session](./features.md#f12--party-session-opt-in). Full feature design: [party-session.md](./party-session.md).
+
+One screen serves both an active session and any ended session — it is the drill-down target from both entry points below, and doubles as the "session summary view" referenced from the past-sessions list. Presented as a full-screen push; the bottom tab bar is hidden, a back affordance returns to the Party tab.
+
+Reached two ways:
+
+- **Active session:** tapping the drinks-count / total-grams line on the Party tab's active-session view (see [party-session.md → Party tab during a session](./party-session.md#party-tab-during-a-session)) opens this screen in its **editable** mode.
+- **Ended session:** tapping a row in the Party tab's past-sessions list (see [S7 → No active session — subsequent visits](#no-active-session--subsequent-visits)) opens this screen in its **read-only** mode for that session.
+
+Content:
+
+- A summary header for orientation. Active-session mode: current BAC (g/L, mmol/L alongside), drinks-this-session count, and time elapsed — a slimmer echo of the Party tab's own header, the same relationship S6 has to Today's progress card. Ended-session mode: session duration, total alcoholic drinks, meals logged, and peak estimated BAC — the same fields already shown on the History day drill-down's session summary card ([features.md → Day drill-down](./features.md#day-drill-down)).
+- A **list of the session's alcoholic drink entries**, newest first. This includes drinks logged directly within the session **and** orphan drinks absorbed into it (see [party-session.md → Absorbing orphan drinks](./party-session.md#absorbing-orphan-drinks-when-a-later-session-starts)). Each row shows the drink's icon (tinted), name, volume, ABV, and time of consumption.
+- **Alcoholic drinks only.** Non-alcoholic drinks logged during the session's window are not shown here — hydration stays exclusively in S1/S6. Meals are not shown here either — they stay in the Party tab's meal indicator only.
+- **Active-session mode:** tapping a row opens an edit / delete affordance for that entry. Editable fields are volume, name, ABV, price, and time — mirroring S6's edit affordance. A price edit here is a **one-off, this-entry-only** override, same as S6; it is independent of the session-wide `PartySessionPrice` override editable from the Party tab's "Manage prices" screen (see [party-session.md → Editing prices during a session](./party-session.md#editing-prices-during-a-session)) — editing one does not change the other. Delete is a soft-delete with confirmation; deleting an absorbed orphan permanently deletes the drink (it does not revert to orphan status — there is one delete semantic, matching S6).
+- **Ended-session mode:** rows are display-only. No edit / delete affordance — a session's history does not change after the fact.
+- An empty state appears if the session has no alcoholic drinks yet (e.g. a session started manually before any drink is logged): a friendly one-line prompt, plus — active-session mode only — a button that opens the Party tab's log-alcohol sheet.
+
+Entries edited or deleted here (active-session mode) recompute the BAC estimate and the Party tab's active-session view on return.
+
+**Interaction with S6:** once S6 stops excluding alcoholic drinks, a session-attached alcoholic entry may appear in both S6 (if logged today) and S9. S6 shows it read-only there — tapping it does not open an edit affordance. S9 is the single authoritative place to edit or delete a session-attached alcoholic drink. S6 remains the authoritative place for orphan alcoholic entries and all non-alcoholic entries.
 
 ## Key flows
 
@@ -238,7 +262,7 @@ flowchart TD
 2. Taps a preset tile in the "Log a drink" grid on the today view (e.g. "200 ml water").
 3. The drink is logged at the current time. Progress updates immediately. A brief toast or similar confirms the action with an undo affordance.
 
-Two taps total (open the app, tap the tile).
+Two taps total (open the app, tap the tile). For an alcoholic preset, the drink still logs immediately (as an orphan drink) and the toast additionally offers a "Start session" action — see [party-session.md → Logging from Today](./party-session.md#logging-from-today-quick-log-tile-and-s2-drawer).
 
 ```mermaid
 flowchart TD

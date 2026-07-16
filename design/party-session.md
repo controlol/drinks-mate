@@ -93,6 +93,8 @@ If the check determines the active session should have ended, it ends it retroac
 
 ### Logging alcohol when no session is active
 
+This section describes the **Party tab's** dedicated "Log alcohol" action, which blocks on the prompt below before the drink is recorded. Logging alcohol from Today (the quick-log grid tile or the S2 drawer) works differently — see [Logging from Today](#logging-from-today-quick-log-tile-and-s2-drawer) below.
+
 ```mermaid
 flowchart TD
     A[User logs alcoholic drink · no active session] --> B[Prompt: Start party session?]
@@ -113,7 +115,15 @@ The app **does not** silently start a session. When the user logs an alcoholic d
 - If the user chooses to start a session: the session begins at the drink's `consumedAt` time, the drink is recorded, and BAC tracking takes over. If profile inputs are missing (first-ever alcohol log), the prompt to enter them comes next, and the session only starts after the user provides them.
 - If the user chooses not to start a session: the drink is recorded as an **orphan drink** and is visible in [today's drinks log](./user-experience.md#s6--today-drinks-log) and history, but no session is created and no BAC estimate is shown.
 
-The choice is presented every time alcohol is logged outside an active session — we never assume the answer for the user. The decision to drink, and the decision to track that drink in a session with a BAC estimate, are deliberately kept separate.
+The choice is presented every time alcohol is logged outside an active session via the Party tab — we never assume the answer for the user. The decision to drink, and the decision to track that drink in a session with a BAC estimate, are deliberately kept separate.
+
+#### Logging from Today (quick-log tile and S2 drawer)
+
+Today's quick-log grid tiles and the [S2 log-drink drawer](./user-experience.md#s2--log-drink) log an alcoholic entry **immediately**, without blocking on a start-session prompt first — consistent with how every other drink logs in 1–3 taps (see [user-experience.md → Flow 2 Quick log](./user-experience.md#flow-2--quick-log-most-common)). The drink is recorded as an **orphan drink** right away, exactly as if the user had tapped "Don't start a session" on the Party tab's prompt.
+
+The confirmation toast that follows carries a **"Start session"** action. Tapping it runs the same start-session flow described above (birthday/height prompt if needed, pricing prompt, etc.); once the session starts, the just-logged drink is absorbed into it automatically via the normal orphan-absorption rule (see [Absorbing orphan drinks](#absorbing-orphan-drinks-when-a-later-session-starts)) — since it was logged only seconds ago, its BAC has not decayed, so it is always absorbed. If the user doesn't tap "Start session," the drink stays a permanent orphan.
+
+`[OPEN]` — the existing quick-log toast also offers an Undo action (see [user-experience.md → Flow 2](./user-experience.md#flow-2--quick-log-most-common)). Does an alcoholic entry's toast offer both Undo and Start session, or does Start session replace Undo for this case? Needs a UI decision on how two actions fit in one toast without crowding it.
 
 ### Absorbing orphan drinks when a later session starts
 
@@ -136,7 +146,7 @@ The rule is applied **per orphan drink**:
 
 - For each orphan drink, compute its individual `BAC_initial` using the user's profile (Step 3 of the algorithm).
 - Compute the time at which that individual contribution would decay to zero: `t_zero = consumedAt + BAC_initial / β`.
-- If `t_zero > startedAt` of the new session, the orphan still has residual BAC and is absorbed: the drink's `consumedAt` falls within the session's `[startedAt, endedAt)` window for BAC computation, and it appears in the session's drink list.
+- If `t_zero > startedAt` of the new session, the orphan still has residual BAC and is absorbed: the drink's `consumedAt` falls within the session's `[startedAt, endedAt)` window for BAC computation, and it appears in the session's drink list ([user-experience.md → S9 Party Session Log](./user-experience.md#s9--party-session-log)).
 - Otherwise the orphan has fully decayed and stays orphaned. It remains visible in history but does not contribute to the new session.
 
 `BAC_initial / β` is just the time the model says it takes that drink's contribution to reach 0 from its peak. We do not need to track partial decay separately — the existing per-drink summation in Step 5 handles a partially-decayed drink correctly.
@@ -333,6 +343,8 @@ The log-drink drawer ([user-experience.md → S2 Log drink](./user-experience.md
 - **ABV override** — the user can override the ABV for any entry (e.g. a strong IPA at 8%).
 - **Volume** — already part of the standard flow.
 
+The Party tab's own log-alcohol sheet (used for the "Log alcohol" action on [S7](./user-experience.md#s7--party)) additionally carries **name** and **price** fields, per-entry — the one-off, this-entry-only customisation that [S2's Advanced editor](./user-experience.md#s2--log-drink) no longer offers for any drink type. `[OPEN]` — exact interaction between a one-off per-entry price override here and the session-wide `PartySessionPrice` override from "Manage prices": does entering a price here also update the session-wide override for that preset, or does it only ever apply to this single entry?
+
 Non-alcoholic drinks are logged exactly as outside a session and contribute to hydration as usual. They do not lower the BAC estimate (see "Hydration does not lower BAC" below).
 
 ## BAC estimation algorithm
@@ -469,7 +481,7 @@ When a session is active, the [Party tab](./user-experience.md#s7--party) displa
 - Current estimated BAC in **g/L** (large, clearly labelled "estimate"), with the **mmol/L** equivalent shown smaller alongside.
 - A **BAC line chart** plotting the estimated BAC over time (see "BAC line chart" below).
 - The user's cap (if set), shown in the same g/L primary / mmol/L secondary format, with progress toward it.
-- Number of alcoholic drinks logged this session and total grams of alcohol.
+- Number of alcoholic drinks logged this session and total grams of alcohol. This line is tappable and opens [user-experience.md → S9 Party Session Log](./user-experience.md#s9--party-session-log), the itemised, editable list of this session's drinks.
 - Time elapsed since the session started.
 - A small **meal indicator** showing the most recent meal logged in this session (size + relative time, e.g. "Medium meal · 2 h ago"). Tapping it opens an action to log a new meal or edit the last one. If no meal has been logged, the same control reads "Add meal".
 - A **session-prices control**: a small toggle showing the current `useSessionPrices` state and a "Manage prices" link that opens the per-session price table. When session prices are off but overrides exist, the toggle reads "Session prices: off — using regular prices".
