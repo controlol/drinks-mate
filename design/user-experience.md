@@ -107,7 +107,7 @@ Reached from the **History** tab in the bottom navigation. The screen has:
 
 - A **range selector** at the top: Weekly / Monthly, with paging controls to step backwards and forwards through past periods.
 - A stack of **bar charts** for the selected range. Hydration charts are always present; alcohol charts appear only when at least one Party Session overlaps the selected range. See [features.md → F4 History](./features.md#f4--history) for the full chart spec.
-- A **day list** below the charts. Tapping a day on any chart, or selecting a row in the list, drills into the day detail (drink list with edit/delete, plus any Party Session summary on that day).
+- A **day list** below the charts. Tapping a day on any chart, or selecting a row in the list, drills into the day detail (drink list with edit/delete, plus any Party Session summary on that day). Editable fields are volume and time; name, ABV, and price are immutable snapshots here (data-model.md §Snapshot semantics — log immutability). An alcoholic drink attached to a Party Session (`partySessionId` set) is read-only here — edit or delete it from [S9 Party Session Log](#s9--party-session-log) instead, the single authoritative place for session-attached drinks. Delete is a soft-delete with confirmation.
 
 Charts are read-only. Editing always happens via the day drill-down or the [today drinks log](#s6--today-drinks-log).
 

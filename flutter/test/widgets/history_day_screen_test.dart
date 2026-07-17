@@ -1,4 +1,5 @@
-// Widget tests for HistoryDayScreen (F4/S3 day drill-down, issue #26).
+// Widget tests for HistoryDayScreen (F4/S3 day drill-down, issue #26; edit/
+// delete added for #67).
 //
 // Coverage:
 //  1. Entry list renders in the order the (fake) provider supplies —
@@ -10,24 +11,48 @@
 //     peakBacGPerL is null (incomplete profile).
 //  4. Hydration header total excludes alcoholic entries (data-model.md
 //     §BeverageType: disjoint flows) and shows the daily goal alongside it.
+//  5. Edit/delete affordances (#67): edit button opens the edit sheet,
+//     delete button shows a confirmation dialog whose confirm calls
+//     deleteDrinkEntry with the entry id, and a Party-Session-attached
+//     alcoholic entry (partySessionId set) has neither — mirroring S6's
+//     read-only rule (design/user-experience.md §S3/§S6).
 //
 // Provider override pattern mirrors history_screen_test.dart: the two #26
 // day-drilldown family providers (historyDayEntriesProvider,
 // historyDaySessionSummariesProvider) are overridden directly with
-// caller-supplied fake data — no fake-repo subclass or real DB needed.
+// caller-supplied fake data. Edit/delete tests additionally override
+// drinksRepositoryProvider with a _FakeRepo (pattern mirrors
+// today_drinks_screen_test.dart's _FakeRepo) — no real DB needed.
 
+import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/session_day_summary.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
+import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/history_day_screen.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+// ---------------------------------------------------------------------------
+// Fake repository — records delete calls; never touches the real DB.
+// ---------------------------------------------------------------------------
+
+class _FakeRepo extends DrinksRepository {
+  _FakeRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<String> deletedIds = [];
+
+  @override
+  Future<void> deleteDrinkEntry(String id) async {
+    deletedIds.add(id);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,6 +129,7 @@ Widget _buildScreen({
   List<SessionDaySummary> summaries = const [],
   UserPreferences? prefs,
   bool alwaysUse24HourFormat = false,
+  _FakeRepo? repo,
 }) {
   return ProviderScope(
     overrides: [
@@ -118,6 +144,7 @@ Widget _buildScreen({
       historyDaySessionSummariesProvider.overrideWith(
         (ref, key) => Future.value(summaries),
       ),
+      if (repo != null) drinksRepositoryProvider.overrideWithValue(repo),
     ],
     child: MaterialApp(
       builder: (context, child) => MediaQuery(
@@ -424,6 +451,160 @@ void main() {
       // (data-model.md §BeverageType: "the two flows are strictly disjoint").
       expect(find.text('500 ml'), findsOneWidget);
       expect(find.text('/ 2500 ml hydration goal'), findsOneWidget);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 5. Edit/delete affordances (#67)
+  // -------------------------------------------------------------------------
+
+  testWidgets('tapping edit button opens the edit sheet', (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Edit Me',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildScreen(entries: entries, repo: _FakeRepo()),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip('Edit'), findsOneWidget);
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    // Source: history_day_screen.dart _EditEntrySheetState.build (mirrors
+    // today_drinks_screen.dart's _EditEntrySheet).
+    expect(find.text('Edit drink'), findsOneWidget);
+  });
+
+  testWidgets('tapping delete button shows a confirmation dialog',
+      (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Delete Me',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildScreen(entries: entries, repo: _FakeRepo()),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip('Delete'), findsOneWidget);
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete entry?'), findsOneWidget);
+  });
+
+  testWidgets(
+      'confirming the delete dialog calls deleteDrinkEntry with the entry id',
+      (tester) async {
+    final repo = _FakeRepo();
+    const entryId = 'e-to-delete';
+    final entries = [
+      _entry(
+        id: entryId,
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Deletable Drink',
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(entries: entries, repo: repo));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete entry?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(
+      repo.deletedIds,
+      contains(entryId),
+      reason:
+          'deleteDrinkEntry must be called with the entry id after the user '
+          'confirms deletion (S3 spec: soft-delete, mirroring S6)',
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 5b. Session-attached alcoholic entries are read-only (no Edit/Delete)
+  //
+  // Source: design/user-experience.md §S3: an alcoholic drink attached to a
+  // Party Session (partySessionId set) is read-only in the day drill-down —
+  // edit or delete it from S9 Party Session Log instead. A normal entry and
+  // an orphan alcoholic entry (isAlcoholic but no partySessionId) must still
+  // show both actions — the rule keys off partySessionId, not off
+  // beverageType.isAlcoholic alone. Mirrors
+  // today_drinks_screen_test.dart's equivalent S6 case.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'session-attached alcoholic entry has no Edit/Delete tooltips, while a '
+    'normal entry and an orphan alcoholic entry in the same day still do',
+    (tester) async {
+      final sessionAttached = _entry(
+        id: 'e-session',
+        beverageType: BeverageType.beer, // isAlcoholic == true
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        name: 'Session Beer',
+        partySessionId: 'test-session-1',
+      );
+
+      final normal = _entry(
+        id: 'e-normal',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Plain Water',
+      );
+
+      // Orphan alcoholic entry — alcoholic but NOT session-attached
+      // (partySessionId == null); must remain fully editable/deletable.
+      final orphanAlcoholic = _entry(
+        id: 'e-orphan',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 18, 0),
+        name: 'Orphan Beer',
+      );
+
+      await tester.pumpWidget(
+        _buildScreen(
+          entries: [sessionAttached, normal, orphanAlcoholic],
+          repo: _FakeRepo(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Session Beer'), findsOneWidget);
+      expect(find.text('Plain Water'), findsOneWidget);
+      expect(find.text('Orphan Beer'), findsOneWidget);
+
+      // Exactly two Edit and two Delete tooltips — one pair each for the
+      // normal entry and the orphan alcoholic entry; none for the
+      // session-attached alcoholic entry, which renders read-only.
+      expect(find.byTooltip('Edit'), findsNWidgets(2));
+      expect(find.byTooltip('Delete'), findsNWidgets(2));
     },
   );
 }
