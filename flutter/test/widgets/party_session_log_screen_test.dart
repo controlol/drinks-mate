@@ -187,6 +187,11 @@ DrinkEntry _waterEntry({required String id, required DateTime consumedAt}) {
 
 /// Builds a testable PartySessionLogScreen with every provider it reads
 /// overridden — no real Drift stream is ever started.
+/// [alwaysUse24HourFormat] drives `MediaQuery.alwaysUse24HourFormat`, which
+/// is what `TimeOfDay.format(context)` actually keys off (not [Locale]) —
+/// see the "Time-of-day display format" Parity Rulebook row. Mirrors
+/// today_drinks_screen_test.dart's/history_day_screen_test.dart's
+/// `_buildScreen` helper.
 Widget _buildScreen({
   required String sessionId,
   PartySession? activeSession,
@@ -195,6 +200,7 @@ Widget _buildScreen({
   UserProfile? profile,
   DateTime? now,
   SessionDaySummary? endedSummary,
+  bool alwaysUse24HourFormat = false,
   required _FakePartySessionRepo partyRepo,
   required _FakeDrinksRepo drinksRepo,
 }) {
@@ -220,7 +226,14 @@ Widget _buildScreen({
           (ref, id) async => endedSummary,
         ),
     ],
-    child: MaterialApp(home: PartySessionLogScreen(sessionId: sessionId)),
+    child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+        child: child!,
+      ),
+      home: PartySessionLogScreen(sessionId: sessionId),
+    ),
   );
 }
 
@@ -339,9 +352,70 @@ void main() {
       },
     );
 
+    // -----------------------------------------------------------------------
+    // 3a. Row subtitle: FormatService-backed volume, ABV, and a time label
+    //     that honours the device's 12h/24h preference (EntryRow — shared
+    //     across S6/S3/S9, entry_row.dart). Before the shared EntryRow
+    //     extraction, S9 rendered a hand-built, always-24h "HH:mm" string —
+    //     this pins the fix (Parity Rulebook "Time-of-day display format").
+    // -----------------------------------------------------------------------
+
     testWidgets(
-      'tapping a row and choosing Edit opens the edit sheet pre-filled with '
-      'the entry\'s current volume/ABV/price (no name field — S9 no longer '
+      'row subtitle shows volume, ABV, and a 12h/24h time label honouring '
+      'the device preference',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entries = [
+          _alcoholicEntry(id: 'beer-1', consumedAt: startedAt),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: entries,
+            profile: _makeProfile(),
+            now: startedAt,
+            alwaysUse24HourFormat: false,
+            partyRepo: _FakePartySessionRepo(),
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('330 ml · 5.0% ABV · 8:00 PM'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'row subtitle time label renders 24h when alwaysUse24HourFormat=true',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entries = [
+          _alcoholicEntry(id: 'beer-1', consumedAt: startedAt),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: entries,
+            profile: _makeProfile(),
+            now: startedAt,
+            alwaysUse24HourFormat: true,
+            partyRepo: _FakePartySessionRepo(),
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('330 ml · 5.0% ABV · 20:00'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping a row opens the edit sheet directly, pre-filled with the '
+      'entry\'s current volume/ABV/price (no name field — S9 no longer '
       'edits name, matching S6); saving calls updateAlcoholicEntry with the '
       'edited values',
       (tester) async {
@@ -380,11 +454,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // No intermediate action menu — tapping the row opens the edit
+        // sheet directly.
         await tester.tap(find.byType(ListTile));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Edit'), findsOneWidget);
-        await tester.tap(find.text('Edit'));
         await tester.pumpAndSettle();
 
         expect(find.text('Edit drink'), findsOneWidget);
@@ -459,8 +531,6 @@ void main() {
 
         await tester.tap(find.byType(ListTile));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Edit'));
-        await tester.pumpAndSettle();
 
         final textFields = find.byType(TextField);
         final priceField = tester.widget<TextField>(textFields.at(2));
@@ -483,7 +553,7 @@ void main() {
     );
 
     testWidgets(
-      'tapping a row and choosing Delete then confirming calls '
+      'tapping the row\'s Delete button then confirming calls '
       'DrinksRepository.deleteDrinkEntry with the entry\'s id',
       (tester) async {
         final session = _makeSession(startedAt: startedAt);
@@ -504,9 +574,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byType(ListTile));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Delete'));
+        // No intermediate action menu — a Delete button sits directly on
+        // the row (mirrors S6/S3's EntryRow).
+        await tester.tap(find.byTooltip('Delete'));
         await tester.pumpAndSettle();
 
         expect(find.text('Delete entry?'), findsOneWidget);
@@ -598,7 +668,8 @@ void main() {
       );
 
       testWidgets(
-        'entries are read-only — no chevron and tapping a row does nothing',
+        'entries are read-only — no Delete button, and tapping a row does '
+        'nothing',
         (tester) async {
           final session = _makeSession(startedAt: startedAt);
           final entry = _alcoholicEntry(id: 'beer-1', consumedAt: startedAt);
@@ -623,12 +694,16 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byIcon(Icons.chevron_right), findsNothing);
+          expect(find.byTooltip('Delete'), findsNothing);
+          expect(
+            tester.widget<ListTile>(find.byType(ListTile)).onTap,
+            isNull,
+          );
 
           await tester.tap(find.byType(ListTile));
           await tester.pumpAndSettle();
 
-          expect(find.text('Edit'), findsNothing);
+          expect(find.text('Edit drink'), findsNothing);
           expect(find.text('Delete entry?'), findsNothing);
         },
       );

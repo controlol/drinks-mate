@@ -6,19 +6,22 @@ import '../models/drink_entry.dart';
 import '../models/party_session.dart';
 import '../repository/providers.dart';
 import '../services/bac_estimator.dart';
-import '../utils/color_utils.dart';
+import '../services/format_service.dart';
 import '../widgets/entry_edit_sheet.dart';
+import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_session_flows.dart';
 
 /// S9 — Party Session Log (user-experience.md §S9).
 ///
-/// One screen serves both an active session (editable) and any ended session
-/// (read-only). [sessionId] identifies the session; mode is derived
-/// reactively from whether it matches the currently-active session, so a
-/// session ending while this screen is open switches it to read-only rather
-/// than requiring a fresh navigation.
+/// One screen serves both an active session (editable — tapping a row opens
+/// the edit sheet directly, and each row also carries a delete button; see
+/// [EntryRow]) and any ended session (fully read-only). [sessionId]
+/// identifies the session; mode is derived reactively from whether it
+/// matches the currently-active session, so a session ending while this
+/// screen is open switches it to read-only rather than requiring a fresh
+/// navigation.
 class PartySessionLogScreen extends ConsumerWidget {
   const PartySessionLogScreen({super.key, required this.sessionId});
 
@@ -53,6 +56,7 @@ class _ActiveLog extends ConsumerWidget {
     final mealsAsync = ref.watch(partySessionMealsProvider(session.id));
     final now = ref.watch(nowTickerProvider).valueOrNull ?? DateTime.now();
     final profile = ref.watch(userProfileProvider).valueOrNull;
+    final fmt = ref.watch(formatServiceProvider);
 
     if (profile == null ||
         profile.birthDate == null ||
@@ -97,6 +101,7 @@ class _ActiveLog extends ConsumerWidget {
                     entry: entry,
                     active: true,
                     sessionStartedAt: session.startedAt,
+                    fmt: fmt,
                   ),
               ],
             ),
@@ -238,6 +243,7 @@ class _EndedLog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(partySessionSummaryProvider(sessionId));
     final entriesAsync = ref.watch(partySessionEntriesProvider(sessionId));
+    final fmt = ref.watch(formatServiceProvider);
 
     return summaryAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -275,7 +281,7 @@ class _EndedLog extends ConsumerWidget {
                 child: Column(
                   children: [
                     for (final entry in displayEntries)
-                      _EntryRow(entry: entry, active: false),
+                      _EntryRow(entry: entry, active: false, fmt: fmt),
                   ],
                 ),
               ),
@@ -290,17 +296,17 @@ class _EndedLog extends ConsumerWidget {
 // Entry row (shared)
 // ---------------------------------------------------------------------------
 
-enum _EntryAction { edit, delete }
-
 class _EntryRow extends ConsumerWidget {
   const _EntryRow({
     required this.entry,
     required this.active,
     this.sessionStartedAt,
+    this.fmt,
   });
 
   final DrinkEntry entry;
   final bool active;
+  final FormatService? fmt;
 
   /// The session's `startedAt` — bounds the edit sheet's free date picker to
   /// `[sessionStartedAt, now]`, so a session-attached entry can never be
@@ -312,95 +318,50 @@ class _EntryRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = entry.consumedAt.toLocal();
-    final timeLabel = '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
-    final volumeText = '${entry.volumeMl} ml';
-    final abvText =
-        entry.abvPercent != null ? ' · ${entry.abvPercent}% ABV' : '';
-    final name = entry.name ?? 'Drink';
-    final iconColor = entry.iconColor != null
-        ? parseIconColor(entry.iconColor!) ??
-            Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.primary;
-
-    return Semantics(
-      label: '$name, $volumeText$abvText, $timeLabel',
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(38),
-          child: Icon(Icons.local_bar_outlined, color: iconColor, size: 22),
-        ),
-        title: Text(name),
-        subtitle: Text('$volumeText$abvText · $timeLabel'),
-        trailing: active ? const Icon(Icons.chevron_right) : null,
-        onTap: active ? () => _openActions(context, ref) : null,
-      ),
+    return EntryRow(
+      entry: entry,
+      fmt: fmt,
+      onTap: active ? () => _showEditSheet(context, ref) : null,
+      onDelete: active ? () => _confirmDelete(context, ref) : null,
     );
   }
 
-  Future<void> _openActions(BuildContext context, WidgetRef ref) async {
-    final action = await showModalBottomSheet<_EntryAction>(
+  Future<void> _showEditSheet(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
-              onTap: () => Navigator.of(context).pop(_EntryAction.edit),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Delete'),
-              onTap: () => Navigator.of(context).pop(_EntryAction.delete),
-            ),
-          ],
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => EntryEditSheet(
+        entry: entry,
+        // Bounded to this session's own window — never unbounded, unlike
+        // S3's DateEditPicker.free() — since moving a session-attached
+        // entry outside [session.startedAt, now] would break that
+        // session's BAC/duration math.
+        datePicker: DateEditPicker.free(
+          minDate: sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: entry.consumedAt,
+          ),
+          maxDate: DateTime.now(),
         ),
+        onSave: ({
+          required volumeMl,
+          name,
+          abvPercent,
+          required priceMinor,
+          required currency,
+          required consumedAt,
+        }) =>
+            ref.read(partySessionRepositoryProvider).updateAlcoholicEntry(
+                  id: entry.id,
+                  volumeMl: volumeMl,
+                  abvPercent: abvPercent,
+                  priceMinor: priceMinor,
+                  currency: currency,
+                  consumedAt: consumedAt,
+                ),
       ),
     );
-    if (action == null || !context.mounted) return;
-
-    if (action == _EntryAction.edit) {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (_) => EntryEditSheet(
-          entry: entry,
-          // Bounded to this session's own window — never unbounded, unlike
-          // S3's DateEditPicker.free() — since moving a session-attached
-          // entry outside [session.startedAt, now] would break that
-          // session's BAC/duration math.
-          datePicker: DateEditPicker.free(
-            minDate: sessionEditMinDate(
-              sessionStartedAt: sessionStartedAt,
-              entryConsumedAt: entry.consumedAt,
-            ),
-            maxDate: DateTime.now(),
-          ),
-          onSave: ({
-            required volumeMl,
-            name,
-            abvPercent,
-            required priceMinor,
-            required currency,
-            required consumedAt,
-          }) =>
-              ref.read(partySessionRepositoryProvider).updateAlcoholicEntry(
-                    id: entry.id,
-                    volumeMl: volumeMl,
-                    abvPercent: abvPercent,
-                    priceMinor: priceMinor,
-                    currency: currency,
-                    consumedAt: consumedAt,
-                  ),
-        ),
-      );
-    } else {
-      await _confirmDelete(context, ref);
-    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {

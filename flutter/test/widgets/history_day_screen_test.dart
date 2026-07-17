@@ -125,6 +125,7 @@ DrinkEntry _entry({
   required DateTime consumedAt,
   String? name,
   String? partySessionId,
+  double? abvPercent,
 }) {
   return DrinkEntry(
     id: id,
@@ -132,6 +133,7 @@ DrinkEntry _entry({
     beverageType: beverageType,
     volumeMl: volumeMl,
     partySessionId: partySessionId,
+    abvPercent: abvPercent,
     consumedAt: consumedAt,
     createdAt: _epoch,
     updatedAt: _epoch,
@@ -231,6 +233,30 @@ void main() {
     expect(find.text('330 ml · 8:30 PM'), findsOneWidget);
     expect(find.text('250 ml · 8:00 AM'), findsOneWidget);
     expect(find.byType(ListTile), findsNWidgets(2));
+  });
+
+  // -------------------------------------------------------------------------
+  // 1a. Alcoholic entry's row subtitle includes its ABV (EntryRow — shared
+  //     across S6/S3/S9, entry_row.dart)
+  // -------------------------------------------------------------------------
+
+  testWidgets('alcoholic entry row subtitle includes "% ABV"', (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 30),
+        name: 'Lager',
+        abvPercent: 5.0,
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(entries: entries));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('5.0% ABV'), findsOneWidget);
   });
 
   // -------------------------------------------------------------------------
@@ -490,7 +516,7 @@ void main() {
   // 5. Edit/delete affordances (#67)
   // -------------------------------------------------------------------------
 
-  testWidgets('tapping edit button opens the edit sheet', (tester) async {
+  testWidgets('tapping a row opens the edit sheet', (tester) async {
     final entries = [
       _entry(
         id: 'e1',
@@ -507,12 +533,13 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byTooltip('Edit'), findsOneWidget);
-    await tester.tap(find.byTooltip('Edit'));
+    // There is no separate Edit button — tapping the row itself opens the
+    // edit sheet (EntryRow.onTap).
+    expect(find.byTooltip('Edit'), findsNothing);
+    await tester.tap(find.byType(ListTile));
     await tester.pumpAndSettle();
 
-    // Source: history_day_screen.dart _EditEntrySheetState.build (mirrors
-    // today_drinks_screen.dart's _EditEntrySheet).
+    // Source: entry_edit_sheet.dart _EntryEditSheetState.build.
     expect(find.text('Edit drink'), findsOneWidget);
   });
 
@@ -589,8 +616,9 @@ void main() {
   // -------------------------------------------------------------------------
 
   testWidgets(
-    'session-attached alcoholic entry has no Edit/Delete tooltips, while a '
-    'normal entry and an orphan alcoholic entry in the same day still do',
+    'session-attached alcoholic entry is not tappable and has no Delete '
+    'button, while a normal entry and an orphan alcoholic entry in the same '
+    'day still are',
     (tester) async {
       final sessionAttached = _entry(
         id: 'e-session',
@@ -632,11 +660,18 @@ void main() {
       expect(find.text('Plain Water'), findsOneWidget);
       expect(find.text('Orphan Beer'), findsOneWidget);
 
-      // Exactly two Edit and two Delete tooltips — one pair each for the
-      // normal entry and the orphan alcoholic entry; none for the
-      // session-attached alcoholic entry, which renders read-only.
-      expect(find.byTooltip('Edit'), findsNWidgets(2));
+      // Exactly two Delete buttons — one each for the normal entry and the
+      // orphan alcoholic entry; none for the session-attached alcoholic
+      // entry, which renders read-only.
       expect(find.byTooltip('Delete'), findsNWidgets(2));
+
+      // The session-attached row has no tap target (read-only); the other
+      // two do (tapping opens the edit sheet directly).
+      ListTile tileFor(String title) =>
+          tester.widget<ListTile>(find.widgetWithText(ListTile, title));
+      expect(tileFor('Session Beer').onTap, isNull);
+      expect(tileFor('Plain Water').onTap, isNotNull);
+      expect(tileFor('Orphan Beer').onTap, isNotNull);
     },
   );
 
@@ -668,7 +703,7 @@ void main() {
       await tester.pumpWidget(_buildScreen(entries: entries, repo: repo));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.byTooltip('Edit'));
+      await tester.tap(find.byType(ListTile));
       await tester.pumpAndSettle();
 
       expect(find.byType(TextField), findsNWidgets(3));
@@ -703,7 +738,7 @@ void main() {
       await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.byTooltip('Edit'));
+      await tester.tap(find.byType(ListTile));
       await tester.pumpAndSettle();
 
       final textFields = find.byType(TextField);

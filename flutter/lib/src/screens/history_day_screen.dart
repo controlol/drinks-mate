@@ -7,17 +7,18 @@ import '../models/drink_entry.dart';
 import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
-import '../utils/color_utils.dart';
 import '../widgets/entry_edit_sheet.dart';
+import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
 
 /// History day drill-down (F4/S3, issue #26; edit/delete added for #67).
 ///
 /// Reached by tapping a day bar on any History chart. Per
 /// user-experience.md §S3, this is one of only two general-purpose editing
-/// surfaces app-wide (alongside the S6 Today Drinks Log) — every entry gets
-/// an edit/delete affordance, except an alcoholic drink attached to a Party
-/// Session (`partySessionId` set), which renders read-only here; the S9
+/// surfaces app-wide (alongside the S6 Today Drinks Log) — tapping a row
+/// opens the edit sheet directly, and each row also carries a delete button
+/// (see [EntryRow]), except an alcoholic drink attached to a Party Session
+/// (`partySessionId` set), which renders fully read-only here; the S9
 /// Party Session Log is the authoritative place to edit or delete those.
 /// Editable fields: volume, name, ABV (alcoholic entries only), price, and
 /// time — S3 is the only screen that additionally exposes name (unlike S6);
@@ -155,61 +156,11 @@ class _DayEntryTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = entry.consumedAt.toLocal();
-    // Source: Parity Rulebook — "Time-of-day display format" (honours the
-    // device's 12h/24h preference rather than a hardcoded format).
-    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
-    final volumeText =
-        fmt?.formatVolume(entry.volumeMl.toDouble()) ?? '${entry.volumeMl} ml';
-    final name = entry.name ?? entry.beverageType.displayName;
-    final iconColor = entry.iconColor != null
-        ? parseIconColor(entry.iconColor!) ??
-            Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.primary;
-
-    return Semantics(
-      label: '$name, $volumeText, $timeLabel',
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(38),
-          child: Icon(
-            entry.beverageType.isAlcoholic
-                ? Icons.local_bar_outlined
-                : Icons.local_drink_outlined,
-            color: iconColor,
-            size: 22,
-          ),
-        ),
-        title: Text(name),
-        subtitle: Text('$volumeText · $timeLabel'),
-        trailing: _isSessionAttached
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Semantics(
-                    label: SemanticsLabels.editEntryButton,
-                    button: true,
-                    excludeSemantics: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _showEditSheet(context, ref),
-                      tooltip: 'Edit',
-                    ),
-                  ),
-                  Semantics(
-                    label: SemanticsLabels.deleteEntryButton,
-                    button: true,
-                    excludeSemantics: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDelete(context, ref),
-                      tooltip: 'Delete',
-                    ),
-                  ),
-                ],
-              ),
-      ),
+    return EntryRow(
+      entry: entry,
+      fmt: fmt,
+      onTap: _isSessionAttached ? null : () => _showEditSheet(context, ref),
+      onDelete: _isSessionAttached ? null : () => _confirmDelete(context, ref),
     );
   }
 

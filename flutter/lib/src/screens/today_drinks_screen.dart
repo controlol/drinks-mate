@@ -6,18 +6,19 @@ import '../models/drink_entry.dart';
 import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
-import '../utils/color_utils.dart';
 import '../widgets/entry_edit_sheet.dart';
+import '../widgets/entry_row.dart';
 import 'log_drink_sheet.dart';
 
 /// S6 — Today Drinks Log.
 ///
 /// Reached by tapping the progress card on the Today screen. Shows every
-/// beverage type logged today in reverse-chronological order, with
-/// per-entry edit and soft-delete actions — except an alcoholic entry
-/// attached to a Party Session (`partySessionId` set), which renders
-/// read-only here; [S9 Party Session Log] is the authoritative place to edit
-/// or delete those (design/user-experience.md §S6).
+/// beverage type logged today in reverse-chronological order. Tapping a row
+/// opens the edit sheet directly; each row also carries a delete button
+/// (see [EntryRow]) — except an alcoholic entry attached to a Party Session
+/// (`partySessionId` set), which renders fully read-only here; [S9 Party
+/// Session Log] is the authoritative place to edit or delete those
+/// (design/user-experience.md §S6).
 ///
 /// Editable fields: volume, ABV (alcoholic entries only), price, and time —
 /// name is not exposed here (unlike [S3 History day drill-down]); see
@@ -155,57 +156,11 @@ class _EntryRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = entry.consumedAt.toLocal();
-    // Source: Parity Rulebook — "Time-of-day display format" (honours the
-    // device's 12h/24h preference rather than a hardcoded format).
-    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
-    final volumeText =
-        fmt?.formatVolume(entry.volumeMl.toDouble()) ?? '${entry.volumeMl} ml';
-    final iconColor = entry.iconColor != null
-        ? parseIconColor(entry.iconColor!) ??
-            Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.primary;
-    final icon = entry.beverageType.isAlcoholic
-        ? Icons.local_bar_outlined
-        : Icons.local_drink_outlined;
-
-    return Semantics(
-      label: '${entry.name ?? 'Drink'}, $volumeText, $timeLabel',
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(38),
-          child: Icon(icon, color: iconColor, size: 22),
-        ),
-        title: Text(entry.name ?? 'Drink'),
-        subtitle: Text('$volumeText · $timeLabel'),
-        trailing: _isSessionAttached
-            ? null
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Semantics(
-                    label: SemanticsLabels.editEntryButton,
-                    button: true,
-                    excludeSemantics: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _showEditSheet(context, ref),
-                      tooltip: 'Edit',
-                    ),
-                  ),
-                  Semantics(
-                    label: SemanticsLabels.deleteEntryButton,
-                    button: true,
-                    excludeSemantics: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDelete(context, ref),
-                      tooltip: 'Delete',
-                    ),
-                  ),
-                ],
-              ),
-      ),
+    return EntryRow(
+      entry: entry,
+      fmt: fmt,
+      onTap: _isSessionAttached ? null : () => _showEditSheet(context, ref),
+      onDelete: _isSessionAttached ? null : () => _confirmDelete(context, ref),
     );
   }
 
