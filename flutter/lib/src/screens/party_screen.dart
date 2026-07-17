@@ -1,13 +1,18 @@
 import 'package:core/core.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
+import '../models/meal.dart';
 import '../models/optional.dart';
 import '../models/party_session.dart';
-import '../repository/party_session_repository.dart';
+import '../models/session_day_summary.dart';
+import '../models/user_profile.dart';
 import '../repository/providers.dart';
+import '../services/bac_chart_series.dart';
 import '../services/bac_estimator.dart';
 import '../services/format_service.dart';
 import '../services/session_pricing_totals.dart';
@@ -15,6 +20,7 @@ import '../theme/app_theme.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_pricing_sheet.dart';
 import 'party_session_flows.dart';
+import 'party_session_log_screen.dart';
 import 'settings_screen.dart';
 
 /// Party tab (S7) — Party Session UI (issue #22).
@@ -127,9 +133,88 @@ class _NoSessionView extends ConsumerWidget {
             textAlign: TextAlign.center,
           ),
         ],
+        const SizedBox(height: 24),
+        const _PastSessionsList(),
       ],
     );
   }
+}
+
+/// Past-sessions list (user-experience.md §S7 → No active session —
+/// subsequent visits): "session date/range, peak BAC, number of alcoholic
+/// drinks, and how the session ended (manual/auto)." Tapping a row opens S9
+/// in its read-only, ended-session mode.
+class _PastSessionsList extends ConsumerWidget {
+  const _PastSessionsList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summariesAsync = ref.watch(partyEndedSessionSummariesProvider);
+    final summaries = summariesAsync.valueOrNull ?? const [];
+    if (summaries.isEmpty) return const SizedBox.shrink();
+
+    return Semantics(
+      label: SemanticsLabels.pastSessionsList,
+      container: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Past sessions',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          for (final summary in summaries) _PastSessionRow(summary: summary),
+        ],
+      ),
+    );
+  }
+}
+
+class _PastSessionRow extends StatelessWidget {
+  const _PastSessionRow({required this.summary});
+
+  final SessionDaySummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = summary.session;
+    final start = session.startedAt.toLocal();
+    final end = (session.endedAt ?? session.startedAt).toLocal();
+    final dateRange = _sameDay(start, end)
+        ? DateFormat('MMM d').format(start)
+        : '${DateFormat('MMM d').format(start)} – '
+            '${DateFormat('MMM d').format(end)}';
+    final peakBac = summary.peakBacGPerL;
+    final endLabel = session.endReason == PartySessionEndReason.autoTimeout
+        ? 'ended automatically'
+        : 'ended manually';
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          Icons.local_bar_outlined,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        title: Text(dateRange),
+        subtitle: Text(
+          '${summary.totalAlcoholicDrinks} alcoholic '
+          '${summary.totalAlcoholicDrinks == 1 ? 'drink' : 'drinks'}'
+          '${peakBac != null ? ' · peak ${peakBac.toStringAsFixed(2)} g/L' : ''}'
+          ' · $endLabel',
+        ),
+        onTap: () => Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => PartySessionLogScreen(sessionId: session.id),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 class _Under18Gate extends StatelessWidget {
@@ -242,6 +327,28 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
           const SizedBox(height: 12),
           const _ApproachingCapBanner(),
         ],
+        if (alcoholicEntries.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _BacLineChartCard(
+            profile: profile,
+            session: widget.session,
+            alcoholicEntries: alcoholicEntries,
+            meals: mealsAsync.requireValue,
+            now: now,
+            capGPerL: cap,
+          ),
+        ],
+        const SizedBox(height: 12),
+        _DrinksCountLine(
+          session: widget.session,
+          alcoholicEntries: alcoholicEntries,
+        ),
+        const SizedBox(height: 12),
+        _MealIndicator(
+          sessionId: widget.session.id,
+          meals: mealsAsync.requireValue,
+          now: now,
+        ),
         const SizedBox(height: 16),
         _SessionPricesControl(session: widget.session),
         const SizedBox(height: 12),
@@ -455,6 +562,382 @@ class _CapReferenceBar extends StatelessWidget {
     );
   }
 }
+
+/// BAC line chart (party-session.md §BAC line chart). Only rendered by the
+/// caller once the session has at least one alcoholic entry — "chart only
+/// appears once the first alcoholic drink is logged."
+class _BacLineChartCard extends StatelessWidget {
+  const _BacLineChartCard({
+    required this.profile,
+    required this.session,
+    required this.alcoholicEntries,
+    required this.meals,
+    required this.now,
+    required this.capGPerL,
+  });
+
+  final UserProfile profile;
+  final PartySession session;
+  final List<DrinkEntry> alcoholicEntries;
+  final List<Meal> meals;
+  final DateTime now;
+  final double? capGPerL;
+
+  @override
+  Widget build(BuildContext context) {
+    final series = buildBacChartSeries(
+      profile: profile,
+      sessionStartedAt: session.startedAt,
+      alcoholicEntries: alcoholicEntries,
+      meals: meals,
+      now: now,
+    );
+    if (series == null) return const SizedBox.shrink();
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final axisMinutes =
+        series.axisEnd.difference(series.axisStart).inMinutes.toDouble();
+    final nowMinutes =
+        now.toLocal().difference(series.axisStart).inMinutes.toDouble();
+    final maxGPerL = [
+      ...series.actual.map((p) => p.gPerL),
+      ...series.projected.map((p) => p.gPerL),
+      capGPerL ?? 0.0,
+    ].reduce((a, b) => a > b ? a : b);
+    final maxY = (maxGPerL * 1.2).clamp(0.1, double.infinity);
+
+    return Semantics(
+      label: SemanticsLabels.bacLineChart,
+      container: true,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+          child: SizedBox(
+            height: 180,
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: axisMinutes <= 0 ? 1 : axisMinutes,
+                minY: 0,
+                maxY: maxY.toDouble(),
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                lineTouchData: const LineTouchData(enabled: false),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    if (capGPerL != null)
+                      HorizontalLine(
+                        y: capGPerL!,
+                        color: colorScheme.outline,
+                        strokeWidth: 1.5,
+                        dashArray: const [6, 4],
+                      ),
+                  ],
+                  verticalLines: [
+                    if (nowMinutes >= 0 && nowMinutes <= axisMinutes)
+                      VerticalLine(
+                        x: nowMinutes,
+                        color: colorScheme.outline,
+                        strokeWidth: 1,
+                        dashArray: const [4, 4],
+                      ),
+                  ],
+                ),
+                rangeAnnotations: RangeAnnotations(
+                  verticalRangeAnnotations: [
+                    if (series.projected.isNotEmpty)
+                      VerticalRangeAnnotation(
+                        x1: nowMinutes.clamp(0, axisMinutes),
+                        x2: axisMinutes,
+                        color: kColorWarning.withAlpha(20),
+                      ),
+                  ],
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(),
+                  rightTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 36,
+                      getTitlesWidget: (value, meta) => Text(
+                        gPerLToMmol(value).toStringAsFixed(1),
+                        style: const TextStyle(fontSize: 9),
+                      ),
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 32,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toStringAsFixed(2),
+                        style: const TextStyle(fontSize: 9),
+                      ),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 20,
+                      interval: series.tickInterval.inMinutes.toDouble(),
+                      getTitlesWidget: (value, meta) {
+                        final t = series.axisStart.add(
+                          Duration(minutes: value.round()),
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '${t.hour.toString().padLeft(2, '0')}:'
+                            '${t.minute.toString().padLeft(2, '0')}',
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: _spots(series.actual, series.axisStart),
+                    isCurved: false,
+                    color: colorScheme.primary,
+                    barWidth: 2,
+                    dotData: const FlDotData(show: false),
+                  ),
+                  if (series.projected.isNotEmpty)
+                    LineChartBarData(
+                      spots: _spots(series.projected, series.axisStart),
+                      isCurved: false,
+                      color: colorScheme.primary,
+                      barWidth: 2,
+                      dashArray: const [6, 4],
+                      dotData: const FlDotData(show: false),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static List<FlSpot> _spots(List<BacChartPoint> points, DateTime axisStart) {
+    return [
+      for (final p in points)
+        FlSpot(
+          p.time.difference(axisStart).inMinutes.toDouble(),
+          p.gPerL,
+        ),
+    ];
+  }
+}
+
+/// Drinks-count / total-grams line (party-session.md §Party tab during a
+/// session): tappable, opens S9 in its editable, active-session mode
+/// (user-experience.md §S7 → Active session).
+class _DrinksCountLine extends StatelessWidget {
+  const _DrinksCountLine({
+    required this.session,
+    required this.alcoholicEntries,
+  });
+
+  final PartySession session;
+  final List<DrinkEntry> alcoholicEntries;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalGrams = alcoholicEntries.fold<double>(
+      0,
+      (sum, e) =>
+          sum +
+          alcoholGrams(
+            volumeMl: e.volumeMl.toDouble(),
+            abvPercent: e.abvPercent ?? 0,
+          ),
+    );
+
+    return Semantics(
+      label: SemanticsLabels.drinksCountLine,
+      button: true,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => PartySessionLogScreen(sessionId: session.id),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${alcoholicEntries.length} alcoholic '
+                  '${alcoholicEntries.length == 1 ? 'drink' : 'drinks'} · '
+                  '${totalGrams.round()} g alcohol',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Persistent meal indicator (party-session.md §Party tab during a session):
+/// shows the most recent meal ("Medium meal · 2 h ago") or "Add meal" when
+/// none has been logged. Tapping opens an action to log a new meal or edit
+/// the last one.
+class _MealIndicator extends ConsumerWidget {
+  const _MealIndicator({
+    required this.sessionId,
+    required this.meals,
+    required this.now,
+  });
+
+  final String sessionId;
+  final List<Meal> meals;
+  final DateTime now;
+
+  Meal? get _lastMeal {
+    if (meals.isEmpty) return null;
+    return meals.reduce((a, b) => a.eatenAt.isAfter(b.eatenAt) ? a : b);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final last = _lastMeal;
+    final label = last == null
+        ? 'Add meal'
+        : '${_sizeLabel(last.size)} meal · ${_relativeTime(last.eatenAt, now)}';
+
+    return Semantics(
+      label: SemanticsLabels.mealIndicator,
+      button: true,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openMealActions(context, ref, last),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.restaurant_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child:
+                    Text(label, style: Theme.of(context).textTheme.bodyMedium),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMealActions(
+    BuildContext context,
+    WidgetRef ref,
+    Meal? last,
+  ) async {
+    final action = await showModalBottomSheet<_MealAction>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Log new meal'),
+              onTap: () => Navigator.of(context).pop(_MealAction.logNew),
+            ),
+            if (last != null)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit last meal'),
+                onTap: () => Navigator.of(context).pop(_MealAction.editLast),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !context.mounted) return;
+
+    if (action == _MealAction.logNew) {
+      final size = await showMealPrompt(context);
+      if (size != null) {
+        await ref
+            .read(partySessionRepositoryProvider)
+            .addMeal(sessionId: sessionId, size: size);
+      }
+    } else if (last != null) {
+      final size = await _pickMealSize(context, initial: last.size);
+      if (size != null) {
+        await ref
+            .read(partySessionRepositoryProvider)
+            .updateMeal(id: last.id, size: size);
+      }
+    }
+  }
+
+  Future<MealSize?> _pickMealSize(
+    BuildContext context, {
+    required MealSize initial,
+  }) {
+    return showModalBottomSheet<MealSize>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Edit last meal',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              for (final size in MealSize.values)
+                ListTile(
+                  title: Text(_sizeLabel(size)),
+                  trailing: size == initial ? const Icon(Icons.check) : null,
+                  onTap: () => Navigator.of(context).pop(size),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _sizeLabel(MealSize size) => switch (size) {
+        MealSize.small => 'Small',
+        MealSize.medium => 'Medium',
+        MealSize.large => 'Large',
+      };
+
+  static String _relativeTime(DateTime eatenAt, DateTime now) {
+    final d = now.difference(eatenAt);
+    if (d.inMinutes < 60) {
+      return '${d.inMinutes < 1 ? 1 : d.inMinutes} min ago';
+    }
+    final hours = d.inHours;
+    final minutes = d.inMinutes.remainder(60);
+    return minutes == 0 ? '$hours h ago' : '$hours h ${minutes}m ago';
+  }
+}
+
+enum _MealAction { logNew, editLast }
 
 class _BmiWarningBanner extends StatelessWidget {
   const _BmiWarningBanner({required this.onDismiss});
@@ -714,48 +1197,6 @@ Future<bool?> _showStartSessionPrompt(BuildContext context) {
   );
 }
 
-/// Meal prompt shown after each alcoholic drink log (party-session.md
-/// §Meals: "A single, skippable prompt"). Returns null on Skip/dismiss.
-Future<MealSize?> _showMealPrompt(BuildContext context) {
-  return showModalBottomSheet<MealSize>(
-    context: context,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Did you eat recently?',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              title: const Text('Small'),
-              subtitle: const Text('Snack, sandwich, light salad'),
-              onTap: () => Navigator.of(context).pop(MealSize.small),
-            ),
-            ListTile(
-              title: const Text('Medium'),
-              subtitle: const Text('Normal meal'),
-              onTap: () => Navigator.of(context).pop(MealSize.medium),
-            ),
-            ListTile(
-              title: const Text('Large'),
-              subtitle: const Text('Heavy meal'),
-              onTap: () => Navigator.of(context).pop(MealSize.large),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Skip'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
 /// Logs [selection] as an orphan drink (no Party Session) and shows a
 /// confirmation SnackBar.
 Future<void> _logOrphanDrink(
@@ -828,41 +1269,8 @@ Future<void> _handleLogAlcohol(
     activeSession = newSession;
   }
 
-  final repo = ref.read(partySessionRepositoryProvider);
-  // [selection.priceMinor] is a one-off, this-entry-only override
-  // (party-session.md §Logging an alcoholic drink) — it takes priority over
-  // (and never touches) the session-wide `PartySessionPrice` table that
-  // [resolvePrice] otherwise resolves against.
-  final resolvedPrice = selection.priceMinor != null
-      ? ResolvedDrinkPrice(
-          priceMinor: selection.priceMinor,
-          currency: selection.currency,
-        )
-      : await repo.resolvePrice(
-          session: activeSession,
-          preset: selection.preset,
-        );
-  await repo.logAlcoholicDrink(
-    preset: selection.preset,
-    sessionId: activeSession.id,
-    name: selection.name,
-    volumeMl: selection.volumeMl,
-    abvPercent: selection.abvPercent,
-    consumedAt: selection.consumedAt,
-    priceMinor: resolvedPrice.priceMinor,
-    currency: resolvedPrice.currency,
-    priceTokens: resolvedPrice.priceTokens,
-    tokenValueMinor: resolvedPrice.tokenValueMinor,
-    tokenValueCurrency: resolvedPrice.tokenValueCurrency,
-  );
-
   if (!context.mounted) return;
-  final mealSize = await _showMealPrompt(context);
-  if (mealSize != null) {
-    await ref
-        .read(partySessionRepositoryProvider)
-        .addMeal(sessionId: activeSession.id, size: mealSize);
-  }
+  await logAlcoholicDrinkIntoSession(context, ref, activeSession, selection);
 }
 
 Future<void> _confirmEndSession(

@@ -64,6 +64,21 @@ abstract final class SemanticsLabels {
   static const String useSessionPricesToggle = 'Use session prices';
   static const String managePricesButton = 'Manage prices';
   static const String sessionTotalsStrip = 'Session spending totals';
+  static const String bacLineChart =
+      'Estimated blood alcohol concentration over time chart — this is an '
+      'estimate only';
+  static const String drinksCountLine =
+      'Drinks logged this session — tap to open the session log';
+  static const String mealIndicator = 'Meal logged this session';
+  static const String pastSessionsList = 'Past party sessions';
+
+  // ---------------------------------------------------------------------------
+  // Party Session Log screen (S9)
+  // ---------------------------------------------------------------------------
+
+  static const String partySessionEntryList = "This session's alcoholic drinks";
+  static const String partySessionEmptyState =
+      'No alcoholic drinks logged in this session yet';
 
   // ---------------------------------------------------------------------------
   // History screen (S3)

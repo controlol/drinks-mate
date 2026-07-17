@@ -7,6 +7,7 @@ import '../models/beverage_type.dart';
 import '../models/drink_entry.dart';
 import '../models/drink_preset.dart';
 import '../models/meal.dart';
+import '../models/optional.dart';
 import '../models/party_session.dart';
 import '../models/party_session_price.dart';
 
@@ -37,6 +38,12 @@ class PartySessionRepository {
   Stream<PartySession?> watchActiveSession() => _db.watchActiveSession().map(
         (row) => row == null ? null : _rowToSession(row),
       );
+
+  /// Reactive stream of every ended session, newest-ended-first — feeds the
+  /// S7 "past sessions" list (user-experience.md §S7 → No active session —
+  /// subsequent visits).
+  Stream<List<PartySession>> watchEndedSessions() =>
+      _db.watchEndedSessions().map((rows) => rows.map(_rowToSession).toList());
 
   /// One-shot read of session [id] — lets callers refresh a [PartySession]
   /// snapshot after mutating it (e.g. the pricing prompt's writes to
@@ -234,6 +241,25 @@ class PartySessionRepository {
       .watchSessionMeals(sessionId)
       .map((rows) => rows.map(_rowToMeal).toList());
 
+  /// Edits the last-logged meal's [size] (Party tab's meal indicator: "edit
+  /// the last one" — party-session.md §Party tab during a session). Leaves
+  /// [Meal.eatenAt] untouched — editing corrects a mis-picked size, not when
+  /// the meal happened.
+  ///
+  /// Throws [StateError] if [id] does not exist.
+  Future<void> updateMeal({
+    required String id,
+    required MealSize size,
+    DateTime? now,
+  }) async {
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    final rows = await _db.updateMealFields(
+      id,
+      MealsCompanion(size: Value(size.stored), updatedAt: Value(nowUtc)),
+    );
+    if (rows == 0) throw StateError('Meal $id not found.');
+  }
+
   // ---------------------------------------------------------------------------
   // Drink entries
   // ---------------------------------------------------------------------------
@@ -357,6 +383,97 @@ class PartySessionRepository {
   Stream<List<DrinkEntry>> watchSessionEntries(String sessionId) => _db
       .watchSessionEntries(sessionId)
       .map((rows) => rows.map(_rowToEntry).toList());
+
+  /// Edits a session-attached alcoholic [DrinkEntry] — S9's active-mode edit
+  /// affordance (user-experience.md §S9: "Editable fields are volume, name,
+  /// ABV, price, and time — mirroring S6's edit affordance"). Unlike S6's
+  /// [DrinksRepository.updateDrinkEntry] (volume/time only), this also
+  /// allows a direct, deliberate user edit of the snapshot fields — permitted
+  /// by data-model.md §Snapshot semantics ("The only path to change a
+  /// DrinkEntry is a direct, deliberate user edit of that entry").
+  ///
+  /// [priceMinor]/[currency] are a **one-off, this-entry-only** override
+  /// (same as at log time — party-session.md §Logging an alcoholic drink);
+  /// passing [priceMinor] as [Optional.value] always writes a money price and
+  /// clears any token price on this entry (money/tokens stay mutually
+  /// exclusive — data-model.md §DrinkEntry), since the edit form only offers
+  /// a money field. Leaving [priceMinor] as the default [Optional.absent]
+  /// leaves this entry's existing price (money or tokens) untouched.
+  ///
+  /// Throws [ArgumentError] if [volumeMl] is provided and `< 1`, if
+  /// [abvPercent] is provided and `<= 0`, if [name] fails
+  /// [validatePresetName], or if [priceMinor] is present with a null value
+  /// but [currency] is absent (or vice versa) — clearing the price requires
+  /// clearing both together, mirroring [logAlcoholicDrink]'s own pairing
+  /// rule.
+  Future<void> updateAlcoholicEntry({
+    required String id,
+    int? volumeMl,
+    String? name,
+    double? abvPercent,
+    DateTime? consumedAt,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
+    DateTime? now,
+  }) async {
+    if (volumeMl != null && volumeMl < 1) {
+      throw ArgumentError.value(volumeMl, 'volumeMl', 'must be ≥ 1 ml');
+    }
+    if (abvPercent != null && abvPercent <= 0) {
+      throw ArgumentError.value(abvPercent, 'abvPercent', 'must be > 0');
+    }
+    var normalizedName = name;
+    if (name != null) {
+      final result = validatePresetName(name);
+      if (!result.isValid) {
+        throw ArgumentError.value(name, 'name', result.error);
+      }
+      normalizedName = normalizeNfc(name);
+    }
+    if (priceMinor.isPresent != currency.isPresent) {
+      throw ArgumentError(
+        'priceMinor and currency must be set or cleared together',
+      );
+    }
+    if (priceMinor.isPresent &&
+        (priceMinor.value == null) != (currency.value == null)) {
+      throw ArgumentError(
+        'currency is required when priceMinor is set, and must be null '
+        'otherwise',
+      );
+    }
+
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    final rows = await _db.updateDrinkEntryFields(
+      id,
+      DrinkEntriesCompanion(
+        name: normalizedName != null
+            ? Value(normalizedName)
+            : const Value.absent(),
+        volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
+        abvPercent:
+            abvPercent != null ? Value(abvPercent) : const Value.absent(),
+        consumedAt: consumedAt != null
+            ? Value(consumedAt.toUtc())
+            : const Value.absent(),
+        priceMinor: priceMinor.isPresent
+            ? Value(priceMinor.value)
+            : const Value.absent(),
+        currency:
+            priceMinor.isPresent ? Value(currency.value) : const Value.absent(),
+        // Money and tokens are mutually exclusive per drink — a one-off money
+        // override on this entry must clear any prior token price.
+        priceTokens:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        tokenValueMinor:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        tokenValueCurrency:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        updatedAt: Value(nowUtc),
+      ),
+    );
+    if (rows == 0) throw StateError('DrinkEntry $id not found.');
+  }
 
   /// Absorbs pre-existing orphan alcoholic drinks (`partySessionId IS NULL`)
   /// into [newSessionId] whose alcohol is still pharmacokinetically active

@@ -50,6 +50,7 @@ import 'package:drinks_mate/src/models/meal.dart';
 import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/party_session_price.dart';
+import 'package:drinks_mate/src/models/session_day_summary.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/models/user_profile.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
@@ -59,6 +60,7 @@ import 'package:drinks_mate/src/screens/party_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 
 // ---------------------------------------------------------------------------
 // Fake repositories — record calls without touching a real DB (beyond the
@@ -324,6 +326,20 @@ String _isoDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
 
+/// Mirrors party_screen.dart `_PastSessionRow`'s date-range title formatting
+/// exactly, so past-sessions-list tests can assert on the title text without
+/// hardcoding a timezone-dependent string.
+String _expectedPastSessionTitle(PartySession session) {
+  final start = session.startedAt.toLocal();
+  final end = (session.endedAt ?? session.startedAt).toLocal();
+  final sameDay = start.year == end.year &&
+      start.month == end.month &&
+      start.day == end.day;
+  return sameDay
+      ? DateFormat('MMM d').format(start)
+      : '${DateFormat('MMM d').format(start)} – ${DateFormat('MMM d').format(end)}';
+}
+
 /// Builds a testable PartyScreen with every provider PartyScreen reads
 /// overridden — no real Drift stream is ever started (avoids the
 /// pending-timer teardown issue noted in widget_test.dart).
@@ -337,6 +353,7 @@ Widget _buildScreen({
   _FakeDrinksRepo? drinksRepo,
   DateTime? now,
   List<DrinkPreset> alcoholicPresets = const [],
+  List<SessionDaySummary> endedSessionSummaries = const [],
 }) {
   return ProviderScope(
     overrides: [
@@ -366,6 +383,17 @@ Widget _buildScreen({
       ),
       visibleAlcoholicPresetsProvider.overrideWith(
         (_) => Stream.value(alcoholicPresets),
+      ),
+      // S7 past-sessions list (issue #86) — overridden with a single-value
+      // stream/future so the underlying Drift `.watch()` query on
+      // _FakePartySessionRepo's throwaway in-memory database never opens
+      // (same "avoid touching real DB streams" rationale as the other
+      // overrides above).
+      partyEndedSessionsProvider.overrideWith(
+        (_) => Stream.value(const <PartySession>[]),
+      ),
+      partyEndedSessionSummariesProvider.overrideWith(
+        (_) async => endedSessionSummaries,
       ),
     ],
     child: const MaterialApp(home: PartyScreen()),
@@ -1291,4 +1319,136 @@ void main() {
       });
     },
   );
+
+  // -------------------------------------------------------------------------
+  // 5. Past-sessions list rendering (user-experience.md §S7 → No active
+  // session — subsequent visits: "Each row shows session date/range, peak
+  // BAC, number of alcoholic drinks, and how the session ended
+  // (manual/auto). Tapping a row opens S9 ... in its read-only,
+  // ended-session mode").
+  // -------------------------------------------------------------------------
+
+  group('Past-sessions list (partyEndedSessionSummariesProvider)', () {
+    testWidgets(
+      'renders one row per summary, with drink count and end-reason text',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile(); // birthDate null -> Start button shown
+
+        final manualSession = PartySession(
+          id: 'manual-session',
+          startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 1, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 1, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
+        );
+        final autoSession = PartySession(
+          id: 'auto-session',
+          startedAt: DateTime.utc(2026, 7, 5, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 6, 8, 0),
+          endReason: PartySessionEndReason.autoTimeout,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 5, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 6, 8, 0),
+        );
+        final summaries = [
+          SessionDaySummary(
+            session: manualSession,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 2,
+            mealsLoggedCount: 1,
+            peakBacGPerL: 0.36,
+          ),
+          SessionDaySummary(
+            session: autoSession,
+            duration: const Duration(hours: 12),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            endedSessionSummaries: summaries,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Source: party_screen.dart _PastSessionRow.build — title is the
+        // date/range, subtitle combines drink count, optional peak BAC, and
+        // end label (user-experience.md §S7: "session date/range, peak BAC,
+        // number of alcoholic drinks, and how the session ended").
+        expect(
+          find.text(_expectedPastSessionTitle(manualSession)),
+          findsOneWidget,
+        );
+        expect(
+          find.text(_expectedPastSessionTitle(autoSession)),
+          findsOneWidget,
+        );
+        expect(
+          find.text('2 alcoholic drinks · peak 0.36 g/L · ended manually'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('1 alcoholic drink · ended automatically'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping a row navigates to PartySessionLogScreen for that session',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile();
+
+        final session = PartySession(
+          id: 'tapped-session',
+          startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 1, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 1, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
+        );
+        final summaries = [
+          SessionDaySummary(
+            session: session,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+            peakBacGPerL: 0.1,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            endedSessionSummaries: summaries,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Party Session Log'), findsNothing);
+        await tester.tap(
+            find.text('1 alcoholic drink · peak 0.10 g/L · ended manually'));
+        await tester.pumpAndSettle();
+
+        // PartySessionLogScreen's own AppBar title — confirms navigation
+        // happened, regardless of whether its body can resolve a summary
+        // for this session id from the fake repo (out of scope here; see
+        // party_session_log_screen_test.dart for that screen's own
+        // coverage).
+        expect(find.text('Party Session Log'), findsOneWidget);
+      },
+    );
+  });
 }
