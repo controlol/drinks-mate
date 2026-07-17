@@ -135,21 +135,12 @@ void main() {
         expect(svc.formatLargeVolume(1949.0), equals('1.9 L'));
       });
 
-      test(
-        '1950 ml (exact half-boundary) → 1.9 L, not 2 L',
-        () {
-          // 1950 / 1000 = 1.95 exactly as a *mathematical* value, but the
-          // nearest representable double is fractionally below 1.95, so
-          // Dart's `toStringAsFixed(1)` rounds it DOWN to "1.9" rather than
-          // "2.0" (round-half-away-from-zero only applies to values that
-          // are exactly representable at the half boundary; verified
-          // directly against `(1950.0 / 1000).toStringAsFixed(1)`, not
-          // assumed from IEEE-754 half-to-even reasoning). This is the
-          // sharpest edge of the fix: it proves the implementation is
-          // rounding the *actual* double, not doing decimal-exact math.
-          expect(svc.formatLargeVolume(1950.0), equals('1.9 L'));
-        },
-      );
+      test('1950 ml (exact half-boundary) → 2 L, half-away-from-zero', () {
+        // 1950/1000 isn't exactly representable as a double, so a naive
+        // toStringAsFixed(1) rounds down to "1.9". Source: Parity Rulebook,
+        // half-away-from-zero (data-model.md §Display precision).
+        expect(svc.formatLargeVolume(1950.0), equals('2 L'));
+      });
 
       test('999 ml rounds up to a whole litre from below → 1 L', () {
         // 999 / 1000 = 0.999, rounds to 1.0 at 1dp — mirrors the "rounds up

@@ -51,10 +51,13 @@ class FormatService {
   /// headline".
   String formatLargeVolume(double ml) {
     if (_isImperial) return '${_fmt1dp(mlToFlOz(ml))} fl oz';
-    final rounded = double.parse((ml / 1000).toStringAsFixed(1));
-    return rounded == rounded.truncateToDouble()
-        ? '${rounded.toInt()} L'
-        : '${rounded.toStringAsFixed(1)} L';
+    // Integer rounding to the nearest 100 ml — avoids `toStringAsFixed`
+    // rounding the wrong way at binary-unrepresentable .x50-litre boundaries
+    // (e.g. 1950 ml). Source: Parity Rulebook, half-away-from-zero.
+    final tenths = (ml.round() + 50) ~/ 100;
+    final litres = tenths ~/ 10;
+    final remainderTenths = tenths % 10;
+    return remainderTenths == 0 ? '$litres L' : '$litres.$remainderTenths L';
   }
 
   // ---------------------------------------------------------------------------
