@@ -179,6 +179,9 @@ Future<void> logAlcoholicDrinkIntoSession(
     priceTokens: resolvedPrice.priceTokens,
     tokenValueMinor: resolvedPrice.tokenValueMinor,
     tokenValueCurrency: resolvedPrice.tokenValueCurrency,
+    // A one-off price the user typed here must survive a later party-price
+    // edit's retroactive sweep untouched (issue #87).
+    isManualPriceOverride: selection.priceMinor != null,
   );
 
   if (!context.mounted) return;

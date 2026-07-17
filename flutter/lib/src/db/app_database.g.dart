@@ -832,6 +832,16 @@ class $DrinkEntriesTable extends DrinkEntries
   late final GeneratedColumn<String> presetId = GeneratedColumn<String>(
       'preset_id', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _manualPriceOverrideMeta =
+      const VerificationMeta('manualPriceOverride');
+  @override
+  late final GeneratedColumn<bool> manualPriceOverride = GeneratedColumn<bool>(
+      'manual_price_override', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("manual_price_override" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _consumedAtMeta =
       const VerificationMeta('consumedAt');
   @override
@@ -872,6 +882,7 @@ class $DrinkEntriesTable extends DrinkEntries
         iconColor,
         partySessionId,
         presetId,
+        manualPriceOverride,
         consumedAt,
         createdAt,
         updatedAt,
@@ -962,6 +973,12 @@ class $DrinkEntriesTable extends DrinkEntries
       context.handle(_presetIdMeta,
           presetId.isAcceptableOrUnknown(data['preset_id']!, _presetIdMeta));
     }
+    if (data.containsKey('manual_price_override')) {
+      context.handle(
+          _manualPriceOverrideMeta,
+          manualPriceOverride.isAcceptableOrUnknown(
+              data['manual_price_override']!, _manualPriceOverrideMeta));
+    }
     if (data.containsKey('consumed_at')) {
       context.handle(
           _consumedAtMeta,
@@ -1023,6 +1040,8 @@ class $DrinkEntriesTable extends DrinkEntries
           DriftSqlType.string, data['${effectivePrefix}party_session_id']),
       presetId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}preset_id']),
+      manualPriceOverride: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool, data['${effectivePrefix}manual_price_override'])!,
       consumedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}consumed_at'])!,
       createdAt: attachedDatabase.typeMapping
@@ -1084,6 +1103,17 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
   /// deleted preset simply stops accumulating new usage, and its historical
   /// entries keep their id here with no cascading effect.
   final String? presetId;
+
+  /// Schema v7 addition (issue #87). True when this entry's price snapshot
+  /// was set by a deliberate, this-entry-only edit — the log-time price
+  /// field on [PartyLogDrinkSheet] or S9's per-entry price edit — rather
+  /// than resolved from the preset's regular price or the session-wide
+  /// `PartySessionPrice` table. A retroactive party-price edit
+  /// (`setSessionPrices`) sweeps its new price onto already-logged entries
+  /// for that preset **except** ones with this flag set, so the one-off
+  /// override always wins over the session-wide table (party-session.md
+  /// §Editing prices during a session).
+  final bool manualPriceOverride;
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1103,6 +1133,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       this.iconColor,
       this.partySessionId,
       this.presetId,
+      required this.manualPriceOverride,
       required this.consumedAt,
       required this.createdAt,
       required this.updatedAt,
@@ -1146,6 +1177,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
     if (!nullToAbsent || presetId != null) {
       map['preset_id'] = Variable<String>(presetId);
     }
+    map['manual_price_override'] = Variable<bool>(manualPriceOverride);
     map['consumed_at'] = Variable<DateTime>(consumedAt);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -1191,6 +1223,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       presetId: presetId == null && nullToAbsent
           ? const Value.absent()
           : Value(presetId),
+      manualPriceOverride: Value(manualPriceOverride),
       consumedAt: Value(consumedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -1219,6 +1252,8 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       iconColor: serializer.fromJson<String?>(json['iconColor']),
       partySessionId: serializer.fromJson<String?>(json['partySessionId']),
       presetId: serializer.fromJson<String?>(json['presetId']),
+      manualPriceOverride:
+          serializer.fromJson<bool>(json['manualPriceOverride']),
       consumedAt: serializer.fromJson<DateTime>(json['consumedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -1243,6 +1278,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       'iconColor': serializer.toJson<String?>(iconColor),
       'partySessionId': serializer.toJson<String?>(partySessionId),
       'presetId': serializer.toJson<String?>(presetId),
+      'manualPriceOverride': serializer.toJson<bool>(manualPriceOverride),
       'consumedAt': serializer.toJson<DateTime>(consumedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -1265,6 +1301,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           Value<String?> iconColor = const Value.absent(),
           Value<String?> partySessionId = const Value.absent(),
           Value<String?> presetId = const Value.absent(),
+          bool? manualPriceOverride,
           DateTime? consumedAt,
           DateTime? createdAt,
           DateTime? updatedAt,
@@ -1289,6 +1326,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
         partySessionId:
             partySessionId.present ? partySessionId.value : this.partySessionId,
         presetId: presetId.present ? presetId.value : this.presetId,
+        manualPriceOverride: manualPriceOverride ?? this.manualPriceOverride,
         consumedAt: consumedAt ?? this.consumedAt,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
@@ -1321,6 +1359,9 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           ? data.partySessionId.value
           : this.partySessionId,
       presetId: data.presetId.present ? data.presetId.value : this.presetId,
+      manualPriceOverride: data.manualPriceOverride.present
+          ? data.manualPriceOverride.value
+          : this.manualPriceOverride,
       consumedAt:
           data.consumedAt.present ? data.consumedAt.value : this.consumedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -1346,6 +1387,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           ..write('iconColor: $iconColor, ')
           ..write('partySessionId: $partySessionId, ')
           ..write('presetId: $presetId, ')
+          ..write('manualPriceOverride: $manualPriceOverride, ')
           ..write('consumedAt: $consumedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -1370,6 +1412,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
       iconColor,
       partySessionId,
       presetId,
+      manualPriceOverride,
       consumedAt,
       createdAt,
       updatedAt,
@@ -1392,6 +1435,7 @@ class DrinkEntryRow extends DataClass implements Insertable<DrinkEntryRow> {
           other.iconColor == this.iconColor &&
           other.partySessionId == this.partySessionId &&
           other.presetId == this.presetId &&
+          other.manualPriceOverride == this.manualPriceOverride &&
           other.consumedAt == this.consumedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -1413,6 +1457,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
   final Value<String?> iconColor;
   final Value<String?> partySessionId;
   final Value<String?> presetId;
+  final Value<bool> manualPriceOverride;
   final Value<DateTime> consumedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -1433,6 +1478,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     this.iconColor = const Value.absent(),
     this.partySessionId = const Value.absent(),
     this.presetId = const Value.absent(),
+    this.manualPriceOverride = const Value.absent(),
     this.consumedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -1454,6 +1500,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     this.iconColor = const Value.absent(),
     this.partySessionId = const Value.absent(),
     this.presetId = const Value.absent(),
+    this.manualPriceOverride = const Value.absent(),
     required DateTime consumedAt,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -1480,6 +1527,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     Expression<String>? iconColor,
     Expression<String>? partySessionId,
     Expression<String>? presetId,
+    Expression<bool>? manualPriceOverride,
     Expression<DateTime>? consumedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -1502,6 +1550,8 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       if (iconColor != null) 'icon_color': iconColor,
       if (partySessionId != null) 'party_session_id': partySessionId,
       if (presetId != null) 'preset_id': presetId,
+      if (manualPriceOverride != null)
+        'manual_price_override': manualPriceOverride,
       if (consumedAt != null) 'consumed_at': consumedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -1525,6 +1575,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       Value<String?>? iconColor,
       Value<String?>? partySessionId,
       Value<String?>? presetId,
+      Value<bool>? manualPriceOverride,
       Value<DateTime>? consumedAt,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt,
@@ -1545,6 +1596,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
       iconColor: iconColor ?? this.iconColor,
       partySessionId: partySessionId ?? this.partySessionId,
       presetId: presetId ?? this.presetId,
+      manualPriceOverride: manualPriceOverride ?? this.manualPriceOverride,
       consumedAt: consumedAt ?? this.consumedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -1598,6 +1650,9 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
     if (presetId.present) {
       map['preset_id'] = Variable<String>(presetId.value);
     }
+    if (manualPriceOverride.present) {
+      map['manual_price_override'] = Variable<bool>(manualPriceOverride.value);
+    }
     if (consumedAt.present) {
       map['consumed_at'] = Variable<DateTime>(consumedAt.value);
     }
@@ -1633,6 +1688,7 @@ class DrinkEntriesCompanion extends UpdateCompanion<DrinkEntryRow> {
           ..write('iconColor: $iconColor, ')
           ..write('partySessionId: $partySessionId, ')
           ..write('presetId: $presetId, ')
+          ..write('manualPriceOverride: $manualPriceOverride, ')
           ..write('consumedAt: $consumedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -5089,6 +5145,7 @@ typedef $$DrinkEntriesTableCreateCompanionBuilder = DrinkEntriesCompanion
   Value<String?> iconColor,
   Value<String?> partySessionId,
   Value<String?> presetId,
+  Value<bool> manualPriceOverride,
   required DateTime consumedAt,
   required DateTime createdAt,
   required DateTime updatedAt,
@@ -5111,6 +5168,7 @@ typedef $$DrinkEntriesTableUpdateCompanionBuilder = DrinkEntriesCompanion
   Value<String?> iconColor,
   Value<String?> partySessionId,
   Value<String?> presetId,
+  Value<bool> manualPriceOverride,
   Value<DateTime> consumedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
@@ -5171,6 +5229,10 @@ class $$DrinkEntriesTableFilterComposer
 
   ColumnFilters<String> get presetId => $composableBuilder(
       column: $table.presetId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get manualPriceOverride => $composableBuilder(
+      column: $table.manualPriceOverride,
+      builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => ColumnFilters(column));
@@ -5240,6 +5302,10 @@ class $$DrinkEntriesTableOrderingComposer
   ColumnOrderings<String> get presetId => $composableBuilder(
       column: $table.presetId, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<bool> get manualPriceOverride => $composableBuilder(
+      column: $table.manualPriceOverride,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => ColumnOrderings(column));
 
@@ -5304,6 +5370,9 @@ class $$DrinkEntriesTableAnnotationComposer
   GeneratedColumn<String> get presetId =>
       $composableBuilder(column: $table.presetId, builder: (column) => column);
 
+  GeneratedColumn<bool> get manualPriceOverride => $composableBuilder(
+      column: $table.manualPriceOverride, builder: (column) => column);
+
   GeneratedColumn<DateTime> get consumedAt => $composableBuilder(
       column: $table.consumedAt, builder: (column) => column);
 
@@ -5357,6 +5426,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             Value<String?> iconColor = const Value.absent(),
             Value<String?> partySessionId = const Value.absent(),
             Value<String?> presetId = const Value.absent(),
+            Value<bool> manualPriceOverride = const Value.absent(),
             Value<DateTime> consumedAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
@@ -5378,6 +5448,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             iconColor: iconColor,
             partySessionId: partySessionId,
             presetId: presetId,
+            manualPriceOverride: manualPriceOverride,
             consumedAt: consumedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
@@ -5399,6 +5470,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             Value<String?> iconColor = const Value.absent(),
             Value<String?> partySessionId = const Value.absent(),
             Value<String?> presetId = const Value.absent(),
+            Value<bool> manualPriceOverride = const Value.absent(),
             required DateTime consumedAt,
             required DateTime createdAt,
             required DateTime updatedAt,
@@ -5420,6 +5492,7 @@ class $$DrinkEntriesTableTableManager extends RootTableManager<
             iconColor: iconColor,
             partySessionId: partySessionId,
             presetId: presetId,
+            manualPriceOverride: manualPriceOverride,
             consumedAt: consumedAt,
             createdAt: createdAt,
             updatedAt: updatedAt,

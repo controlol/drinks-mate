@@ -296,9 +296,10 @@ The Party tab (active-session view) exposes a "Manage prices" action that opens 
 
 - One row per `DrinkPreset` (excluding hidden ones), showing: drink name + icon, regular price (read-only, for reference), party price (editable, this session only).
 - Tapping a party-price cell opens an editor: pick **money** (amount + currency, defaults to the user's preferred currency) or **tokens** (count). Pick "no override" to fall back to the regular price for this drink.
-- Edits are saved immediately and apply to subsequent log actions in this session.
+- Edits are saved immediately and apply to subsequent log actions in this session, **and retroactively** to every drink already logged in this session from that preset — its `priceMinor`/`priceTokens`/`currency` snapshot is rewritten to match what a fresh log action would resolve to right now (falling back to the regular price when "no override" is picked, or when the "use session prices" toggle is off).
+- **Exception:** an entry that was given its own one-off, this-entry-only price override (the log-time price field on the Party log-alcohol sheet, or a per-entry price edit from S6/S9) is skipped by the retroactive sweep. A deliberate per-entry edit always wins over the session-wide table — the two price-editing mechanisms never fight each other.
 
-**Critical invariant:** edits made here only ever touch `PartySessionPrice` rows on the active session. The `DrinkPreset.regularPrice*` fields are never modified by Party Mode actions.
+**Critical invariant:** edits made here only ever touch `PartySessionPrice` rows and, via the retroactive sweep above, non-overridden `DrinkEntry` rows on the active session. The `DrinkPreset.regularPrice*` fields are never modified by Party Mode actions.
 
 ### Toggle: use session prices
 
@@ -316,7 +317,7 @@ When a drink is logged during a session, the price snapshot on the resulting `Dr
 - If money was applied: `priceMinor` + `currency` are set; the token fields are null.
 - If tokens were applied: `priceTokens` + `tokenValueMinor` + `tokenValueCurrency` are set (the token value snapshot lets historical aggregations show a money-equivalent even if the session's token configuration changes later); `priceMinor` and `currency` are null.
 
-This follows the [log immutability principle](./data-model.md#snapshot-semantics--log-immutability) — once logged, the price never changes.
+This mostly follows the [log immutability principle](./data-model.md#snapshot-semantics--log-immutability), with one deliberate exception: a party-price edit (see "Editing prices during a session" above) retroactively rewrites this snapshot on already-logged, non-overridden entries for the affected preset. A per-entry price edit (S6, S9, or the log-time one-off override) still behaves as an ordinary immutable snapshot from every other actor's perspective.
 
 ### Aggregations across mixed payment
 

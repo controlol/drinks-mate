@@ -54,6 +54,18 @@ class DrinkEntries extends Table {
   /// deleted preset simply stops accumulating new usage, and its historical
   /// entries keep their id here with no cascading effect.
   TextColumn get presetId => text().nullable()();
+
+  /// Schema v7 addition (issue #87). True when this entry's price snapshot
+  /// was set by a deliberate, this-entry-only edit — the log-time price
+  /// field on [PartyLogDrinkSheet] or S9's per-entry price edit — rather
+  /// than resolved from the preset's regular price or the session-wide
+  /// `PartySessionPrice` table. A retroactive party-price edit
+  /// (`setSessionPrices`) sweeps its new price onto already-logged entries
+  /// for that preset **except** ones with this flag set, so the one-off
+  /// override always wins over the session-wide table (party-session.md
+  /// §Editing prices during a session).
+  BoolColumn get manualPriceOverride =>
+      boolean().withDefault(const Constant(false))();
   DateTimeColumn get consumedAt => dateTime()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();

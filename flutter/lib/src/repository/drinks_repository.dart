@@ -842,6 +842,7 @@ class DrinksRepository {
         iconColor: row.iconColor,
         partySessionId: row.partySessionId,
         presetId: row.presetId,
+        manualPriceOverride: row.manualPriceOverride,
         consumedAt: row.consumedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

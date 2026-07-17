@@ -156,6 +156,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
     int? priceTokens,
     int? tokenValueMinor,
     String? tokenValueCurrency,
+    bool isManualPriceOverride = false,
     DateTime? now,
   }) async {
     logAlcoholicDrinkCalls.add((
