@@ -16,6 +16,7 @@ import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
@@ -33,10 +34,41 @@ class _FakeRepo extends DrinksRepository {
   _FakeRepo() : super(AppDatabase(NativeDatabase.memory()));
 
   final List<String> deletedIds = [];
+  final List<
+      ({
+        String id,
+        int? volumeMl,
+        String? name,
+        double? abvPercent,
+        Optional<int?> priceMinor,
+        Optional<String?> currency,
+        DateTime? consumedAt,
+      })> updateDrinkEntryCalls = [];
 
   @override
   Future<void> deleteDrinkEntry(String id) async {
     deletedIds.add(id);
+  }
+
+  @override
+  Future<void> updateDrinkEntry({
+    required String id,
+    int? volumeMl,
+    DateTime? consumedAt,
+    String? name,
+    double? abvPercent,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
+  }) async {
+    updateDrinkEntryCalls.add((
+      id: id,
+      volumeMl: volumeMl,
+      name: name,
+      abvPercent: abvPercent,
+      priceMinor: priceMinor,
+      currency: currency,
+      consumedAt: consumedAt,
+    ));
   }
 }
 
@@ -481,6 +513,97 @@ void main() {
       // session-attached alcoholic entry, which renders read-only.
       expect(find.byTooltip('Edit'), findsNWidgets(2));
       expect(find.byTooltip('Delete'), findsNWidgets(2));
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 8. ABV and price fields (aligning S6 with S9's field set, minus name)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'edit sheet shows 2 fields (volume, price) for a non-alcoholic entry — '
+    'no ABV field',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entries = [
+        _entry(
+            id: 'e1',
+            name: 'Water',
+            consumedAt: DateTime.utc(2026, 6, 23, 9, 0)),
+      ];
+
+      tester.view.physicalSize = const Size(800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: entries, repo: repo));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Edit'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.text('ABV (%)'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'edit sheet shows 3 fields (volume, ABV, price) for an orphan alcoholic '
+    'entry, pre-filled from the entry; saving calls updateDrinkEntry with '
+    'the edited values',
+    (tester) async {
+      final repo = _FakeRepo();
+      final now = DateTime.utc(2026, 6, 23, 12, 0);
+      final entry = DrinkEntry(
+        id: 'e-beer',
+        name: 'Orphan Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        priceMinor: 450,
+        currency: 'EUR',
+        consumedAt: DateTime.utc(2026, 6, 23, 20, 0),
+        createdAt: now,
+        updatedAt: now,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Edit'));
+      await tester.pumpAndSettle();
+
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(3));
+      // Declaration order in EntryEditSheet.build: volume, abv, price.
+      expect(
+          tester.widget<TextField>(textFields.at(0)).controller!.text, '330');
+      expect(
+          tester.widget<TextField>(textFields.at(1)).controller!.text, '5.0');
+      expect(
+          tester.widget<TextField>(textFields.at(2)).controller!.text, '4.50');
+
+      await tester.enterText(textFields.at(0), '500');
+      await tester.enterText(textFields.at(1), '8.0');
+      await tester.enterText(textFields.at(2), '6.00');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-beer');
+      expect(call.name, isNull, reason: 'S6 does not edit name');
+      expect(call.volumeMl, 500);
+      expect(call.abvPercent, 8.0);
+      expect(call.priceMinor, const Optional.value(600));
+      expect(call.currency, const Optional.value('EUR'));
     },
   );
 }

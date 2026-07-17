@@ -503,28 +503,6 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// Partial update of a [DrinkEntryRow]: only [volumeMl] and/or [consumedAt]
-  /// may be changed (log immutability — snapshot fields are never rewritten).
-  ///
-  /// Always bumps [updatedAt] to [updatedAtUtc].
-  Future<void> updateDrinkEntryPartial(
-    String id, {
-    int? volumeMl,
-    DateTime? consumedAtUtc,
-    required DateTime updatedAtUtc,
-  }) {
-    final companion = DrinkEntriesCompanion(
-      volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-      consumedAt:
-          consumedAtUtc != null ? Value(consumedAtUtc) : const Value.absent(),
-      updatedAt: Value(updatedAtUtc),
-    );
-    return (update(
-      drinkEntries,
-    )..where((t) => t.id.equals(id)))
-        .write(companion);
-  }
-
   /// Reactive stream of `(presetId, consumedAt)` pairs for every live entry
   /// that was logged from a preset (`presetId IS NOT NULL`) — the raw feed
   /// for [DrinksRepository.watchPresetUsageStats]'s last-used/30-day-count
@@ -537,13 +515,11 @@ class AppDatabase extends _$AppDatabase {
         .map((rows) => rows.map((r) => (r.presetId!, r.consumedAt)).toList());
   }
 
-  /// Partial update of arbitrary [DrinkEntryRow] fields (S9 — Party Session
-  /// Log's active-mode edit affordance, user-experience.md §S9: "Editable
-  /// fields are volume, name, ABV, price, and time"). Unlike
-  /// [updateDrinkEntryPartial] (S6's volume/time-only edit), this accepts any
-  /// [DrinkEntriesCompanion] the caller builds — [PartySessionRepository]
-  /// owns the validation/normalisation of which fields a session-attached
-  /// alcoholic entry may change.
+  /// Partial update of arbitrary [DrinkEntryRow] fields — the shared write
+  /// path behind [DrinksRepository.updateDrinkEntry] (S6/S3) and
+  /// [PartySessionRepository.updateAlcoholicEntry] (S9). Accepts any
+  /// [DrinkEntriesCompanion] the caller builds; each repository owns the
+  /// validation/normalisation of which fields its callers may change.
   ///
   /// Returns the number of rows affected (0 if [id] not found).
   Future<int> updateDrinkEntryFields(

@@ -1,6 +1,4 @@
-import 'package:core/core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
@@ -9,21 +7,21 @@ import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
 import '../utils/color_utils.dart';
+import '../widgets/entry_edit_sheet.dart';
 import 'log_drink_sheet.dart';
 
 /// S6 — Today Drinks Log.
 ///
 /// Reached by tapping the progress card on the Today screen. Shows every
 /// beverage type logged today in reverse-chronological order, with
-/// per-entry edit (volumeMl and consumedAt only) and soft-delete actions —
-/// except an alcoholic entry attached to a Party Session (`partySessionId`
-/// set), which renders read-only here; [S9 Party Session Log] is the
-/// authoritative place to edit or delete those (design/user-experience.md
-/// §S6).
+/// per-entry edit and soft-delete actions — except an alcoholic entry
+/// attached to a Party Session (`partySessionId` set), which renders
+/// read-only here; [S9 Party Session Log] is the authoritative place to edit
+/// or delete those (design/user-experience.md §S6).
 ///
-/// Immutability: snapshot fields (name, icon, ABV, price) are never exposed
-/// in the edit form — only volumeMl and consumedAt are user-editable after
-/// log time (data-model.md §Snapshot semantics).
+/// Editable fields: volume, ABV (alcoholic entries only), price, and time —
+/// name is not exposed here (unlike [S3 History day drill-down]); see
+/// [EntryEditSheet] for the shared edit-sheet implementation.
 class TodayDrinksScreen extends ConsumerWidget {
   const TodayDrinksScreen({super.key});
 
@@ -212,11 +210,33 @@ class _EntryRow extends ConsumerWidget {
   }
 
   Future<void> _showEditSheet(BuildContext context, WidgetRef ref) async {
+    final boundaryHour = prefs?.dayBoundaryHour ?? 5;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => _EditEntrySheet(entry: entry, prefs: prefs),
+      builder: (_) => EntryEditSheet(
+        entry: entry,
+        defaultCurrency: prefs?.currency,
+        onPickTime: (ctx, current) =>
+            pickDayWindowTime(ctx, current, boundaryHour: boundaryHour),
+        onSave: ({
+          required volumeMl,
+          name,
+          abvPercent,
+          required priceMinor,
+          required currency,
+          required consumedAt,
+        }) =>
+            ref.read(drinksRepositoryProvider).updateDrinkEntry(
+                  id: entry.id,
+                  volumeMl: volumeMl,
+                  abvPercent: abvPercent,
+                  priceMinor: priceMinor,
+                  currency: currency,
+                  consumedAt: consumedAt,
+                ),
+      ),
     );
   }
 
@@ -244,173 +264,6 @@ class _EntryRow extends ConsumerWidget {
     if (confirmed == true) {
       await ref.read(drinksRepositoryProvider).deleteDrinkEntry(entry.id);
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Edit entry bottom sheet
-// ---------------------------------------------------------------------------
-
-class _EditEntrySheet extends ConsumerStatefulWidget {
-  const _EditEntrySheet({required this.entry, required this.prefs});
-
-  final DrinkEntry entry;
-  final UserPreferences? prefs;
-
-  @override
-  ConsumerState<_EditEntrySheet> createState() => _EditEntrySheetState();
-}
-
-class _EditEntrySheetState extends ConsumerState<_EditEntrySheet> {
-  late TextEditingController _volumeCtrl;
-  late DateTime _consumedAt;
-  bool _submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _volumeCtrl = TextEditingController(text: widget.entry.volumeMl.toString());
-    _consumedAt = widget.entry.consumedAt;
-  }
-
-  @override
-  void dispose() {
-    _volumeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_submitting) return;
-    final volume = int.tryParse(_volumeCtrl.text.trim());
-    if (volume == null || volume < 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Volume must be at least 1 ml')),
-      );
-      return;
-    }
-
-    setState(() => _submitting = true);
-    final repo = ref.read(drinksRepositoryProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
-    try {
-      await repo.updateDrinkEntry(
-        id: widget.entry.id,
-        volumeMl: volume,
-        consumedAt: _consumedAt,
-      );
-    } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Failed to save changes')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final local = _consumedAt.toLocal();
-    // Source: Parity Rulebook — "Time-of-day display format" (honours the
-    // device's 12h/24h preference rather than a hardcoded format).
-    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SheetHandle(),
-          const SizedBox(height: 8),
-          Text('Edit drink', style: Theme.of(context).textTheme.titleLarge),
-          if (widget.entry.name != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              widget.entry.name!,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          TextField(
-            controller: _volumeCtrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-              labelText: 'Volume (ml)',
-              suffixText: 'ml',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Text('Time', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.schedule),
-                label: Text(timeLabel),
-                onPressed: () => _pickTime(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _submitting ? null : _save,
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickTime(BuildContext context) async {
-    final local = _consumedAt.toLocal();
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(local),
-    );
-    if (picked == null || !mounted) return;
-
-    // Map the picked TimeOfDay back into the day window correctly.
-    // With dayBoundaryHour = B, the window spans [B:00 day D, B:00 day D+1).
-    // Times >= B belong to calendar day D (dayStart); times < B belong to
-    // calendar day D+1 (dayEnd). This avoids the midnight-straddling trap
-    // where naively combining picked time with local.day produces a DateTime
-    // outside the window.
-    final boundaryHour = widget.prefs?.dayBoundaryHour ?? 5;
-    final window = dayWindow(
-      now: _consumedAt.toLocal(),
-      boundaryHour: boundaryHour,
-    );
-    final dayStart = window.$1.toLocal();
-    final dayEnd = window.$2.toLocal();
-
-    final DateTime updated;
-    if (picked.hour >= boundaryHour) {
-      updated = DateTime(
-        dayStart.year,
-        dayStart.month,
-        dayStart.day,
-        picked.hour,
-        picked.minute,
-      );
-    } else {
-      updated = DateTime(
-        dayEnd.year,
-        dayEnd.month,
-        dayEnd.day,
-        picked.hour,
-        picked.minute,
-      );
-    }
-
-    setState(() => _consumedAt = updated);
   }
 }
 
@@ -472,27 +325,6 @@ class _EmptyState extends StatelessWidget {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const LogDrinkSheet(),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Sheet handle (shared)
-// ---------------------------------------------------------------------------
-
-class _SheetHandle extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        width: 40,
-        height: 4,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
     );
   }
 }

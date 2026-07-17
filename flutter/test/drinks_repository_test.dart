@@ -1905,6 +1905,208 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // S6/S3 — updateDrinkEntry: name/ABV/price (issue #67 field-set alignment
+  // with S9's PartySessionRepository.updateAlcoholicEntry)
+  // ---------------------------------------------------------------------------
+
+  group(
+    'DrinksRepository.updateDrinkEntry — name/ABV/price (S3 exposes name; '
+    'S6 does not, but the repository itself is field-agnostic — each '
+    "screen's UI decides which fields it exposes)",
+    () {
+      late AppDatabase db;
+      late DrinksRepository repo;
+      late String entryId;
+
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+
+      setUp(() async {
+        db = _memDb();
+        repo = DrinksRepository(db);
+        entryId = await repo.logDrink(
+          preset: beerPreset,
+          consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+      });
+
+      tearDown(() => db.close());
+
+      Future<DrinkEntryRow> persisted() async =>
+          (await db.select(db.drinkEntries).get())
+              .singleWhere((e) => e.id == entryId);
+
+      test(
+        'updating abvPercent independently persists and leaves volume/name '
+        'untouched',
+        () async {
+          await repo.updateDrinkEntry(id: entryId, abvPercent: 8.5);
+
+          final row = await persisted();
+          expect(row.abvPercent, 8.5);
+          expect(row.volumeMl, beerPreset.volumeMl);
+          expect(row.name, beerPreset.name);
+        },
+      );
+
+      test(
+        'updating name independently persists (NFC-normalized) and leaves '
+        'volume/abv untouched',
+        () async {
+          // NFD form of 'café' — same convention as party_session_repository
+          // _test.dart's equivalent NFC test.
+          const nfdName = 'Cafe\u{0301} Latte';
+          await repo.updateDrinkEntry(id: entryId, name: nfdName);
+
+          final row = await persisted();
+          expect(row.name, normalizeNfc(nfdName));
+          expect(row.name, isNot(equals(nfdName)));
+          expect(row.volumeMl, beerPreset.volumeMl);
+          expect(row.abvPercent, beerPreset.abvPercent);
+        },
+      );
+
+      test('rejects abvPercent <= 0', () async {
+        expect(
+          () => repo.updateDrinkEntry(id: entryId, abvPercent: 0),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('rejects an invalid name', () async {
+        expect(
+          () => repo.updateDrinkEntry(id: entryId, name: 'ab'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test(
+        'setting priceMinor+currency sets a money price AND clears any '
+        'pre-existing token price (data-model.md §DrinkEntry: money/tokens '
+        'are mutually exclusive)',
+        () async {
+          // DrinksRepository.logDrink has no token-price param (tokens are
+          // Party-Session-specific — PartySessionRepository.logAlcoholicDrink
+          // only); write one directly via the DAO to simulate an entry that
+          // was absorbed from a session and now has a lingering token price.
+          final tokenEntryId = await repo.logDrink(
+            preset: beerPreset,
+            consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          await db.updateDrinkEntryFields(
+            tokenEntryId,
+            const DrinkEntriesCompanion(
+              priceTokens: Value(2),
+              tokenValueMinor: Value(150),
+              tokenValueCurrency: Value('EUR'),
+            ),
+          );
+
+          await repo.updateDrinkEntry(
+            id: tokenEntryId,
+            priceMinor: const Optional.value(1234),
+            currency: const Optional.value('EUR'),
+          );
+
+          final row = (await db.select(db.drinkEntries).get())
+              .singleWhere((e) => e.id == tokenEntryId);
+          expect(row.priceMinor, 1234);
+          expect(row.currency, 'EUR');
+          expect(row.priceTokens, isNull);
+          expect(row.tokenValueMinor, isNull);
+          expect(row.tokenValueCurrency, isNull);
+        },
+      );
+
+      test(
+        'priceMinor: Optional.value(null), currency: Optional.value(null) '
+        'clears the price entirely',
+        () async {
+          await repo.updateDrinkEntry(
+            id: entryId,
+            priceMinor: const Optional.value(500),
+            currency: const Optional.value('EUR'),
+          );
+
+          await repo.updateDrinkEntry(
+            id: entryId,
+            priceMinor: const Optional.value(null),
+            currency: const Optional.value(null),
+          );
+
+          final row = await persisted();
+          expect(row.priceMinor, isNull);
+          expect(row.currency, isNull);
+        },
+      );
+
+      test(
+        'leaving priceMinor/currency at Optional.absent() (the default) '
+        "leaves the entry's existing price completely untouched",
+        () async {
+          await repo.updateDrinkEntry(
+            id: entryId,
+            priceMinor: const Optional.value(777),
+            currency: const Optional.value('USD'),
+          );
+
+          await repo.updateDrinkEntry(id: entryId, volumeMl: 350);
+
+          final row = await persisted();
+          expect(row.priceMinor, 777);
+          expect(row.currency, 'USD');
+          expect(row.volumeMl, 350);
+        },
+      );
+
+      test(
+        'throws ArgumentError if priceMinor.isPresent != currency.isPresent',
+        () async {
+          expect(
+            () => repo.updateDrinkEntry(
+              id: entryId,
+              priceMinor: const Optional.value(500),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+          expect(
+            () => repo.updateDrinkEntry(
+              id: entryId,
+              currency: const Optional.value('EUR'),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+        },
+      );
+
+      test(
+        'setting priceMinor sets manualPriceOverride, matching '
+        "PartySessionRepository.updateAlcoholicEntry's semantics",
+        () async {
+          await repo.updateDrinkEntry(
+            id: entryId,
+            priceMinor: const Optional.value(350),
+            currency: const Optional.value('EUR'),
+          );
+
+          final row = await persisted();
+          expect(row.manualPriceOverride, isTrue);
+        },
+      );
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // S6 — deleteDrinkEntry
   // ---------------------------------------------------------------------------
 

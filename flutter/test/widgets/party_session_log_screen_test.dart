@@ -341,8 +341,9 @@ void main() {
 
     testWidgets(
       'tapping a row and choosing Edit opens the edit sheet pre-filled with '
-      'the entry\'s current name/volume/ABV/price; saving calls '
-      'updateAlcoholicEntry with the edited values',
+      'the entry\'s current volume/ABV/price (no name field — S9 no longer '
+      'edits name, matching S6); saving calls updateAlcoholicEntry with the '
+      'edited values',
       (tester) async {
         final session = _makeSession(startedAt: startedAt);
         final entry = _alcoholicEntry(
@@ -356,8 +357,8 @@ void main() {
         );
         final repo = _FakePartySessionRepo();
 
-        // _EditAlcoholicEntrySheet's 4 fields + Save button are taller than
-        // the default 800x600 test surface — widen it (same convention as
+        // EntryEditSheet's 3 fields + Save button are taller than the
+        // default 800x600 test surface — widen it (same convention as
         // party_screen_test.dart's PartyLogDrinkSheet tests) so the Save
         // button is on-screen and hit-testable without scrolling a
         // fragile-to-target Scrollable.
@@ -388,22 +389,23 @@ void main() {
 
         expect(find.text('Edit drink'), findsOneWidget);
         final textFields = find.byType(TextField);
-        expect(textFields, findsNWidgets(4));
-        // Declaration order in _EditAlcoholicEntrySheet.build: name, volume,
-        // abv, price.
-        final nameField = tester.widget<TextField>(textFields.at(0));
-        final volumeField = tester.widget<TextField>(textFields.at(1));
-        final abvField = tester.widget<TextField>(textFields.at(2));
-        final priceField = tester.widget<TextField>(textFields.at(3));
-        expect(nameField.controller!.text, 'Original Beer');
+        expect(textFields, findsNWidgets(3));
+        // Declaration order in EntryEditSheet.build: volume, abv, price.
+        final volumeField = tester.widget<TextField>(textFields.at(0));
+        final abvField = tester.widget<TextField>(textFields.at(1));
+        final priceField = tester.widget<TextField>(textFields.at(2));
         expect(volumeField.controller!.text, '330');
         expect(abvField.controller!.text, '5.0');
         expect(priceField.controller!.text, '4.50');
 
-        await tester.enterText(textFields.at(0), 'Edited Beer');
-        await tester.enterText(textFields.at(1), '500');
-        await tester.enterText(textFields.at(2), '8.0');
-        await tester.enterText(textFields.at(3), '6.00');
+        // The time button must show the date, not just the time-of-day — S9
+        // (unlike S6/S3) lets an entry move across calendar days, since a
+        // session can span midnight (EntryEditSheet's `showDate: true`).
+        expect(find.textContaining('2026-07-10'), findsOneWidget);
+
+        await tester.enterText(textFields.at(0), '500');
+        await tester.enterText(textFields.at(1), '8.0');
+        await tester.enterText(textFields.at(2), '6.00');
         await tester.pump();
 
         await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -412,7 +414,7 @@ void main() {
         expect(repo.updateAlcoholicEntryCalls, hasLength(1));
         final call = repo.updateAlcoholicEntryCalls.single;
         expect(call.id, 'beer-1');
-        expect(call.name, 'Edited Beer');
+        expect(call.name, isNull, reason: 'S9 no longer edits name');
         expect(call.volumeMl, 500);
         expect(call.abvPercent, 8.0);
         expect(call.priceMinor, const Optional.value(600));
@@ -421,7 +423,7 @@ void main() {
     );
 
     testWidgets(
-      'editing only the name of a token-priced entry leaves its price '
+      'editing only volume of a token-priced entry leaves its price '
       'untouched (Optional.absent()) — the money-only price field renders '
       'blank for a token price, and must not be treated as "clear the '
       'price" just because it was never touched',
@@ -461,12 +463,12 @@ void main() {
         await tester.pumpAndSettle();
 
         final textFields = find.byType(TextField);
-        final priceField = tester.widget<TextField>(textFields.at(3));
+        final priceField = tester.widget<TextField>(textFields.at(2));
         // Blank — the field can't represent a token price.
         expect(priceField.controller!.text, '');
 
-        // Only touch the name field; leave price alone.
-        await tester.enterText(textFields.at(0), 'Renamed Token Beer');
+        // Only touch the volume field; leave price alone.
+        await tester.enterText(textFields.at(0), '500');
         await tester.pump();
 
         await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -474,7 +476,7 @@ void main() {
 
         expect(repo.updateAlcoholicEntryCalls, hasLength(1));
         final call = repo.updateAlcoholicEntryCalls.single;
-        expect(call.name, 'Renamed Token Beer');
+        expect(call.volumeMl, 500);
         expect(call.priceMinor, const Optional<int?>.absent());
         expect(call.currency, const Optional<String?>.absent());
       },
