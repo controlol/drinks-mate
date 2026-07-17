@@ -1,14 +1,13 @@
-import 'package:core/core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
-import '../models/session_day_summary.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
 import '../utils/color_utils.dart';
+import '../widgets/session_summary_card.dart';
 
 /// History day drill-down (F4/S3, issue #26).
 ///
@@ -65,7 +64,7 @@ class HistoryDayScreen extends ConsumerWidget {
               ),
               for (final summary in summaries) ...[
                 const SizedBox(height: 12),
-                _SessionSummaryCard(summary: summary),
+                SessionSummaryCard(summary: summary),
               ],
               const SizedBox(height: 20),
               Text('Drinks', style: Theme.of(context).textTheme.titleMedium),
@@ -127,66 +126,6 @@ class _DayTotalsHeader extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Session summary card
-// ---------------------------------------------------------------------------
-
-class _SessionSummaryCard extends StatelessWidget {
-  const _SessionSummaryCard({required this.summary});
-
-  final SessionDaySummary summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final peakBac = summary.peakBacGPerL;
-
-    return Semantics(
-      label: SemanticsLabels.historySessionSummaryCard,
-      container: true,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.local_bar_outlined,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Party session',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text('Duration: ${_formatDuration(summary.duration)}'),
-              Text('Alcoholic drinks: ${summary.totalAlcoholicDrinks}'),
-              Text('Meals logged: ${summary.mealsLoggedCount}'),
-              if (peakBac != null)
-                Text(
-                  'Peak estimated BAC: ${peakBac.toStringAsFixed(2)} g/L '
-                  '(≈ ${gPerLToMmol(peakBac).toStringAsFixed(2)} mmol/L) '
-                  '— estimate',
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  static String _formatDuration(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    return '${hours}h ${minutes}m';
   }
 }
 

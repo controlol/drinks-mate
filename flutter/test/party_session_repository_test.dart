@@ -11,6 +11,7 @@ import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/meal.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_profile.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
@@ -1194,6 +1195,59 @@ void main() {
     );
   });
 
+  group(
+    'PartySessionRepository.updateMeal (party-session.md §Party tab during '
+    'a session: meal indicator "edit the last one")',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        "updates the meal's size and leaves eatenAt untouched",
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+          final eatenAt = startedAt.add(const Duration(hours: 1));
+          final meal = await repo.addMeal(
+            sessionId: session.id,
+            size: MealSize.small,
+            eatenAt: eatenAt,
+            now: eatenAt,
+          );
+
+          await repo.updateMeal(id: meal.id, size: MealSize.large);
+
+          final streamed = await repo.watchSessionMeals(session.id).first;
+          expect(streamed.single.size, MealSize.large);
+          expect(
+            streamed.single.eatenAt.isAtSameMomentAs(eatenAt),
+            isTrue,
+            reason: 'updateMeal doc: "Leaves Meal.eatenAt untouched — '
+                'editing corrects a mis-picked size, not when the meal '
+                'happened."',
+          );
+        },
+      );
+
+      test('throws StateError for an unknown meal id', () async {
+        expect(
+          () => repo.updateMeal(id: 'no-such-meal', size: MealSize.medium),
+          throwsA(isA<StateError>()),
+        );
+      });
+    },
+  );
+
   // ---------------------------------------------------------------------------
   // 6. logAlcoholicDrink
   // ---------------------------------------------------------------------------
@@ -1454,6 +1508,253 @@ void main() {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 6b. updateAlcoholicEntry (issue #86 — S9's active-mode edit affordance)
+  // ---------------------------------------------------------------------------
+
+  group(
+    'PartySessionRepository.updateAlcoholicEntry (user-experience.md §S9: '
+    '"Editable fields are volume, name, ABV, price, and time")',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+      late String sessionId;
+      late String entryId;
+
+      setUp(() async {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+        final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        sessionId = session.id;
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionId,
+          consumedAt: startedAt,
+          now: startedAt,
+        );
+        entryId = entry.id;
+      });
+
+      tearDown(() => db.close());
+
+      Future<DrinkEntryRow> persisted() async =>
+          (await db.select(db.drinkEntries).get())
+              .singleWhere((e) => e.id == entryId);
+
+      test(
+        'updating volumeMl independently persists and leaves name/abv/'
+        'consumedAt untouched',
+        () async {
+          await repo.updateAlcoholicEntry(id: entryId, volumeMl: 500);
+
+          final row = await persisted();
+          expect(row.volumeMl, 500);
+          expect(row.name, _beerPreset.name);
+          expect(row.abvPercent, _beerPreset.abvPercent);
+          expect(
+            row.consumedAt.isAtSameMomentAs(DateTime.utc(2026, 7, 10, 20, 0)),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'updating name independently persists (NFC-normalized) and leaves '
+        'volume/abv/consumedAt untouched',
+        () async {
+          // NFD form of 'café' — same convention as logAlcoholicDrink's own
+          // NFC test above (\u{} escape, not a literal combining character).
+          const nfdName = 'Cafe\u{0301} Latte';
+          await repo.updateAlcoholicEntry(id: entryId, name: nfdName);
+
+          final row = await persisted();
+          expect(row.name, normalizeNfc(nfdName));
+          expect(row.name, isNot(equals(nfdName)));
+          expect(row.volumeMl, _beerPreset.volumeMl);
+          expect(row.abvPercent, _beerPreset.abvPercent);
+        },
+      );
+
+      test(
+        'updating abvPercent independently persists and leaves volume/name/'
+        'consumedAt untouched',
+        () async {
+          await repo.updateAlcoholicEntry(id: entryId, abvPercent: 8.5);
+
+          final row = await persisted();
+          expect(row.abvPercent, 8.5);
+          expect(row.volumeMl, _beerPreset.volumeMl);
+          expect(row.name, _beerPreset.name);
+        },
+      );
+
+      test(
+        'updating consumedAt independently persists and leaves volume/name/'
+        'abv untouched',
+        () async {
+          final newConsumedAt = DateTime.utc(2026, 7, 10, 21, 30);
+          await repo.updateAlcoholicEntry(
+            id: entryId,
+            consumedAt: newConsumedAt,
+          );
+
+          final row = await persisted();
+          expect(row.consumedAt.isAtSameMomentAs(newConsumedAt), isTrue);
+          expect(row.volumeMl, _beerPreset.volumeMl);
+          expect(row.name, _beerPreset.name);
+          expect(row.abvPercent, _beerPreset.abvPercent);
+        },
+      );
+
+      test('rejects volumeMl < 1', () async {
+        expect(
+          () => repo.updateAlcoholicEntry(id: entryId, volumeMl: 0),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('rejects abvPercent <= 0', () async {
+        expect(
+          () => repo.updateAlcoholicEntry(id: entryId, abvPercent: 0),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('rejects an invalid name', () async {
+        expect(
+          () => repo.updateAlcoholicEntry(id: entryId, name: 'ab'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test(
+        'setting priceMinor+currency sets a money price AND clears any '
+        'pre-existing token price (data-model.md §DrinkEntry: money/tokens '
+        'are mutually exclusive)',
+        () async {
+          final tokenEntry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: sessionId,
+            priceTokens: 2,
+            tokenValueMinor: 150,
+            tokenValueCurrency: 'EUR',
+          );
+
+          await repo.updateAlcoholicEntry(
+            id: tokenEntry.id,
+            priceMinor: const Optional.value(1234),
+            currency: const Optional.value('EUR'),
+          );
+
+          final row = (await db.select(db.drinkEntries).get())
+              .singleWhere((e) => e.id == tokenEntry.id);
+          expect(row.priceMinor, 1234);
+          expect(row.currency, 'EUR');
+          expect(row.priceTokens, isNull);
+          expect(row.tokenValueMinor, isNull);
+          expect(row.tokenValueCurrency, isNull);
+        },
+      );
+
+      test(
+        'priceMinor: Optional.value(null), currency: Optional.value(null) '
+        'clears the price entirely',
+        () async {
+          await repo.updateAlcoholicEntry(
+            id: entryId,
+            priceMinor: const Optional.value(500),
+            currency: const Optional.value('EUR'),
+          );
+
+          await repo.updateAlcoholicEntry(
+            id: entryId,
+            priceMinor: const Optional.value(null),
+            currency: const Optional.value(null),
+          );
+
+          final row = await persisted();
+          expect(row.priceMinor, isNull);
+          expect(row.currency, isNull);
+        },
+      );
+
+      test(
+        'leaving priceMinor/currency at Optional.absent() (the default) '
+        'leaves the entry\'s existing price completely untouched',
+        () async {
+          await repo.updateAlcoholicEntry(
+            id: entryId,
+            priceMinor: const Optional.value(777),
+            currency: const Optional.value('USD'),
+          );
+
+          // Unrelated edit, price args left at their Optional.absent()
+          // default.
+          await repo.updateAlcoholicEntry(id: entryId, volumeMl: 350);
+
+          final row = await persisted();
+          expect(row.priceMinor, 777);
+          expect(row.currency, 'USD');
+          expect(row.volumeMl, 350);
+        },
+      );
+
+      test(
+        'throws ArgumentError if priceMinor.isPresent != currency.isPresent',
+        () async {
+          expect(
+            () => repo.updateAlcoholicEntry(
+              id: entryId,
+              priceMinor: const Optional.value(500),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+          expect(
+            () => repo.updateAlcoholicEntry(
+              id: entryId,
+              currency: const Optional.value('EUR'),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+        },
+      );
+
+      test(
+        'throws ArgumentError when a present priceMinor/currency Optional '
+        'pair has only one side null',
+        () async {
+          expect(
+            () => repo.updateAlcoholicEntry(
+              id: entryId,
+              priceMinor: const Optional.value(500),
+              currency: const Optional.value(null),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+          expect(
+            () => repo.updateAlcoholicEntry(
+              id: entryId,
+              priceMinor: const Optional.value(null),
+              currency: const Optional.value('EUR'),
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+        },
+      );
+
+      test('throws StateError for an unknown entry id', () async {
+        expect(
+          () => repo.updateAlcoholicEntry(id: 'no-such-entry', volumeMl: 500),
+          throwsA(isA<StateError>()),
+        );
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // 7. setSessionPrices
@@ -2111,6 +2412,102 @@ void main() {
   // 6. History — watchSessionsInRange / getEntriesForSessions /
   //    getMealsForSessions (issue #26)
   // ---------------------------------------------------------------------------
+
+  group(
+    'PartySessionRepository.watchEndedSessions (user-experience.md §S7 → '
+    'No active session — subsequent visits: the past-sessions list)',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        'excludes the currently-active session (endedAt IS NULL)',
+        () async {
+          await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+            now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+
+          expect(await repo.watchEndedSessions().first, isEmpty);
+        },
+      );
+
+      test('returns a session once it has ended', () async {
+        final session = await repo.startSession(
+          startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: DateTime.utc(2026, 7, 10, 22, 0),
+        );
+
+        final ended = await repo.watchEndedSessions().first;
+        expect(ended.map((s) => s.id).toList(), [session.id]);
+      });
+
+      test('orders multiple ended sessions newest-ended-first', () async {
+        final first = await repo.startSession(
+          startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+        await repo.endSession(
+          first.id,
+          PartySessionEndReason.manual,
+          now: DateTime.utc(2026, 7, 10, 21, 0),
+        );
+
+        final second = await repo.startSession(
+          startedAt: DateTime.utc(2026, 7, 11, 20, 0),
+          now: DateTime.utc(2026, 7, 11, 20, 0),
+        );
+        await repo.endSession(
+          second.id,
+          PartySessionEndReason.manual,
+          now: DateTime.utc(2026, 7, 11, 22, 0),
+        );
+
+        final ended = await repo.watchEndedSessions().first;
+        expect(ended.map((s) => s.id).toList(), [second.id, first.id]);
+      });
+
+      test(
+        'excludes a soft-deleted ended session (F7 soft-delete)',
+        () async {
+          final session = await repo.startSession(
+            startedAt: DateTime.utc(2026, 7, 10, 20, 0),
+            now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: DateTime.utc(2026, 7, 10, 22, 0),
+          );
+
+          // No repository method soft-deletes a PartySession yet — write
+          // deletedAt directly at the DB layer to exercise the query's own
+          // filter.
+          await (db.update(db.partySessions)
+                ..where((t) => t.id.equals(session.id)))
+              .write(
+            PartySessionsCompanion(
+              deletedAt: Value(DateTime.utc(2026, 7, 10, 23, 0)),
+            ),
+          );
+
+          expect(await repo.watchEndedSessions().first, isEmpty);
+        },
+      );
+    },
+  );
 
   group('PartySessionRepository — History range/entries (issue #26)', () {
     late AppDatabase db;

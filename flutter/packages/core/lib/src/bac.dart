@@ -178,3 +178,38 @@ bool bmiWarningApplies({required double bmi, required Gender gender}) {
 /// rather than left implicit, since "past 80%" alone is ambiguous.
 bool isApproachingCap({required double bacGPerL, required double capGPerL}) =>
     bacGPerL >= 0.8 * capGPerL;
+
+/// party-session.md §BAC line chart — Time axis (X): the axis ends at the
+/// projected return-to-zero time "rounded up to the next 30 minutes" (e.g.
+/// predicted 02:47 → axis ends at 03:00; predicted 02:05 → axis ends at
+/// 02:30). Operates on [time]'s own wall-clock fields (hour/minute), so
+/// callers wanting the *local* 24-hour tick labels the spec requires must
+/// pass a local `DateTime` (`.toLocal()`) — rounding a UTC instant would
+/// align to UTC clock boundaries instead.
+///
+/// A [time] already exactly on a 30-minute mark (`:00` or `:30`, no smaller
+/// component) is returned unchanged — this is ceiling, not "always add
+/// time" — rounding.
+DateTime roundUpToNextHalfHour(DateTime time) {
+  final flooredMinute = time.minute < 30 ? 0 : 30;
+  final floored = DateTime(
+    time.year,
+    time.month,
+    time.day,
+    time.hour,
+    flooredMinute,
+  );
+  final isExact = floored.isAtSameMomentAs(time);
+  return isExact ? floored : floored.add(const Duration(minutes: 30));
+}
+
+/// party-session.md §BAC line chart — Tick spacing: every 30 min for an axis
+/// span under ~3h, every hour for ~3–8h, every 2 hours beyond that. The
+/// spec's own "~" hedges the boundaries; this picks inclusive upper bounds
+/// for the tighter tiers (`<= 3h` → 30 min, `<= 8h` → 1h) so a span landing
+/// exactly on a boundary gets the coarser-adjacent tier's finer spacing.
+Duration bacChartTickInterval(Duration axisSpan) {
+  if (axisSpan <= const Duration(hours: 3)) return const Duration(minutes: 30);
+  if (axisSpan <= const Duration(hours: 8)) return const Duration(hours: 1);
+  return const Duration(hours: 2);
+}

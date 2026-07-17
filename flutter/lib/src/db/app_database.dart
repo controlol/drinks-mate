@@ -531,6 +531,21 @@ class AppDatabase extends _$AppDatabase {
         .map((rows) => rows.map((r) => (r.presetId!, r.consumedAt)).toList());
   }
 
+  /// Partial update of arbitrary [DrinkEntryRow] fields (S9 — Party Session
+  /// Log's active-mode edit affordance, user-experience.md §S9: "Editable
+  /// fields are volume, name, ABV, price, and time"). Unlike
+  /// [updateDrinkEntryPartial] (S6's volume/time-only edit), this accepts any
+  /// [DrinkEntriesCompanion] the caller builds — [PartySessionRepository]
+  /// owns the validation/normalisation of which fields a session-attached
+  /// alcoholic entry may change.
+  ///
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updateDrinkEntryFields(
+    String id,
+    DrinkEntriesCompanion companion,
+  ) =>
+      (update(drinkEntries)..where((t) => t.id.equals(id))).write(companion);
+
   /// Soft-deletes a [DrinkEntryRow] by setting [deletedAt] = [deletedAtUtc].
   ///
   /// The row is never hard-deleted (F7 — soft-delete rule).
@@ -735,6 +750,14 @@ class AppDatabase extends _$AppDatabase {
         ..limit(1))
       .getSingleOrNull();
 
+  /// Reactive stream of every live *ended* session (`endedAt IS NOT NULL`),
+  /// newest-ended-first — feeds the S7 "past sessions" list
+  /// (user-experience.md §S7 → No active session — subsequent visits).
+  Stream<List<PartySessionRow>> watchEndedSessions() => (select(partySessions)
+        ..where((t) => t.endedAt.isNotNull() & t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.desc(t.endedAt)]))
+      .watch();
+
   Future<void> insertPartySession(PartySessionsCompanion companion) =>
       into(partySessions).insert(companion);
 
@@ -793,6 +816,12 @@ class AppDatabase extends _$AppDatabase {
         )
         ..orderBy([(t) => OrderingTerm.asc(t.eatenAt)]))
       .watch();
+
+  /// Partial update of a [MealRow] (Party tab's meal indicator: "edit the
+  /// last one", party-session.md §Party tab during a session). Returns the
+  /// number of rows affected (0 if [id] not found).
+  Future<int> updateMealFields(String id, MealsCompanion companion) =>
+      (update(meals)..where((t) => t.id.equals(id))).write(companion);
 
   // ---------------------------------------------------------------------------
   // DrinkEntry — Party Session queries (issue #21)

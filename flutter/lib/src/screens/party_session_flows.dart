@@ -6,6 +6,7 @@ import '../models/party_session.dart';
 import '../models/user_profile.dart';
 import '../repository/party_session_repository.dart';
 import '../repository/providers.dart';
+import 'party_log_drink_sheet.dart';
 import 'party_pricing_sheet.dart';
 
 /// Shared "start a Party Session" flow (party-session.md §Starting a
@@ -142,6 +143,92 @@ Future<void> _runPricingPrompt(
     tokenValueCurrency: result.tokenValueCurrency,
   );
   await repo.setUseSessionPrices(session.id, result.prices.isNotEmpty);
+}
+
+/// Logs [selection] into [session] and runs the post-log meal prompt — the
+/// tail of the "Log alcohol" flow shared by the Party tab's active-session
+/// view and S9's empty-state "Log alcohol" action (both always have an
+/// established [session], unlike [party_screen.dart]'s own `_handleLogAlcohol`
+/// which must first decide whether to start one).
+Future<void> logAlcoholicDrinkIntoSession(
+  BuildContext context,
+  WidgetRef ref,
+  PartySession session,
+  AlcoholicDrinkSelection selection,
+) async {
+  final repo = ref.read(partySessionRepositoryProvider);
+  // [selection.priceMinor] is a one-off, this-entry-only override
+  // (party-session.md §Logging an alcoholic drink) — it takes priority over
+  // (and never touches) the session-wide `PartySessionPrice` table that
+  // [resolvePrice] otherwise resolves against.
+  final resolvedPrice = selection.priceMinor != null
+      ? ResolvedDrinkPrice(
+          priceMinor: selection.priceMinor,
+          currency: selection.currency,
+        )
+      : await repo.resolvePrice(session: session, preset: selection.preset);
+  await repo.logAlcoholicDrink(
+    preset: selection.preset,
+    sessionId: session.id,
+    name: selection.name,
+    volumeMl: selection.volumeMl,
+    abvPercent: selection.abvPercent,
+    consumedAt: selection.consumedAt,
+    priceMinor: resolvedPrice.priceMinor,
+    currency: resolvedPrice.currency,
+    priceTokens: resolvedPrice.priceTokens,
+    tokenValueMinor: resolvedPrice.tokenValueMinor,
+    tokenValueCurrency: resolvedPrice.tokenValueCurrency,
+  );
+
+  if (!context.mounted) return;
+  final mealSize = await showMealPrompt(context);
+  if (mealSize != null) {
+    await repo.addMeal(sessionId: session.id, size: mealSize);
+  }
+}
+
+/// Meal prompt (party-session.md §Meals: "A single, skippable prompt"),
+/// shared by the post-log flow above and the Party tab's persistent meal
+/// indicator ("log a new meal" action). Returns null on Skip/dismiss.
+Future<MealSize?> showMealPrompt(BuildContext context) {
+  return showModalBottomSheet<MealSize>(
+    context: context,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Did you eat recently?',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              title: const Text('Small'),
+              subtitle: const Text('Snack, sandwich, light salad'),
+              onTap: () => Navigator.of(context).pop(MealSize.small),
+            ),
+            ListTile(
+              title: const Text('Medium'),
+              subtitle: const Text('Normal meal'),
+              onTap: () => Navigator.of(context).pop(MealSize.medium),
+            ),
+            ListTile(
+              title: const Text('Large'),
+              subtitle: const Text('Heavy meal'),
+              onTap: () => Navigator.of(context).pop(MealSize.large),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Skip'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 enum _PricingPromptChoice { skip, copyFromLast, configure }

@@ -772,6 +772,214 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // buildSessionSummary — whole-session (unclipped) sibling of
+  // buildSessionDaySummary (history_bac_service.dart doc comment: "every
+  // metric spans [startedAt, endedAt) ... rather than a single calendar
+  // day"). Feeds the S7 past-sessions list and S9's ended-mode header
+  // (user-experience.md §S9).
+  // ---------------------------------------------------------------------------
+
+  group(
+    'buildSessionSummary — whole-session (unclipped)',
+    () {
+      test(
+        'a session spanning midnight, with entries/meals on both sides, is '
+        'not clipped to either day — duration/counts/peak span the entire '
+        '[startedAt, endedAt) lifetime',
+        () {
+          final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+          final endedAt = DateTime.utc(2026, 7, 21, 8, 0);
+          final session =
+              _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+          final entries = [
+            // Before midnight.
+            _entry(
+              id: 'e1',
+              consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
+              partySessionId: 's1',
+            ),
+            // After midnight, still inside the session.
+            _entry(
+              id: 'e2',
+              consumedAt: DateTime.utc(2026, 7, 21, 6, 0),
+              partySessionId: 's1',
+            ),
+          ];
+          final meals = [
+            _meal(
+              id: 'm1',
+              eatenAt: DateTime.utc(2026, 7, 20, 23, 30),
+              partySessionId: 's1',
+            ),
+            _meal(
+              id: 'm2',
+              eatenAt: DateTime.utc(2026, 7, 21, 6, 30),
+              partySessionId: 's1',
+            ),
+          ];
+
+          final summary = buildSessionSummary(
+            session: session,
+            entries: entries,
+            meals: meals,
+            profile: _profile(),
+            now: endedAt,
+          );
+
+          // Full lifetime — 22:00 -> 08:00 next day = 10h, not clipped to
+          // either day's own window (contrast buildSessionDaySummary's
+          // "clips to the day window" group above, which would report 2h
+          // for day 1 and 8h for day 2 for this same session).
+          expect(summary.duration, const Duration(hours: 10));
+          expect(summary.totalAlcoholicDrinks, 2);
+          expect(summary.mealsLoggedCount, 2);
+        },
+      );
+
+      test(
+        'peakBacGPerL is sampled across the whole lifetime, cross-checked '
+        'against estimateSessionBac directly rather than a hand-derived '
+        'number',
+        () {
+          final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+          final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
+          final session =
+              _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+          // Single dose consumed exactly at session start, so the grid's
+          // first sample captures the undecayed peak exactly (avoids the
+          // multi-drink summation caveat documented in the regression group
+          // below).
+          final entries = [
+            _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+          ];
+
+          final summary = buildSessionSummary(
+            session: session,
+            entries: entries,
+            meals: const [],
+            profile: _profile(),
+            now: endedAt,
+          );
+
+          expect(summary.peakBacGPerL, closeTo(oneBeerInitial, 0.001));
+          // Cross-check directly against estimateSessionBac at t=startedAt,
+          // per this task's instruction to verify against the estimator
+          // rather than an independently hand-computed magic number.
+          expect(
+            summary.peakBacGPerL,
+            closeTo(
+              estimateSessionBac(
+                profile: _profile(),
+                alcoholicEntries: entries,
+                meals: const [],
+                at: startedAt,
+              ).gPerL,
+              0.001,
+            ),
+          );
+        },
+      );
+
+      test(
+        'a still-active session (endedAt == null) spans [startedAt, now) '
+        'instead of throwing or defaulting to zero duration',
+        () {
+          final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+          final now = startedAt.add(const Duration(hours: 3));
+          final session = _session(id: 's1', startedAt: startedAt);
+
+          final summary = buildSessionSummary(
+            session: session,
+            entries: const [],
+            meals: const [],
+            profile: _profile(),
+            now: now,
+          );
+
+          expect(summary.duration, const Duration(hours: 3));
+        },
+      );
+
+      test(
+        'entries/meals belonging to a different session are ignored',
+        () {
+          final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+          final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
+          final session =
+              _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+          final entries = [
+            _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+            _entry(
+              id: 'e2',
+              consumedAt: startedAt,
+              partySessionId: 'other-session',
+            ),
+          ];
+          final meals = [
+            _meal(id: 'm1', eatenAt: startedAt, partySessionId: 's1'),
+            _meal(
+                id: 'm2', eatenAt: startedAt, partySessionId: 'other-session'),
+          ];
+
+          final summary = buildSessionSummary(
+            session: session,
+            entries: entries,
+            meals: meals,
+            profile: _profile(),
+            now: endedAt,
+          );
+
+          expect(summary.totalAlcoholicDrinks, 1);
+          expect(summary.mealsLoggedCount, 1);
+        },
+      );
+
+      test(
+        'profile == null -> peakBacGPerL is null but duration/counts are '
+        'still computed correctly (no throw)',
+        () {
+          final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+          final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
+          final session =
+              _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+          final entries = [
+            _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+          ];
+
+          final summary = buildSessionSummary(
+            session: session,
+            entries: entries,
+            meals: const [],
+            profile: null,
+            now: endedAt,
+          );
+
+          expect(summary.peakBacGPerL, isNull);
+          expect(summary.duration, const Duration(hours: 4));
+          expect(summary.totalAlcoholicDrinks, 1);
+        },
+      );
+
+      test('profile.birthDate == null -> peakBacGPerL is null, no throw', () {
+        final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+        final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
+        final session =
+            _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+
+        final summary = buildSessionSummary(
+          session: session,
+          entries: const [],
+          meals: const [],
+          profile: _profile(birthDate: null),
+          now: endedAt,
+        );
+
+        expect(summary.peakBacGPerL, isNull);
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // Group 7: multi-drink over-reporting regression (previously a known bug).
   // ---------------------------------------------------------------------------
 

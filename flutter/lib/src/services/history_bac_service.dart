@@ -155,6 +155,56 @@ SessionDaySummary buildSessionDaySummary({
   );
 }
 
+/// Builds [session]'s whole-lifetime summary — [SessionDaySummary]'s "day"
+/// framing doesn't apply here; every metric spans `[startedAt, endedAt)`
+/// (or `[startedAt, now)` while still active) rather than a single calendar
+/// day. Feeds the S7 past-sessions list and S9 Party Session Log's
+/// ended-mode header (user-experience.md §S9: "the same fields already shown
+/// on the History day drill-down's session summary card"), which need the
+/// session's full lifetime, not a day-clipped slice — see
+/// [buildSessionDaySummary] for the clipped sibling.
+///
+/// [entries]/[meals] should already be scoped to [session] (e.g. via
+/// [PartySessionRepository.getEntriesForSessions]/`getMealsForSessions`
+/// filtered to one session, or [PartySessionRepository.watchSessionEntries]);
+/// any entries/meals belonging to a different session are ignored.
+SessionDaySummary buildSessionSummary({
+  required PartySession session,
+  required List<DrinkEntry> entries,
+  required List<Meal> meals,
+  required UserProfile? profile,
+  required DateTime now,
+}) {
+  final sessionEnd = session.endedAt ?? now;
+  final duration = sessionEnd.isAfter(session.startedAt)
+      ? sessionEnd.difference(session.startedAt)
+      : Duration.zero;
+
+  final sessionEntries =
+      entries.where((e) => e.partySessionId == session.id).toList();
+  final sessionMeals =
+      meals.where((m) => m.partySessionId == session.id).toList();
+
+  final peakBac = _maxBacForWindow(
+    windowStart: session.startedAt,
+    windowEnd: sessionEnd,
+    sessions: [session],
+    entriesBySession: {session.id: sessionEntries},
+    mealsBySession: {session.id: sessionMeals},
+    profile: profile,
+    now: now,
+    sampleInterval: const Duration(minutes: 15),
+  );
+
+  return SessionDaySummary(
+    session: session,
+    duration: duration,
+    totalAlcoholicDrinks: sessionEntries.length,
+    mealsLoggedCount: sessionMeals.length,
+    peakBacGPerL: peakBac,
+  );
+}
+
 /// Shared sampler behind [computeMaxBacPerDay] and [buildSessionDaySummary]:
 /// the max [BacEstimate.gPerL] across every [sessions] entry that overlaps
 /// `[windowStart, windowEnd)`, or null if none do.

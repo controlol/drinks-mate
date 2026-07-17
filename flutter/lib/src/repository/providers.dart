@@ -73,8 +73,9 @@ final allPresetsProvider = StreamProvider<List<DrinkPreset>>((ref) {
 /// slide forward on pure time passage with no new writes — so, mirroring
 /// [todayTotalMlProvider]/[sevenDayAverageMlProvider], this re-subscribes at
 /// the next day boundary.
-final presetUsageStatsProvider =
-    StreamProvider<Map<String, PresetUsageStats>>((ref) {
+final presetUsageStatsProvider = StreamProvider<Map<String, PresetUsageStats>>((
+  ref,
+) {
   final prefs = ref.watch(userPreferencesProvider).valueOrNull;
   final now = DateTime.now();
   final nextBoundary = dayWindow(
@@ -470,6 +471,59 @@ final partySessionRepositoryProvider = Provider<PartySessionRepository>((ref) {
 /// Reactive stream of the current open Party Session, or null.
 final activePartySessionProvider = StreamProvider<PartySession?>((ref) {
   return ref.watch(partySessionRepositoryProvider).watchActiveSession();
+});
+
+/// Reactive stream of every ended Party Session, newest-ended-first — feeds
+/// the S7 "past sessions" list (user-experience.md §S7 → No active session —
+/// subsequent visits).
+final partyEndedSessionsProvider = StreamProvider<List<PartySession>>((ref) {
+  return ref.watch(partySessionRepositoryProvider).watchEndedSessions();
+});
+
+/// One whole-session [SessionDaySummary] per [partyEndedSessionsProvider]
+/// entry (date/range, peak BAC, drink count, end reason — user-experience.md
+/// §S7). Mirrors [historyDaySessionSummariesProvider]'s bulk-fetch shape, but
+/// unclipped ([buildSessionSummary] rather than [buildSessionDaySummary]).
+final partyEndedSessionSummariesProvider =
+    FutureProvider<List<SessionDaySummary>>((ref) async {
+  final sessions = ref.watch(partyEndedSessionsProvider).valueOrNull ?? [];
+  if (sessions.isEmpty) return [];
+
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  final repo = ref.watch(partySessionRepositoryProvider);
+  final sessionIds = sessions.map((s) => s.id).toList();
+  final entries = await repo.getEntriesForSessions(sessionIds);
+  final meals = await repo.getMealsForSessions(sessionIds);
+  final now = DateTime.now();
+
+  return [
+    for (final session in sessions)
+      buildSessionSummary(
+        session: session,
+        entries: entries,
+        meals: meals,
+        profile: profile,
+        now: now,
+      ),
+  ];
+});
+
+/// A single session's whole-lifetime summary, keyed by session id — feeds
+/// [S9 Party Session Log]'s ended-mode header.
+final partySessionSummaryProvider =
+    FutureProvider.family<SessionDaySummary, String>((ref, sessionId) async {
+  final repo = ref.watch(partySessionRepositoryProvider);
+  final session = await repo.getSessionById(sessionId);
+  final profile = ref.watch(userProfileProvider).valueOrNull;
+  final entries = await repo.getEntriesForSessions([sessionId]);
+  final meals = await repo.getMealsForSessions([sessionId]);
+  return buildSessionSummary(
+    session: session,
+    entries: entries,
+    meals: meals,
+    profile: profile,
+    now: DateTime.now(),
+  );
 });
 
 // ---------------------------------------------------------------------------

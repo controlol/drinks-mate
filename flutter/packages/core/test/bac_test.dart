@@ -356,4 +356,102 @@ void main() {
       });
     },
   );
+
+  group(
+    'roundUpToNextHalfHour (party-session.md §BAC line chart: "the end time '
+    'is rounded up to the next 30 minutes ... predicted 02:47 → axis ends '
+    'at 03:00; predicted 02:05 → axis ends at 02:30")',
+    () {
+      // NOTE: constructed with the local DateTime(...) constructor (not
+      // .utc(...)) — bac.dart's doc comment: "Operates on [time]'s own
+      // wall-clock fields ... callers wanting the local tick labels must
+      // pass a local DateTime." DateTime.== also compares the isUtc flag, so
+      // mixing local/UTC here would make an instant-equal comparison fail.
+      test('02:47 → 03:00 (spec example)', () {
+        expect(
+          roundUpToNextHalfHour(DateTime(2026, 7, 10, 2, 47)),
+          DateTime(2026, 7, 10, 3, 0),
+        );
+      });
+
+      test('02:05 → 02:30 (spec example)', () {
+        expect(
+          roundUpToNextHalfHour(DateTime(2026, 7, 10, 2, 5)),
+          DateTime(2026, 7, 10, 2, 30),
+        );
+      });
+
+      test(
+        'already exactly on a half-hour mark (02:30:00.000) is returned '
+        'unchanged — ceiling, not "always add 30 minutes" (bac.dart doc: '
+        '"is returned unchanged — this is ceiling ... not always add time")',
+        () {
+          final exact = DateTime(2026, 7, 10, 2, 30);
+          expect(roundUpToNextHalfHour(exact), exact);
+        },
+      );
+
+      test('already exactly on the hour (03:00:00.000) is returned unchanged',
+          () {
+        final exact = DateTime(2026, 7, 10, 3, 0);
+        expect(roundUpToNextHalfHour(exact), exact);
+      });
+
+      test('minute 59 rounds up into the next hour\'s :00', () {
+        expect(
+          roundUpToNextHalfHour(DateTime(2026, 7, 10, 2, 59)),
+          DateTime(2026, 7, 10, 3, 0),
+        );
+      });
+
+      test('a sub-minute component still rounds up (02:30:00.500)', () {
+        // Not exactly on the mark once sub-second precision is considered —
+        // must still ceiling forward, matching "already exact" being the
+        // narrow case, not the default.
+        final almostExact = DateTime(2026, 7, 10, 2, 30, 0, 500);
+        expect(
+          roundUpToNextHalfHour(almostExact),
+          DateTime(2026, 7, 10, 3, 0),
+        );
+      });
+    },
+  );
+
+  group(
+    'bacChartTickInterval (party-session.md §BAC line chart: "every 30 min '
+    'for spans under ~3h, every hour for ~3-8h, every 2 hours beyond that")',
+    () {
+      // Only span values comfortably inside a tier are asserted — the spec's
+      // own "~3h"/"~8h" hedge makes the exact 3h/8h boundary a documented
+      // implementation judgment call (bac.dart doc: "picks inclusive upper
+      // bounds for the tighter tiers"), not a hard spec requirement.
+      test('1h span → 30 min ticks', () {
+        expect(
+          bacChartTickInterval(const Duration(hours: 1)),
+          const Duration(minutes: 30),
+        );
+      });
+
+      test('2h59m span → 30 min ticks (comfortably under the ~3h tier)', () {
+        expect(
+          bacChartTickInterval(const Duration(hours: 2, minutes: 59)),
+          const Duration(minutes: 30),
+        );
+      });
+
+      test('5h span → 1h ticks (comfortably inside the ~3-8h tier)', () {
+        expect(
+          bacChartTickInterval(const Duration(hours: 5)),
+          const Duration(hours: 1),
+        );
+      });
+
+      test('9h span → 2h ticks (comfortably beyond the ~8h tier)', () {
+        expect(
+          bacChartTickInterval(const Duration(hours: 9)),
+          const Duration(hours: 2),
+        );
+      });
+    },
+  );
 }
