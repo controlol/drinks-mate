@@ -267,6 +267,7 @@ class _AlcoholicConfirmPhase extends StatelessWidget {
         const Divider(),
         Expanded(
           child: ListView(
+            key: const Key('party_log_drink_confirm_list'),
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               const SizedBox(height: 8),

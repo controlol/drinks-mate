@@ -424,27 +424,32 @@ Widget _buildScreen({
 /// unique among the confirm phase's buttons — unlike LogDrinkSheet, this
 /// phase has no "Advanced" button to disambiguate against.
 ///
-/// `skipOffstage: false` on every finder here: unlike LogDrinkSheet (pumped
-/// directly as `home:` content with a generous fixed height), this sheet is
-/// a real `showModalBottomSheet` route sized by `DraggableScrollableSheet`,
-/// and its confirm-phase `ListView` is built via a `SliverList` element that
-/// treats content below the modal's visible extent as "offstage" — the
-/// widget is genuinely built and its label genuinely rendered (verified via
-/// `debugDumpApp()`), it's just outside the default 800x600 test viewport's
-/// visible slice. We only need to *read* the label, not tap it, so skipping
-/// the offstage filter is safe here.
-String _timeButtonLabel(WidgetTester tester) {
+/// The confirm-phase form (Name/Volume/ABV/Price/Time) is taller than the
+/// sheet's visible extent, so the Time button sits beyond what the
+/// `ListView`'s `SliverList` builds by default — it doesn't exist as an
+/// Element until scrolled into range, so we scroll the list (keyed
+/// `party_log_drink_confirm_list`) before searching for it.
+Future<String> _timeButtonLabel(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byIcon(Icons.schedule),
+    200.0,
+    // .first: the TextFields inside this list each have their own internal
+    // Scrollable (for text-cursor scrolling) — the list's own Scrollable is
+    // the outermost/first match.
+    scrollable: find
+        .descendant(
+          of: find.byKey(const Key('party_log_drink_confirm_list')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
   final button = find.ancestor(
-    of: find.byIcon(Icons.schedule, skipOffstage: false),
-    matching: find.byType(OutlinedButton, skipOffstage: false),
+    of: find.byIcon(Icons.schedule),
+    matching: find.byType(OutlinedButton),
   );
   expect(button, findsOneWidget);
   final text = tester.widget<Text>(
-    find.descendant(
-      of: button,
-      matching: find.byType(Text, skipOffstage: false),
-      skipOffstage: false,
-    ),
+    find.descendant(of: button, matching: find.byType(Text)),
   );
   return text.data!;
 }
@@ -917,7 +922,7 @@ void main() {
         await tester.tap(find.text('Test Beer'));
         await tester.pumpAndSettle();
 
-        final label = _timeButtonLabel(tester);
+        final label = await _timeButtonLabel(tester);
         expect(
           twelveHourPattern.hasMatch(label),
           isTrue,
@@ -950,7 +955,7 @@ void main() {
         await tester.tap(find.text('Test Beer'));
         await tester.pumpAndSettle();
 
-        final label = _timeButtonLabel(tester);
+        final label = await _timeButtonLabel(tester);
         expect(
           twentyFourHourPattern.hasMatch(label),
           isTrue,
