@@ -111,17 +111,18 @@ void main() {
 
     // Regression: formatLargeVolume used to compare the *unrounded*
     // ml/1000 double against its truncation to decide whether to omit the
-    // trailing ".0". That missed values that round UP to a whole litre at
-    // 1dp but aren't an exact multiple of 1000 ml. The fix rounds to 1dp
-    // first (`(ml / 1000).toStringAsFixed(1)`), then checks if *that*
-    // rounded value is a whole litre. Source: Parity Rulebook → "Metric
-    // display precision — daily-progress headline" (1 decimal place,
-    // trailing ".0" omitted for whole litres).
+    // trailing ".0", which missed values that round UP to a whole litre at
+    // 1dp but aren't an exact multiple of 1000 ml. The fix rounds `ml/100`
+    // directly to the nearest integer (`(ml / 100).round()`), giving the
+    // tenths-of-a-litre value in one step — both to decide whole-litre
+    // omission and to avoid a separate FP/double-rounding pitfall (see the
+    // tests below). Source: Parity Rulebook → "Metric display precision —
+    // daily-progress headline" (1 decimal place, trailing ".0" omitted for
+    // whole litres).
     group('near-whole-litre rounding (regression)', () {
       // Each of these divides to a value in [1.95, 2.05) that rounds to
-      // "2.0" at 1dp — verified directly via
-      // `(ml/1000).toStringAsFixed(1)` (not back-filled from the old,
-      // buggy output) before being asserted here.
+      // "2.0" at 1dp — verified directly via `(ml / 100).round()` (not
+      // back-filled from the old, buggy output) before being asserted here.
       for (final ml in [1970.0, 1980.0, 1995.0, 2030.0, 2049.0]) {
         test('$ml ml rounds up to whole litres → 2 L', () {
           expect(svc.formatLargeVolume(ml), equals('2 L'));
@@ -136,9 +137,11 @@ void main() {
       });
 
       test('1950 ml (exact half-boundary) → 2 L, half-away-from-zero', () {
-        // 1950/1000 isn't exactly representable as a double, so a naive
-        // toStringAsFixed(1) rounds down to "1.9". Source: Parity Rulebook,
-        // half-away-from-zero (data-model.md §Display precision).
+        // 1950/1000 (= 1.95) isn't exactly representable as a double, so a
+        // naive toStringAsFixed(1) on ml/1000 rounds down to "1.9". Dividing
+        // by 100 instead (1950/100 = 19.5) IS exactly representable, so
+        // `.round()` sees a true half and rounds away from zero per Parity
+        // Rulebook half-away-from-zero (data-model.md §Display precision).
         expect(svc.formatLargeVolume(1950.0), equals('2 L'));
       });
 
@@ -146,6 +149,16 @@ void main() {
         // 999 / 1000 = 0.999, rounds to 1.0 at 1dp — mirrors the "rounds up
         // to whole" case one order of magnitude down.
         expect(svc.formatLargeVolume(999.0), equals('1 L'));
+      });
+
+      test(
+          'fractional ml just below a 100 ml boundary does not double-round '
+          '(1949.6 ml → 1.9 L, not 2 L)', () {
+        // Regression: rounding `ml` to the nearest int first (1949.6 → 1950)
+        // then rounding that to the nearest 100 collapses this to "2 L",
+        // even though 1949.6 ml = 1.9496 L is unambiguously closer to 1.9 L.
+        // The fix rounds ml/100 directly in one step.
+        expect(svc.formatLargeVolume(1949.6), equals('1.9 L'));
       });
     });
   });
