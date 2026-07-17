@@ -718,6 +718,12 @@ void main() {
       expect(
           tester.widget<TextField>(textFields.at(3)).controller!.text, '4.50');
 
+      // The time button must show the date, not just the time-of-day — S3
+      // (unlike S6) lets an entry move to a different day entirely, since
+      // it's the historical-correction surface (EntryEditSheet's
+      // DateEditPicker.free()).
+      expect(find.textContaining('2026-06-22'), findsOneWidget);
+
       await tester.enterText(textFields.at(0), 'Edited Beer');
       await tester.enterText(textFields.at(1), '500');
       await tester.enterText(textFields.at(2), '8.0');

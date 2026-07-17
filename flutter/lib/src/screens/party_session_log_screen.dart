@@ -93,7 +93,11 @@ class _ActiveLog extends ConsumerWidget {
             child: Column(
               children: [
                 for (final entry in displayEntries)
-                  _EntryRow(entry: entry, active: true),
+                  _EntryRow(
+                    entry: entry,
+                    active: true,
+                    sessionStartedAt: session.startedAt,
+                  ),
               ],
             ),
           ),
@@ -289,10 +293,22 @@ class _EndedLog extends ConsumerWidget {
 enum _EntryAction { edit, delete }
 
 class _EntryRow extends ConsumerWidget {
-  const _EntryRow({required this.entry, required this.active});
+  const _EntryRow({
+    required this.entry,
+    required this.active,
+    this.sessionStartedAt,
+  });
 
   final DrinkEntry entry;
   final bool active;
+
+  /// The session's `startedAt` — bounds the edit sheet's free date picker to
+  /// `[sessionStartedAt, now]`, so a session-attached entry can never be
+  /// moved outside its own session's window (which would break that
+  /// session's BAC/duration math). Only meaningful (and only read) when
+  /// [active] is true — ended-mode rows never open the edit sheet, so
+  /// [_EndedLog] passes nothing here.
+  final DateTime? sessionStartedAt;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -353,8 +369,17 @@ class _EntryRow extends ConsumerWidget {
         useSafeArea: true,
         builder: (_) => EntryEditSheet(
           entry: entry,
-          showDate: true,
-          onPickTime: _pickDateTime,
+          // Bounded to this session's own window — never unbounded, unlike
+          // S3's DateEditPicker.free() — since moving a session-attached
+          // entry outside [session.startedAt, now] would break that
+          // session's BAC/duration math.
+          datePicker: DateEditPicker.free(
+            minDate: sessionEditMinDate(
+              sessionStartedAt: sessionStartedAt,
+              entryConsumedAt: entry.consumedAt,
+            ),
+            maxDate: DateTime.now(),
+          ),
           onSave: ({
             required volumeMl,
             name,
@@ -376,27 +401,6 @@ class _EntryRow extends ConsumerWidget {
     } else {
       await _confirmDelete(context, ref);
     }
-  }
-
-  /// Free date+time picker (unlike S6/S3's day-window-clamped
-  /// [pickDayWindowTime]) — a Party Session can span multiple calendar days,
-  /// so S9 lets the user move an entry across days.
-  Future<DateTime?> _pickDateTime(
-      BuildContext context, DateTime current) async {
-    final local = current.toLocal();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: local,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (date == null || !context.mounted) return null;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(local),
-    );
-    if (time == null) return null;
-    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
@@ -428,4 +432,30 @@ class _EntryRow extends ConsumerWidget {
       await ref.read(drinksRepositoryProvider).deleteDrinkEntry(entry.id);
     }
   }
+}
+
+/// The lower bound for S9's edit-sheet date picker — the **earlier** of
+/// [sessionStartedAt] and [entryConsumedAt], not [sessionStartedAt] alone.
+///
+/// An absorbed orphan drink can predate the session it was absorbed into
+/// (party-session.md §Absorbing orphan drinks — "absorbed orphans extend
+/// backwards in time"), so clamping every entry's lower bound to session
+/// start would make an orphan's existing pre-session timestamp both
+/// unreachable in the picker and force-moved forward the moment the sheet
+/// opens. Taking the entry's own timestamp as a floor when it's already
+/// earlier preserves that case, while a normal (non-orphan) entry — whose
+/// `consumedAt` is never before `sessionStartedAt` — still gets
+/// [sessionStartedAt] as its floor, exactly as intended.
+///
+/// Returns null (meaning [DateEditPicker.free]'s own default, `2000-01-01`)
+/// when [sessionStartedAt] is null — [_EndedLog] rows, where editing is
+/// unreachable, are the only case that passes null.
+DateTime? sessionEditMinDate({
+  required DateTime? sessionStartedAt,
+  required DateTime entryConsumedAt,
+}) {
+  if (sessionStartedAt == null) return null;
+  return entryConsumedAt.isBefore(sessionStartedAt)
+      ? entryConsumedAt
+      : sessionStartedAt;
 }

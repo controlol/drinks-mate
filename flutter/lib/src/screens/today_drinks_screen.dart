@@ -218,8 +218,7 @@ class _EntryRow extends ConsumerWidget {
       builder: (_) => EntryEditSheet(
         entry: entry,
         defaultCurrency: prefs?.currency,
-        onPickTime: (ctx, current) =>
-            pickDayWindowTime(ctx, current, boundaryHour: boundaryHour),
+        datePicker: DateEditPicker.dayLocked(boundaryHour: boundaryHour),
         onSave: ({
           required volumeMl,
           name,

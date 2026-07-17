@@ -9,9 +9,8 @@ import '../models/optional.dart';
 /// Log), S9 (Party Session Log, active-mode), and S3 (History day
 /// drill-down). Each screen supplies [onSave] (wired to its own repository
 /// call — [DrinksRepository.updateDrinkEntry] for S6/S3,
-/// [PartySessionRepository.updateAlcoholicEntry] for S9) and [onPickTime]
-/// (day-window-clamped for S6/S3, since both are scoped to a single day;
-/// free date+time for S9, since a session can span multiple calendar days).
+/// [PartySessionRepository.updateAlcoholicEntry] for S9) and [datePicker]
+/// (see [DateEditPicker]).
 ///
 /// Fields shown: volume (always); name (only when [showName] is true — S3
 /// only, design/user-experience.md §S3); ABV (only when
@@ -23,22 +22,17 @@ class EntryEditSheet extends StatefulWidget {
     super.key,
     required this.entry,
     required this.onSave,
-    required this.onPickTime,
+    required this.datePicker,
     this.showName = false,
-    this.showDate = false,
     this.defaultCurrency,
   });
 
   final DrinkEntry entry;
   final bool showName;
 
-  /// Whether the time button's label includes the date, not just the
-  /// time-of-day. S9 sets this — its [onPickTime] lets the user move an
-  /// entry across calendar days (a session can span midnight), so the
-  /// button must show which day, not just which time. S6/S3 leave this
-  /// false: both are scoped to a single, already-known day, so a bare
-  /// time-of-day label is unambiguous.
-  final bool showDate;
+  /// Governs the time button's label and what the picker it opens allows —
+  /// see [DateEditPicker].
+  final DateEditPicker datePicker;
 
   /// Fallback currency when setting a first-time price on an entry that has
   /// none of its own — the user's current currency preference, so the
@@ -55,11 +49,69 @@ class EntryEditSheet extends StatefulWidget {
     required DateTime consumedAt,
   }) onSave;
 
-  final Future<DateTime?> Function(BuildContext context, DateTime current)
-      onPickTime;
-
   @override
   State<EntryEditSheet> createState() => _EntryEditSheetState();
+}
+
+/// Bundles how [EntryEditSheet]'s time button behaves: whether its label
+/// includes the date (not just the time-of-day) and what range the
+/// underlying picker allows. The two were previously separate,
+/// independently-settable parameters (a label flag plus a picker callback)
+/// that a caller had to keep in sync by hand — this collapses them into one
+/// value so a screen states its date-editing policy once.
+///
+/// - [DateEditPicker.dayLocked] — S6 (Today Drinks Log): the entry's day is
+///   fixed (today), so the label is time-only and the picker maps the
+///   chosen time back into the same day window rather than letting the user
+///   cross into a different day.
+/// - [DateEditPicker.free] — S3 (History day drill-down): the whole point is
+///   correcting which day an entry was logged on, so the label includes the
+///   date and the picker allows any day (bounded to `[2000-01-01, now]` by
+///   default — never the future — unless [minDate]/[maxDate] override it).
+///   S9 (Party Session Log) also uses this, but bounded to the session's own
+///   window (`[session.startedAt, now]`) — a session-attached entry moving
+///   outside its session's window would break that session's BAC/duration
+///   math, so unlike S3 it is never left unbounded.
+sealed class DateEditPicker {
+  const DateEditPicker._();
+
+  const factory DateEditPicker.dayLocked({required int boundaryHour}) =
+      _DayLockedDateEditPicker;
+
+  const factory DateEditPicker.free({DateTime? minDate, DateTime? maxDate}) =
+      _FreeDateEditPicker;
+
+  /// Whether the time button's label includes the date.
+  bool get showDate;
+
+  Future<DateTime?> pick(BuildContext context, DateTime current);
+}
+
+class _DayLockedDateEditPicker extends DateEditPicker {
+  const _DayLockedDateEditPicker({required this.boundaryHour}) : super._();
+
+  final int boundaryHour;
+
+  @override
+  bool get showDate => false;
+
+  @override
+  Future<DateTime?> pick(BuildContext context, DateTime current) =>
+      _pickDayWindowTime(context, current, boundaryHour: boundaryHour);
+}
+
+class _FreeDateEditPicker extends DateEditPicker {
+  const _FreeDateEditPicker({this.minDate, this.maxDate}) : super._();
+
+  final DateTime? minDate;
+  final DateTime? maxDate;
+
+  @override
+  bool get showDate => true;
+
+  @override
+  Future<DateTime?> pick(BuildContext context, DateTime current) =>
+      _pickFreeDateTime(context, current, minDate: minDate, maxDate: maxDate);
 }
 
 class _EntryEditSheetState extends State<EntryEditSheet> {
@@ -117,7 +169,7 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await widget.onPickTime(context, _consumedAt);
+    final picked = await widget.datePicker.pick(context, _consumedAt);
     if (picked == null || !mounted) return;
     setState(() => _consumedAt = picked);
   }
@@ -190,7 +242,7 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
     // Source: Parity Rulebook — "Time-of-day display format" (honours the
     // device's 12h/24h preference rather than a hardcoded format).
     final timeOfDayLabel = TimeOfDay.fromDateTime(local).format(context);
-    final timeLabel = widget.showDate
+    final timeLabel = widget.datePicker.showDate
         ? '${_formatDate(local)} $timeOfDayLabel'
         : timeOfDayLabel;
 
@@ -306,9 +358,10 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
   }
 }
 
-/// `YYYY-MM-DD` prefix for [EntryEditSheet.showDate]'s time-button label
-/// (S9 only) — a plain ISO date, not locale-formatted, matching what the
-/// screen showed before this widget was extracted.
+/// `YYYY-MM-DD` prefix for the time-button label when
+/// [DateEditPicker.showDate] is true — a plain ISO date, not
+/// locale-formatted, matching what S9 showed before this widget was
+/// extracted.
 String _formatDate(DateTime local) {
   return '${local.year}-'
       '${local.month.toString().padLeft(2, '0')}-'
@@ -337,22 +390,19 @@ class _SheetHandle extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Day-window-clamped time picker (S6, S3)
+// Pickers behind DateEditPicker
 // ---------------------------------------------------------------------------
 
-/// Time picker for day-scoped editors (S6 Today Drinks Log, S3 History day
-/// drill-down): maps the picked time back into the same day window as
-/// [current] rather than allowing an arbitrary date, since neither screen
-/// lets a user move an entry to a different day. S9 (Party Session Log)
-/// uses its own free date+time picker instead, since a session can span
-/// multiple calendar days.
+/// Time picker behind [DateEditPicker.dayLocked]: maps the picked time back
+/// into the same day window as [current] rather than allowing an arbitrary
+/// date.
 ///
 /// With `dayBoundaryHour = B`, the window spans `[B:00 day D, B:00 day
 /// D+1)`. Times >= B belong to calendar day D (the window start); times < B
 /// belong to calendar day D+1 (the window end). This avoids the
 /// midnight-straddling trap where naively combining the picked time with
 /// `current`'s calendar day produces a `DateTime` outside the window.
-Future<DateTime?> pickDayWindowTime(
+Future<DateTime?> _pickDayWindowTime(
   BuildContext context,
   DateTime current, {
   required int boundaryHour,
@@ -384,4 +434,55 @@ Future<DateTime?> pickDayWindowTime(
     picked.hour,
     picked.minute,
   );
+}
+
+/// Date+time picker behind [DateEditPicker.free]: lets the user move an
+/// entry to any date within `[minDate, maxDate]` (defaulting to
+/// `[2000-01-01, now]` — never the future — when either bound is omitted).
+///
+/// [current] itself is clamped into the resolved bounds before being used
+/// as the date picker's `initialDate`, since `showDatePicker` asserts that
+/// `initialDate` falls within `[firstDate, lastDate]` — relevant when an
+/// entry predates a newly-narrowed bound (e.g. a session's `startedAt`
+/// moved, in a hypothetical future edit path) rather than in the common
+/// case, where a live entry's own `consumedAt` is already in range.
+Future<DateTime?> _pickFreeDateTime(
+  BuildContext context,
+  DateTime current, {
+  DateTime? minDate,
+  DateTime? maxDate,
+}) async {
+  final local = current.toLocal();
+  final first = minDate?.toLocal() ?? DateTime(2000);
+  final last = maxDate?.toLocal() ?? DateTime.now();
+  final initialDate = clampDateTime(local, first, last);
+
+  final date = await showDatePicker(
+    context: context,
+    initialDate: initialDate,
+    firstDate: first,
+    lastDate: last,
+  );
+  if (date == null || !context.mounted) return null;
+  final time = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.fromDateTime(local),
+  );
+  if (time == null) return null;
+
+  final result =
+      DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  // The date picker only constrains the calendar day — the time-of-day
+  // picker can still push the combined instant outside [first, last] (e.g.
+  // picking `last`'s calendar day but a time-of-day later than "now").
+  return clampDateTime(result, first, last);
+}
+
+/// Clamps [value] into `[first, last]` — the pure bounding math behind
+/// [_pickFreeDateTime], extracted so it's unit-testable without driving the
+/// Material date/time picker dialogs.
+DateTime clampDateTime(DateTime value, DateTime first, DateTime last) {
+  if (value.isBefore(first)) return first;
+  if (value.isAfter(last)) return last;
+  return value;
 }

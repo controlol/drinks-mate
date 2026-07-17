@@ -667,4 +667,69 @@ void main() {
       );
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // sessionEditMinDate — pure helper behind the edit sheet's date-picker
+  // lower bound (see the DateEditPicker.free wiring in
+  // party_session_log_screen.dart's _openActions).
+  // ---------------------------------------------------------------------------
+
+  group('sessionEditMinDate', () {
+    final sessionStartedAt = DateTime.utc(2026, 7, 10, 20, 0);
+
+    test('returns null when sessionStartedAt is null (ended-mode rows)', () {
+      expect(
+        sessionEditMinDate(
+          sessionStartedAt: null,
+          entryConsumedAt: DateTime.utc(2026, 7, 10, 21, 0),
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'returns sessionStartedAt for a normal entry logged during the '
+      'session (consumedAt >= sessionStartedAt)',
+      () {
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: DateTime.utc(2026, 7, 10, 21, 0),
+          ),
+          sessionStartedAt,
+        );
+      },
+    );
+
+    test(
+      'returns the entry\'s own consumedAt for an absorbed orphan that '
+      'predates the session (party-session.md: "absorbed orphans extend '
+      'backwards in time") — sessionStartedAt alone would make that '
+      'earlier timestamp unreachable in the picker',
+      () {
+        final orphanConsumedAt = DateTime.utc(2026, 7, 10, 18, 0);
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: orphanConsumedAt,
+          ),
+          orphanConsumedAt,
+        );
+      },
+    );
+
+    test(
+      'returns sessionStartedAt (not entryConsumedAt) when consumedAt '
+      'exactly equals sessionStartedAt',
+      () {
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: sessionStartedAt,
+          ),
+          sessionStartedAt,
+        );
+      },
+    );
+  });
 }

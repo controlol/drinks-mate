@@ -214,7 +214,6 @@ class _DayEntryTile extends ConsumerWidget {
   }
 
   Future<void> _showEditSheet(BuildContext context, WidgetRef ref) async {
-    final boundaryHour = prefs?.dayBoundaryHour ?? 5;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -223,8 +222,12 @@ class _DayEntryTile extends ConsumerWidget {
         entry: entry,
         showName: true,
         defaultCurrency: prefs?.currency,
-        onPickTime: (ctx, current) =>
-            pickDayWindowTime(ctx, current, boundaryHour: boundaryHour),
+        // Free, not day-locked — S3 is the historical-correction surface,
+        // so unlike S6 it lets the user move an entry to a different day
+        // (e.g. a drink logged just after midnight that should count for
+        // the previous day). Bounded to "never the future" by
+        // DateEditPicker.free's default; no lower bound.
+        datePicker: const DateEditPicker.free(),
         onSave: ({
           required volumeMl,
           name,
