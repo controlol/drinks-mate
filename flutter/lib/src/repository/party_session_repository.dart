@@ -282,6 +282,13 @@ class PartySessionRepository {
   /// ([priceTokens] + optionally [tokenValueMinor] + [tokenValueCurrency]).
   /// Throws [ArgumentError] on a mutually-exclusive or incomplete pricing
   /// combination, or if [preset.beverageType] is not alcoholic.
+  ///
+  /// [isManualPriceOverride] marks the price above as a deliberate,
+  /// this-entry-only override (e.g. `PartyLogDrinkSheet`'s price field) as
+  /// opposed to a price resolved the usual way via [resolvePrice] — it
+  /// exempts this entry from future retroactive party-price sweeps
+  /// (party-session.md §Editing prices during a session). Defaults to
+  /// `false`.
   Future<DrinkEntry> logAlcoholicDrink({
     required DrinkPreset preset,
     required String sessionId,
@@ -295,6 +302,7 @@ class PartySessionRepository {
     int? priceTokens,
     int? tokenValueMinor,
     String? tokenValueCurrency,
+    bool isManualPriceOverride = false,
     DateTime? now,
   }) async {
     if (!preset.beverageType.isAlcoholic) {
@@ -353,6 +361,7 @@ class PartySessionRepository {
         iconColor: Value(preset.iconColor),
         partySessionId: Value(sessionId),
         presetId: Value(preset.id),
+        manualPriceOverride: Value(isManualPriceOverride),
         consumedAt: consumedAtUtc,
         createdAt: nowUtc,
         updatedAt: nowUtc,
@@ -373,6 +382,7 @@ class PartySessionRepository {
       iconColor: preset.iconColor,
       partySessionId: sessionId,
       presetId: preset.id,
+      manualPriceOverride: isManualPriceOverride,
       consumedAt: consumedAtUtc,
       createdAt: nowUtc,
       updatedAt: nowUtc,
@@ -399,6 +409,11 @@ class PartySessionRepository {
   /// exclusive — data-model.md §DrinkEntry), since the edit form only offers
   /// a money field. Leaving [priceMinor] as the default [Optional.absent]
   /// leaves this entry's existing price (money or tokens) untouched.
+  ///
+  /// Touching [priceMinor] (present, whether setting or clearing) also sets
+  /// `manualPriceOverride`, exempting this entry from future retroactive
+  /// party-price sweeps (party-session.md §Editing prices during a session)
+  /// — a deliberate per-entry edit always wins over the session-wide table.
   ///
   /// Throws [ArgumentError] if [volumeMl] is provided and `< 1`, if
   /// [abvPercent] is provided and `<= 0`, if [name] fails
@@ -469,6 +484,8 @@ class PartySessionRepository {
             priceMinor.isPresent ? const Value(null) : const Value.absent(),
         tokenValueCurrency:
             priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        manualPriceOverride:
+            priceMinor.isPresent ? const Value(true) : const Value.absent(),
         updatedAt: Value(nowUtc),
       ),
     );
@@ -568,6 +585,14 @@ class PartySessionRepository {
   /// Each override's `priceMinor` and `priceTokens` are mutually exclusive;
   /// throws [ArgumentError] otherwise, or if `priceMinor` is set without a
   /// `currency`.
+  ///
+  /// Also retroactively sweeps the resulting price onto every already-logged,
+  /// non-manually-overridden [DrinkEntry] in [sessionId] for each touched
+  /// `drinkPresetId` (issue #87, party-session.md §Editing prices during a
+  /// session) — the swept value is whatever [resolvePrice] would produce for
+  /// that preset right now, so this stays correct whether [prices] sets an
+  /// override, clears one back to the regular price, or the session has
+  /// `useSessionPrices` off.
   Future<void> setSessionPrices({
     required String sessionId,
     required List<PartySessionPriceInput> prices,
@@ -620,7 +645,76 @@ class PartySessionRepository {
           );
         }
       }
+
+      // Retroactive sweep (issue #87, party-session.md §Editing prices
+      // during a session): already-logged entries for each touched preset
+      // pick up the price a fresh log action would resolve to right now, so
+      // a party-price edit doesn't leave stale prices on drinks logged
+      // before the edit. Entries carrying a manual per-entry override
+      // (PartyLogDrinkSheet's price field, or S9's per-entry price edit) are
+      // skipped — a deliberate one-off edit always wins over the
+      // session-wide table.
+      final session = await _db.getPartySessionById(sessionId);
+      if (session != null) {
+        for (final p in prices) {
+          final resolved = await _resolveSweptPrice(
+            session: session,
+            input: p,
+          );
+          if (resolved == null) continue;
+          await _db.sweepSessionEntryPrices(
+            sessionId: sessionId,
+            presetId: p.drinkPresetId,
+            companion: DrinkEntriesCompanion(
+              priceMinor: Value(resolved.priceMinor),
+              currency: Value(resolved.currency),
+              priceTokens: Value(resolved.priceTokens),
+              tokenValueMinor: Value(resolved.tokenValueMinor),
+              tokenValueCurrency: Value(resolved.tokenValueCurrency),
+              updatedAt: Value(nowUtc),
+            ),
+          );
+        }
+      }
     });
+  }
+
+  /// Resolves the price a fresh [logAlcoholicDrink] call would produce right
+  /// now for [input]'s preset — the retroactive sweep's per-preset price,
+  /// mirroring [resolvePrice]'s own branching. Unlike [resolvePrice], this
+  /// works from the just-written override [input] directly (the write and
+  /// the sweep must agree within the same [setSessionPrices] transaction)
+  /// and looks the preset up by id, since the sweep only has a
+  /// `drinkPresetId`, not a full [DrinkPreset].
+  ///
+  /// Returns null when there's nothing to sweep with — [session] has
+  /// `useSessionPrices == false` (or [input] carries no override value) and
+  /// the preset can't be found to read its regular price from.
+  Future<ResolvedDrinkPrice?> _resolveSweptPrice({
+    required PartySessionRow session,
+    required PartySessionPriceInput input,
+  }) async {
+    final hasOverrideValue =
+        input.priceMinor != null || input.priceTokens != null;
+    if (session.useSessionPrices && hasOverrideValue) {
+      if (input.priceTokens != null) {
+        return ResolvedDrinkPrice(
+          priceTokens: input.priceTokens,
+          tokenValueMinor: session.tokenValueMinor,
+          tokenValueCurrency: session.tokenValueCurrency,
+        );
+      }
+      return ResolvedDrinkPrice(
+        priceMinor: input.priceMinor,
+        currency: input.currency,
+      );
+    }
+    final preset = await _db.getPresetById(input.drinkPresetId);
+    if (preset == null) return null;
+    return ResolvedDrinkPrice(
+      priceMinor: preset.regularPriceMinor,
+      currency: preset.regularCurrency,
+    );
   }
 
   /// Live price overrides for [sessionId].
@@ -866,6 +960,7 @@ class PartySessionRepository {
         iconColor: row.iconColor,
         partySessionId: row.partySessionId,
         presetId: row.presetId,
+        manualPriceOverride: row.manualPriceOverride,
         consumedAt: row.consumedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

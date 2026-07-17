@@ -19,6 +19,7 @@ class DrinkEntry {
     this.iconColor,
     this.partySessionId,
     this.presetId,
+    this.manualPriceOverride = false,
     required this.consumedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -58,6 +59,15 @@ class DrinkEntry {
   /// Not authoritative for display (see the snapshot fields above) — only
   /// feeds the preset-usage ranking behind the sort modes (F14 §Sort modes).
   final String? presetId;
+
+  /// True when [priceMinor]/[priceTokens] were set by a deliberate,
+  /// this-entry-only price edit (the log-time price field on
+  /// `PartyLogDrinkSheet`, or S9's per-entry price edit) rather than
+  /// resolved from the preset's regular price or the session-wide
+  /// `PartySessionPrice` table. A retroactive party-price edit skips entries
+  /// with this set, so the one-off override always wins (party-session.md
+  /// §Editing prices during a session).
+  final bool manualPriceOverride;
   final DateTime consumedAt;
   final DateTime createdAt;
   final DateTime updatedAt;

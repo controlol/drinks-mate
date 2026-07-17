@@ -42,6 +42,9 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 /// v6 (issue #78): DrinkEntries gains presetId (nullable, no FK — see the
 ///   column's own doc comment); UserPreferences gains drinkSortMode
 ///   (default 'recentlyUsed') — feeds the Today grid / S2 picker sort modes.
+/// v7 (issue #87): DrinkEntries gains manualPriceOverride (default false) —
+///   marks a this-entry-only price edit so the retroactive party-price
+///   sweep in `setSessionPrices` knows which entries to skip.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -65,7 +68,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -105,6 +108,9 @@ class AppDatabase extends _$AppDatabase {
               userPreferencesTable,
               userPreferencesTable.drinkSortMode,
             );
+          }
+          if (from < 7) {
+            await m.addColumn(drinkEntries, drinkEntries.manualPriceOverride);
           }
         },
         beforeOpen: (_) async {
@@ -545,6 +551,28 @@ class AppDatabase extends _$AppDatabase {
     DrinkEntriesCompanion companion,
   ) =>
       (update(drinkEntries)..where((t) => t.id.equals(id))).write(companion);
+
+  /// Applies [companion] (a resolved price snapshot) to every live entry in
+  /// [sessionId] logged from [presetId] — the retroactive party-price sweep
+  /// (issue #87, party-session.md §Editing prices during a session). Entries
+  /// with `manualPriceOverride == true` are excluded so a one-off,
+  /// this-entry-only price edit is never clobbered by a session-wide edit.
+  ///
+  /// Returns the number of rows affected.
+  Future<int> sweepSessionEntryPrices({
+    required String sessionId,
+    required String presetId,
+    required DrinkEntriesCompanion companion,
+  }) =>
+      (update(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.equals(sessionId) &
+                  t.presetId.equals(presetId) &
+                  t.deletedAt.isNull() &
+                  t.manualPriceOverride.equals(false),
+            ))
+          .write(companion);
 
   /// Soft-deletes a [DrinkEntryRow] by setting [deletedAt] = [deletedAtUtc].
   ///

@@ -161,6 +161,77 @@ Future<void> _seedProfile(
   );
 }
 
+/// Inserts a live [DrinkPresetRow] mirroring [preset]'s fields — needed by
+/// the retroactive-sweep tests below (issue #87) whose "no override"/
+/// "useSessionPrices off" sweep cases read the preset's regular price back
+/// out of the DB via `AppDatabase.getPresetById`
+/// ([PartySessionRepository]'s private `_resolveSweptPrice`), unlike
+/// [PartySessionRepository.logAlcoholicDrink] which only ever needs the
+/// in-memory [DrinkPreset] passed to it.
+Future<void> _insertPresetRow(AppDatabase db, DrinkPreset preset) async {
+  final now = DateTime.now().toUtc();
+  await db.insertPreset(
+    DrinkPresetsCompanion.insert(
+      id: preset.id,
+      name: preset.name,
+      beverageType: preset.beverageType.stored,
+      volumeMl: preset.volumeMl,
+      abvPercent: Value(preset.abvPercent),
+      regularPriceMinor: Value(preset.regularPriceMinor),
+      regularCurrency: Value(preset.regularCurrency),
+      iconKey: preset.iconKey,
+      iconColor: preset.iconColor,
+      isUserCreated: preset.isUserCreated,
+      sortOrder: preset.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    ),
+  );
+}
+
+/// Inserts a live or soft-deleted [DrinkEntryRow] directly at the DB layer,
+/// with full control over every field the retroactive sweep (issue #87)
+/// keys off — [partySessionId], [presetId], [manualPriceOverride],
+/// [deletedAt] — that [PartySessionRepository.logAlcoholicDrink]'s narrower
+/// parameter set can't produce (e.g. an entry belonging to a session that
+/// was never actually started, to prove the sweep only touches [sessionId]).
+Future<void> _insertRawEntry(
+  AppDatabase db, {
+  required String id,
+  required String partySessionId,
+  required String presetId,
+  int? priceMinor,
+  String? currency,
+  bool manualPriceOverride = false,
+  DateTime? deletedAt,
+  required DateTime consumedAt,
+  required DateTime updatedAt,
+}) async {
+  await db.insertDrinkEntry(
+    DrinkEntriesCompanion.insert(
+      id: id,
+      beverageType: BeverageType.beer.stored,
+      volumeMl: 330,
+      abvPercent: const Value(5.0),
+      priceMinor: Value(priceMinor),
+      currency: Value(currency),
+      partySessionId: Value(partySessionId),
+      presetId: Value(presetId),
+      manualPriceOverride: Value(manualPriceOverride),
+      deletedAt: Value(deletedAt),
+      consumedAt: consumedAt,
+      createdAt: consumedAt,
+      updatedAt: updatedAt,
+    ),
+  );
+}
+
+/// One-shot read of a single [DrinkEntryRow] by [id] — mirrors the
+/// `db.select(db.drinkEntries).get()` + `singleWhere` pattern already used
+/// throughout this file (e.g. the migration tests above).
+Future<DrinkEntryRow> _getEntry(AppDatabase db, String id) async =>
+    (await db.select(db.drinkEntries).get()).singleWhere((e) => e.id == id);
+
 /// A bare-bones [GeneratedDatabase] used only to hand-write a genuine v3
 /// schema via raw SQL for the upgrade test below. `allTables` is empty
 /// because we never issue typed queries against it — only `customStatement`.
@@ -188,16 +259,30 @@ class _LegacyDbV5 extends GeneratedDatabase {
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
 }
 
+/// Same purpose as [_LegacyDb]/[_LegacyDbV5], but for hand-writing a genuine
+/// v6 schema (issue #87's "if (from < 7)" upgrade test below) — the v6 shape
+/// already has `drink_entries.preset_id` and
+/// `user_preferences.drink_sort_mode`, but no `manual_price_override` yet.
+class _LegacyDbV6 extends GeneratedDatabase {
+  _LegacyDbV6(super.executor);
+
+  @override
+  int get schemaVersion => 6;
+
+  @override
+  Iterable<TableInfo<Table, dynamic>> get allTables => const [];
+}
+
 void main() {
   // ---------------------------------------------------------------------------
   // 1. Schema migration
   // ---------------------------------------------------------------------------
 
   group('AppDatabase — schema v5 (fresh onCreate)', () {
-    test('schemaVersion is 6 (app_database.dart)', () async {
+    test('schemaVersion is 7 (app_database.dart)', () async {
       final db = _memDb();
       addTearDown(db.close);
-      expect(db.schemaVersion, 6);
+      expect(db.schemaVersion, 7);
     });
 
     test(
@@ -409,11 +494,11 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        // This test opens the *real* AppDatabase (currently schema v6), so a
+        // This test opens the *real* AppDatabase (currently schema v7), so a
         // hand-built v3 file cascades through the "if (from < 4)", "if (from
-        // < 5)", and "if (from < 6)" onUpgrade blocks in one open — verified
-        // below.
-        expect(upgraded.schemaVersion, 6);
+        // < 5)", "if (from < 6)", and "if (from < 7)" onUpgrade blocks in one
+        // open — verified below.
+        expect(upgraded.schemaVersion, 7);
 
         final entries = await upgraded.select(upgraded.drinkEntries).get();
         final legacyEntry = entries.singleWhere((e) => e.id == 'legacy-1');
@@ -621,7 +706,12 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        expect(upgraded.schemaVersion, 6);
+        // The running AppDatabase is always at the current schema version
+        // (7) after upgrade — this v5→v6 test only exercises the "if (from
+        // < 6)" block in isolation (see PRAGMA user_version = 5 above); the
+        // subsequent "if (from < 7)" block still runs since `from` is still
+        // < 7, adding manual_price_override too.
+        expect(upgraded.schemaVersion, 7);
 
         // drink_entries.preset_id exists (ALTER TABLE ADD COLUMN) and is
         // null for the pre-existing row — its other snapshot fields survive
@@ -670,6 +760,217 @@ void main() {
               "'recentlyUsed' — ALTER TABLE ADD COLUMN ... DEFAULT populates "
               'this value for every pre-existing row.',
         );
+      },
+    );
+  });
+
+  group('AppDatabase — v6 → v7 upgrade (onUpgrade "if (from < 7)" block)', () {
+    test(
+      'upgrading a hand-built v6 schema adds '
+      'drink_entries.manual_price_override with default false, and '
+      'preserves pre-existing rows',
+      () async {
+        // Source: app_database.dart schema v7 doc comment / onUpgrade "if
+        // (from < 7)" block — "DrinkEntries gains manualPriceOverride
+        // (boolean, default false)" (issue #87). Column shapes below are the
+        // v6 schema (v5 shape + drink_entries.preset_id +
+        // user_preferences.drink_sort_mode), minus the one v7 addition under
+        // test — mirrors the v3→v4/v5→v6 upgrade tests' approach above.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'party_session_migration_v7_test',
+        );
+        addTearDown(() => tempDir.delete(recursive: true));
+        final dbFile = File(p.join(tempDir.path, 'legacy_v6.sqlite'));
+
+        final legacy = _LegacyDbV6(NativeDatabase(dbFile));
+        await legacy.customStatement('''
+          CREATE TABLE drink_presets (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            regular_price_minor INTEGER,
+            regular_currency TEXT,
+            icon_key TEXT NOT NULL,
+            icon_color TEXT NOT NULL,
+            is_user_created INTEGER NOT NULL,
+            is_hidden INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        // v6 shape: has preset_id (v6's own addition), but no
+        // manual_price_override yet (the v7 addition under test).
+        await legacy.customStatement('''
+          CREATE TABLE drink_entries (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            icon_key TEXT,
+            icon_color TEXT,
+            party_session_id TEXT,
+            preset_id TEXT,
+            consumed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE user_profiles (
+            id TEXT NOT NULL PRIMARY KEY,
+            gender TEXT,
+            weight_kg REAL,
+            height_cm REAL,
+            birth_date TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        // v6 shape: has both alcoholic_presets_always_visible (v5) and
+        // drink_sort_mode (v6's own addition).
+        await legacy.customStatement('''
+          CREATE TABLE user_preferences (
+            id TEXT NOT NULL PRIMARY KEY,
+            username TEXT,
+            daily_goal_ml INTEGER NOT NULL,
+            day_boundary_hour INTEGER NOT NULL,
+            units TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            reminder_enabled INTEGER NOT NULL,
+            reminder_start_hour INTEGER NOT NULL,
+            reminder_end_hour INTEGER NOT NULL,
+            reminder_interval_min INTEGER NOT NULL,
+            inactivity_reminder_enabled INTEGER NOT NULL,
+            weekly_summary_enabled INTEGER NOT NULL,
+            default_drink_preset_id TEXT,
+            bac_cap_grams_per_l REAL,
+            bac_on_lock_screen_enabled INTEGER NOT NULL,
+            approaching_cap_notif_enabled INTEGER NOT NULL,
+            sober_estimate_notif_enabled INTEGER NOT NULL,
+            alcoholic_presets_always_visible INTEGER NOT NULL,
+            drink_sort_mode TEXT NOT NULL DEFAULT 'recentlyUsed',
+            installed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE party_sessions (
+            id TEXT NOT NULL PRIMARY KEY,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            end_reason TEXT,
+            use_session_prices INTEGER NOT NULL,
+            token_name TEXT,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE party_session_prices (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            drink_preset_id TEXT NOT NULL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE meals (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            size TEXT NOT NULL,
+            eaten_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+
+        final legacyEpoch =
+            DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch ~/ 1000;
+        await legacy.customStatement('''
+          INSERT INTO drink_entries (id, name, beverage_type, volume_ml,
+            abv_percent, price_minor, currency, price_tokens,
+            token_value_minor, token_value_currency, icon_key, icon_color,
+            party_session_id, preset_id, consumed_at, created_at, updated_at,
+            deleted_at)
+          VALUES ('legacy-entry-v6', 'Legacy V6 Beer', 'beer', 330,
+            5.0, 450, 'EUR', NULL,
+            NULL, NULL, 'beer_glass', '#d97706',
+            NULL, 'some-preset-id', $legacyEpoch, $legacyEpoch, $legacyEpoch,
+            NULL);
+        ''');
+        // Mark this file as schema v6 so reopening with schemaVersion 7
+        // triggers only the real onUpgrade(from: 6, to: 7) "if (from < 7)"
+        // block (the v2-v6 blocks are no-ops since `from` is already 6).
+        await legacy.customStatement('PRAGMA user_version = 6;');
+        await legacy.close();
+
+        final upgraded = AppDatabase(NativeDatabase(dbFile));
+        addTearDown(upgraded.close);
+
+        expect(upgraded.schemaVersion, 7);
+
+        // drink_entries.manual_price_override exists (ALTER TABLE ADD
+        // COLUMN ... DEFAULT) and is false for the pre-existing row — its
+        // other snapshot fields (including the v6-added preset_id) survive
+        // untouched.
+        final entries = await upgraded.select(upgraded.drinkEntries).get();
+        final legacyEntry =
+            entries.singleWhere((e) => e.id == 'legacy-entry-v6');
+        expect(legacyEntry.name, 'Legacy V6 Beer',
+            reason: 'pre-existing data must survive the upgrade');
+        expect(legacyEntry.presetId, 'some-preset-id');
+        expect(legacyEntry.priceMinor, 450);
+        expect(legacyEntry.currency, 'EUR');
+        expect(
+          legacyEntry.manualPriceOverride,
+          isFalse,
+          reason: "app_database.dart's manualPriceOverride column default "
+              'is false — ALTER TABLE ADD COLUMN ... DEFAULT populates this '
+              'value for every pre-existing row.',
+        );
+
+        // The new column is live and usable via the repository — a fresh
+        // entry logged with a one-off price override persists
+        // manualPriceOverride = true. Seed a profile first: startSession()
+        // runs orphan absorption, and the hand-inserted legacy row above
+        // (partySessionId NULL) is itself an orphan.
+        await _seedProfile(upgraded);
+        final partyRepo = PartySessionRepository(upgraded);
+        final session = await partyRepo.startSession(
+          now: DateTime.utc(2026, 7, 10),
+        );
+        final entry = await partyRepo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          priceMinor: 300,
+          currency: 'EUR',
+          isManualPriceOverride: true,
+        );
+        final newRow = (await upgraded.select(upgraded.drinkEntries).get())
+            .singleWhere((e) => e.id == entry.id);
+        expect(newRow.manualPriceOverride, isTrue);
       },
     );
   });
@@ -1859,6 +2160,518 @@ void main() {
       );
     });
   });
+
+  group(
+    'PartySessionRepository.setSessionPrices — retroactive sweep (issue #87)',
+    () {
+      // Source for every expected value below: party-session.md §Editing
+      // prices during a session (lines ~293-302) — "Edits are saved
+      // immediately and apply to subsequent log actions in this session,
+      // and retroactively to every drink already logged in this session
+      // from that preset — its priceMinor/priceTokens/currency snapshot is
+      // rewritten to match what a fresh log action would resolve to right
+      // now (falling back to the regular price when 'no override' is
+      // picked, or when the 'use session prices' toggle is off)." and its
+      // "Exception:" sentence for the manual-override cases.
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+      final loggedAt = DateTime.utc(2026, 7, 10, 20, 5);
+      final sweptAt = DateTime.utc(2026, 7, 10, 21, 0);
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        'money override sweeps a matching token-priced entry to the money '
+        'price and clears the token fields',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceTokens: 3,
+            tokenValueMinor: 100,
+            tokenValueCurrency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 550,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final swept = await _getEntry(db, entry.id);
+          expect(swept.priceMinor, 550);
+          expect(swept.currency, 'USD');
+          expect(swept.priceTokens, isNull,
+              reason: 'money and tokens stay mutually exclusive');
+          expect(swept.tokenValueMinor, isNull);
+          expect(swept.tokenValueCurrency, isNull);
+          expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+        },
+      );
+
+      test(
+        "token override sweeps a matching money-priced entry to the "
+        "override's priceTokens, with tokenValueMinor/tokenValueCurrency "
+        'taken from the SESSION (not the override input, which carries '
+        'none), and clears the money fields',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+            // Deliberately distinct from every money value in this test
+            // (300 / 550) so a bug that copies the wrong number is caught.
+            // tokenValueCurrency is also deliberately distinct from the
+            // entry's own pre-existing currency ('USD' vs 'EUR' below) so a
+            // bug that copies the entry's stale currency instead of the
+            // session's is caught too — not just tokenValueMinor.
+            tokenValueMinor: 150,
+            tokenValueCurrency: 'USD',
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceTokens: 4,
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final swept = await _getEntry(db, entry.id);
+          expect(swept.priceTokens, 4);
+          expect(swept.tokenValueMinor, 150,
+              reason: 'must come from the session, not the override input');
+          expect(swept.tokenValueCurrency, 'USD',
+              reason: "must come from the session, not the entry's own "
+                  "pre-existing currency ('EUR')");
+          expect(swept.priceMinor, isNull);
+          expect(swept.currency, isNull);
+          expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+        },
+      );
+
+      test(
+        'the sweep touches EVERY matching non-overridden entry for the '
+        'preset, not just the first one it finds — logs two normal entries '
+        'from the same preset and confirms both are swept in a single '
+        'setSessionPrices call',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final first = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+          final second = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 700,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          for (final id in [first.id, second.id]) {
+            final swept = await _getEntry(db, id);
+            expect(swept.priceMinor, 700, reason: 'entry $id must be swept');
+            expect(swept.currency, 'USD');
+            expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+          }
+        },
+      );
+
+      test(
+        '"no override" (priceMinor and priceTokens both null) sweeps a '
+        "matching token-priced entry back to the PRESET's regular price and "
+        'clears the token fields — requires a real DrinkPreset row since the '
+        'sweep looks the preset up by id',
+        () async {
+          await _insertPresetRow(db, _pricedBeerPreset);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+            tokenValueMinor: 150,
+            tokenValueCurrency: 'EUR',
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _pricedBeerPreset,
+            sessionId: session.id,
+            priceTokens: 5,
+            tokenValueMinor: 150,
+            tokenValueCurrency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(drinkPresetId: 'test-priced-beer-preset'),
+            ],
+            now: sweptAt,
+          );
+
+          final swept = await _getEntry(db, entry.id);
+          expect(swept.priceMinor, 450, reason: "the preset's regular price");
+          expect(swept.currency, 'EUR');
+          expect(swept.priceTokens, isNull);
+          expect(swept.tokenValueMinor, isNull);
+          expect(swept.tokenValueCurrency, isNull);
+          expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+        },
+      );
+
+      test(
+        'when the touched preset has no matching DrinkPreset row, the sweep '
+        'is a graceful no-op for that preset (does not throw) — this is '
+        'exactly the shape of the pre-existing setSessionPrices tests above '
+        "that use unseeded preset ids like 'preset-a'",
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await expectLater(
+            repo.setSessionPrices(
+              sessionId: session.id,
+              prices: const [
+                PartySessionPriceInput(drinkPresetId: 'no-such-preset-row'),
+              ],
+              now: sweptAt,
+            ),
+            completes,
+          );
+
+          final unchanged = await _getEntry(db, entry.id);
+          expect(unchanged.priceMinor, 300);
+          expect(unchanged.currency, 'EUR');
+        },
+      );
+
+      test(
+        "useSessionPrices=false always sweeps to the PRESET's regular "
+        'price, even though the just-written override carries a different '
+        'value — mirrors what resolvePrice would produce for a fresh log '
+        'right now',
+        () async {
+          await _insertPresetRow(db, _pricedBeerPreset);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: false,
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _pricedBeerPreset,
+            sessionId: session.id,
+            priceMinor: 450,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-priced-beer-preset',
+                priceMinor: 999,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final swept = await _getEntry(db, entry.id);
+          expect(swept.priceMinor, 450,
+              reason: 'must be the regular price, not the override (999)');
+          expect(swept.currency, 'EUR');
+          expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+        },
+      );
+
+      test(
+        'an entry logged with a one-off manual price override '
+        '(logAlcoholicDrink(isManualPriceOverride: true)) is exempt from '
+        'the sweep, while a normally-logged sibling entry for the same '
+        'preset is swept',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final overridden = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            isManualPriceOverride: true,
+            now: loggedAt,
+          );
+          final normal = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 700,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final untouched = await _getEntry(db, overridden.id);
+          expect(untouched.priceMinor, 300);
+          expect(untouched.currency, 'EUR');
+          expect(untouched.updatedAt.isAtSameMomentAs(loggedAt), isTrue,
+              reason: 'the sweep must never touch this row');
+
+          final swept = await _getEntry(db, normal.id);
+          expect(swept.priceMinor, 700);
+          expect(swept.currency, 'USD');
+          expect(swept.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+        },
+      );
+
+      test(
+        'updateAlcoholicEntry SETTING priceMinor sets manualPriceOverride, '
+        'exempting the entry from a later sweep',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+          final editedAt = DateTime.utc(2026, 7, 10, 20, 30);
+          await repo.updateAlcoholicEntry(
+            id: entry.id,
+            priceMinor: const Optional.value(350),
+            currency: const Optional.value('EUR'),
+            now: editedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 700,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final unchanged = await _getEntry(db, entry.id);
+          expect(unchanged.priceMinor, 350);
+          expect(unchanged.currency, 'EUR');
+          expect(unchanged.manualPriceOverride, isTrue);
+          expect(unchanged.updatedAt.isAtSameMomentAs(editedAt), isTrue,
+              reason: 'the sweep must never touch this row');
+        },
+      );
+
+      test(
+        'updateAlcoholicEntry CLEARING priceMinor to null also sets '
+        'manualPriceOverride, exempting the entry from a later sweep',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final entry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+          final editedAt = DateTime.utc(2026, 7, 10, 20, 30);
+          await repo.updateAlcoholicEntry(
+            id: entry.id,
+            priceMinor: const Optional.value(null),
+            currency: const Optional.value(null),
+            now: editedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 700,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final unchanged = await _getEntry(db, entry.id);
+          expect(unchanged.priceMinor, isNull);
+          expect(unchanged.currency, isNull);
+          expect(unchanged.manualPriceOverride, isTrue);
+          expect(unchanged.updatedAt.isAtSameMomentAs(editedAt), isTrue,
+              reason: 'the sweep must never touch this row');
+        },
+      );
+
+      test(
+        'the sweep only touches live, session-and-preset-matching entries: '
+        'an entry in a different session, an entry for a different preset, '
+        'and a soft-deleted entry are all left untouched, while the one '
+        'matching live entry is swept — proves both the sweep ran and that '
+        'it skipped precisely those rows',
+        () async {
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+            useSessionPrices: true,
+          );
+          final matching = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            priceMinor: 300,
+            currency: 'EUR',
+            now: loggedAt,
+          );
+
+          await _insertRawEntry(
+            db,
+            id: 'other-session-entry',
+            partySessionId: 'some-other-session',
+            presetId: 'test-beer-preset',
+            priceMinor: 300,
+            currency: 'EUR',
+            consumedAt: loggedAt,
+            updatedAt: loggedAt,
+          );
+          await _insertRawEntry(
+            db,
+            id: 'other-preset-entry',
+            partySessionId: session.id,
+            presetId: 'some-other-preset',
+            priceMinor: 300,
+            currency: 'EUR',
+            consumedAt: loggedAt,
+            updatedAt: loggedAt,
+          );
+          await _insertRawEntry(
+            db,
+            id: 'soft-deleted-entry',
+            partySessionId: session.id,
+            presetId: 'test-beer-preset',
+            priceMinor: 300,
+            currency: 'EUR',
+            deletedAt: loggedAt,
+            consumedAt: loggedAt,
+            updatedAt: loggedAt,
+          );
+
+          await repo.setSessionPrices(
+            sessionId: session.id,
+            prices: const [
+              PartySessionPriceInput(
+                drinkPresetId: 'test-beer-preset',
+                priceMinor: 700,
+                currency: 'USD',
+              ),
+            ],
+            now: sweptAt,
+          );
+
+          final sweptEntry = await _getEntry(db, matching.id);
+          expect(sweptEntry.priceMinor, 700);
+          expect(sweptEntry.currency, 'USD');
+          expect(sweptEntry.updatedAt.isAtSameMomentAs(sweptAt), isTrue);
+
+          final otherSession = await _getEntry(db, 'other-session-entry');
+          expect(otherSession.priceMinor, 300);
+          expect(otherSession.currency, 'EUR');
+          expect(otherSession.updatedAt.isAtSameMomentAs(loggedAt), isTrue);
+
+          final otherPreset = await _getEntry(db, 'other-preset-entry');
+          expect(otherPreset.priceMinor, 300);
+          expect(otherPreset.currency, 'EUR');
+          expect(otherPreset.updatedAt.isAtSameMomentAs(loggedAt), isTrue);
+
+          final softDeleted = await _getEntry(db, 'soft-deleted-entry');
+          expect(softDeleted.priceMinor, 300);
+          expect(softDeleted.currency, 'EUR');
+          expect(softDeleted.updatedAt.isAtSameMomentAs(loggedAt), isTrue);
+        },
+      );
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // 8. endSession
