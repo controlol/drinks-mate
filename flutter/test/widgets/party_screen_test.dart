@@ -355,6 +355,14 @@ Widget _buildScreen({
   DateTime? now,
   List<DrinkPreset> alcoholicPresets = const [],
   List<SessionDaySummary> endedSessionSummaries = const [],
+  // Drives `MediaQuery.alwaysUse24HourFormat`, which is what
+  // `TimeOfDay.format(context)` actually keys off (not `Locale`) — see the
+  // "Time-of-day display format" Parity Rulebook row. `null` (the default)
+  // leaves the ambient MediaQuery untouched, matching every pre-existing
+  // caller of this helper. `MaterialApp.builder` wraps above the Navigator,
+  // so the override also reaches modal routes such as PartyLogDrinkSheet
+  // (mirrors log_drink_sheet_test.dart's `_pumpSheet` helper).
+  bool? alwaysUse24HourFormat,
 }) {
   return ProviderScope(
     overrides: [
@@ -397,8 +405,54 @@ Widget _buildScreen({
         (_) async => endedSessionSummaries,
       ),
     ],
-    child: const MaterialApp(home: PartyScreen()),
+    child: MaterialApp(
+      builder: alwaysUse24HourFormat == null
+          ? null
+          : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  alwaysUse24HourFormat: alwaysUse24HourFormat,
+                ),
+                child: child!,
+              ),
+      home: const PartyScreen(),
+    ),
   );
+}
+
+/// Locates the confirm-phase `_TimeButton`'s rendered label text
+/// (party_log_drink_sheet.dart's `_TimeButton` is private, mirroring
+/// log_drink_sheet_test.dart's `_timeButtonLabel`). `Icons.schedule` is
+/// unique among the confirm phase's buttons — unlike LogDrinkSheet, this
+/// phase has no "Advanced" button to disambiguate against.
+///
+/// The confirm-phase form (Name/Volume/ABV/Price/Time) is taller than the
+/// sheet's visible extent, so the Time button sits beyond what the
+/// `ListView`'s `SliverList` builds by default — it doesn't exist as an
+/// Element until scrolled into range, so we scroll the list (keyed
+/// `party_log_drink_confirm_list`) before searching for it.
+Future<String> _timeButtonLabel(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.byIcon(Icons.schedule),
+    200.0,
+    // .first: the TextFields inside this list each have their own internal
+    // Scrollable (for text-cursor scrolling) — the list's own Scrollable is
+    // the outermost/first match.
+    scrollable: find
+        .descendant(
+          of: find.byKey(const Key('party_log_drink_confirm_list')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  final button = find.ancestor(
+    of: find.byIcon(Icons.schedule),
+    matching: find.byType(OutlinedButton),
+  );
+  expect(button, findsOneWidget);
+  final text = tester.widget<Text>(
+    find.descendant(of: button, matching: find.byType(Text)),
+  );
+  return text.data!;
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +872,101 @@ void main() {
 
       expect(repo.logAlcoholicDrinkCalls, hasLength(2));
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3a. PartyLogDrinkSheet confirm-phase time button honours the device's
+  //     12h/24h preference (Parity Rulebook: "Time-of-day display format",
+  //     issue #46) — third call site of the same bug fixed alongside
+  //     log_drink_sheet.dart and history_day_screen.dart's edit sheet.
+  //
+  //     PartyLogDrinkSheet has no edit/existing-entry mode: `_consumedAt`
+  //     always starts from `DateTime.now()` when a preset is picked
+  //     (party_log_drink_sheet.dart's `_pickPreset`), with no constructor
+  //     parameter to override it. So, as with log_drink_sheet_test.dart's
+  //     equivalent group, these tests can't pin an exact consumedAt and
+  //     assert an exact label (e.g. "9:30 AM") — they assert the *shape* of
+  //     the rendered label instead, which is enough to catch a regression to
+  //     a hardcoded 'HH:mm' format regardless of what "now" happens to be
+  //     when the test runs:
+  //       - 12h (alwaysUse24HourFormat=false): "<1-2 digits>:<2 digits>
+  //         AM|PM".
+  //       - 24h (alwaysUse24HourFormat=true): "<2 digits>:<2 digits>", no
+  //         AM/PM suffix.
+  // -------------------------------------------------------------------------
+
+  group('PartyLogDrinkSheet time button format (issue #46)', () {
+    final twelveHourPattern = RegExp(r'^\d{1,2}:\d{2}\s?(AM|PM)$');
+    final twentyFourHourPattern = RegExp(r'^\d{2}:\d{2}$');
+
+    testWidgets(
+      'renders 12h AM/PM format when alwaysUse24HourFormat=false',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+            alwaysUse24HourFormat: false,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+
+        final label = await _timeButtonLabel(tester);
+        expect(
+          twelveHourPattern.hasMatch(label),
+          isTrue,
+          reason: 'Expected a 12h AM/PM label like "9:30 AM", got "$label"',
+        );
+      },
+    );
+
+    testWidgets(
+      'renders 24h format (no AM/PM) when alwaysUse24HourFormat=true',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+            alwaysUse24HourFormat: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Log alcohol'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+
+        final label = await _timeButtonLabel(tester);
+        expect(
+          twentyFourHourPattern.hasMatch(label),
+          isTrue,
+          reason: 'Expected a 24h label like "09:30" with no AM/PM, got '
+              '"$label"',
+        );
+        expect(label, isNot(contains('AM')));
+        expect(label, isNot(contains('PM')));
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

@@ -82,6 +82,106 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // formatLargeVolume
+  // -------------------------------------------------------------------------
+
+  group('FormatService.formatLargeVolume — metric', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'metric')));
+
+    test('zero', () {
+      expect(svc.formatLargeVolume(0), equals('0 L'));
+    });
+
+    test('sub-1000ml still renders as litres, not ml', () {
+      expect(svc.formatLargeVolume(240.0), equals('0.2 L'));
+    });
+
+    test('500 ml → 0.5 L', () {
+      expect(svc.formatLargeVolume(500.0), equals('0.5 L'));
+    });
+
+    test('1400 ml → 1.4 L', () {
+      expect(svc.formatLargeVolume(1400.0), equals('1.4 L'));
+    });
+
+    test('whole litres omit the trailing .0 (2000 ml → 2 L)', () {
+      expect(svc.formatLargeVolume(2000.0), equals('2 L'));
+    });
+
+    // Regression: formatLargeVolume used to compare the *unrounded*
+    // ml/1000 double against its truncation to decide whether to omit the
+    // trailing ".0", which missed values that round UP to a whole litre at
+    // 1dp but aren't an exact multiple of 1000 ml. The fix rounds `ml/100`
+    // directly to the nearest integer (`(ml / 100).round()`), giving the
+    // tenths-of-a-litre value in one step — both to decide whole-litre
+    // omission and to avoid a separate FP/double-rounding pitfall (see the
+    // tests below). Source: Parity Rulebook → "Metric display precision —
+    // daily-progress headline" (1 decimal place, trailing ".0" omitted for
+    // whole litres).
+    group('near-whole-litre rounding (regression)', () {
+      // Each of these divides to a value in [1.95, 2.05) that rounds to
+      // "2.0" at 1dp — verified directly via `(ml / 100).round()` (not
+      // back-filled from the old, buggy output) before being asserted here.
+      for (final ml in [1970.0, 1980.0, 1995.0, 2030.0, 2049.0]) {
+        test('$ml ml rounds up to whole litres → 2 L', () {
+          expect(svc.formatLargeVolume(ml), equals('2 L'));
+        });
+      }
+
+      test('1949 ml stays below the rounding boundary → 1.9 L', () {
+        // 1949 / 1000 = 1.949 → "1.9" at 1dp; sits just below the
+        // round-up-to-2 boundary, confirming the fix doesn't over-collapse
+        // near-2 values that should stay at 1.9.
+        expect(svc.formatLargeVolume(1949.0), equals('1.9 L'));
+      });
+
+      test('1950 ml (exact half-boundary) → 2 L, half-away-from-zero', () {
+        // 1950/1000 (= 1.95) isn't exactly representable as a double, so a
+        // naive toStringAsFixed(1) on ml/1000 rounds down to "1.9". Dividing
+        // by 100 instead (1950/100 = 19.5) IS exactly representable, so
+        // `.round()` sees a true half and rounds away from zero per Parity
+        // Rulebook half-away-from-zero (data-model.md §Display precision).
+        expect(svc.formatLargeVolume(1950.0), equals('2 L'));
+      });
+
+      test('999 ml rounds up to a whole litre from below → 1 L', () {
+        // 999 / 1000 = 0.999, rounds to 1.0 at 1dp — mirrors the "rounds up
+        // to whole" case one order of magnitude down.
+        expect(svc.formatLargeVolume(999.0), equals('1 L'));
+      });
+
+      test(
+          'fractional ml just below a 100 ml boundary does not double-round '
+          '(1949.6 ml → 1.9 L, not 2 L)', () {
+        // Regression: rounding `ml` to the nearest int first (1949.6 → 1950)
+        // then rounding that to the nearest 100 collapses this to "2 L",
+        // even though 1949.6 ml = 1.9496 L is unambiguously closer to 1.9 L.
+        // The fix rounds ml/100 directly in one step.
+        expect(svc.formatLargeVolume(1949.6), equals('1.9 L'));
+      });
+    });
+  });
+
+  group('FormatService.formatLargeVolume — imperial', () {
+    late FormatService svc;
+    setUp(() => svc = FormatService(_prefs(units: 'imperial')));
+
+    test('zero', () {
+      expect(svc.formatLargeVolume(0), equals('0.0 fl oz'));
+    });
+
+    test('240 ml → 8.1 fl oz', () {
+      expect(svc.formatLargeVolume(240.0), equals('8.1 fl oz'));
+    });
+
+    test('2000 ml → 67.6 fl oz', () {
+      // 2000 / 29.5735295625 = 67.628..., rounds to 67.6
+      expect(svc.formatLargeVolume(2000.0), equals('67.6 fl oz'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // formatMass
   // -------------------------------------------------------------------------
 

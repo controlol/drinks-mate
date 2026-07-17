@@ -40,17 +40,26 @@ class FormatService {
   }
 
   /// Format a large volume (e.g. today's intake or daily goal) for the
-  /// progress-card headline display.
+  /// daily-progress headline display (today card, history totals).
   ///
-  /// Metric:   < 1 000 ml → "240 ml"; ≥ 1 000 ml → "1.4 L" (or "2 L").
+  /// Metric:   always litres, regardless of magnitude; 1 decimal place,
+  ///           trailing ".0" omitted for whole litres (e.g. "0.2 L",
+  ///           "1.4 L", "2 L").
   /// Imperial: always fl oz with 1 decimal place ("47.3 fl oz").
+  ///
+  /// Source: Parity Rulebook → "Metric display precision — daily-progress
+  /// headline".
   String formatLargeVolume(double ml) {
     if (_isImperial) return '${_fmt1dp(mlToFlOz(ml))} fl oz';
-    if (ml < 1000) return '${ml.round()} ml';
-    final litres = ml / 1000;
-    return litres == litres.truncateToDouble()
-        ? '${litres.toInt()} L'
-        : '${litres.toStringAsFixed(1)} L';
+    // Round directly to the nearest tenth-of-a-litre (100 ml) in one step —
+    // avoids both `toStringAsFixed` rounding the wrong way at
+    // binary-unrepresentable .x50-litre boundaries (e.g. 1950 ml) and the
+    // double-rounding error from rounding `ml` to an int first, then to the
+    // nearest 100. Source: Parity Rulebook, half-away-from-zero.
+    final tenths = (ml / 100).round();
+    final litres = tenths ~/ 10;
+    final remainderTenths = tenths % 10;
+    return remainderTenths == 0 ? '$litres L' : '$litres.$remainderTenths L';
   }
 
   // ---------------------------------------------------------------------------

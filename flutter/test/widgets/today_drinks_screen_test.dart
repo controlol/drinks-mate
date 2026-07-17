@@ -75,10 +75,14 @@ UserPreferences _makePrefs() {
 /// [entries] is the list the todayEntriesProvider yields.
 /// [repo] is the fake repository injected for mutation calls.
 /// [totalMl] drives the todayTotalMlProvider (default 500).
+/// [alwaysUse24HourFormat] drives `MediaQuery.alwaysUse24HourFormat`, which
+/// is what `TimeOfDay.format(context)` actually keys off (not [Locale]) —
+/// see the "Time-of-day display format" Parity Rulebook row.
 Widget _buildScreen({
   required List<DrinkEntry> entries,
   required _FakeRepo repo,
   int totalMl = 500,
+  bool alwaysUse24HourFormat = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -90,7 +94,14 @@ Widget _buildScreen({
       // back to the widget's '${ml} ml' fallback string.
       formatServiceProvider.overrideWithValue(null),
     ],
-    child: const MaterialApp(home: TodayDrinksScreen()),
+    child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+        child: child!,
+      ),
+      home: const TodayDrinksScreen(),
+    ),
   );
 }
 
@@ -165,6 +176,49 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // 2b. Entry time label honours the device's 12h/24h preference
+  //     (Parity Rulebook: "Time-of-day display format", issue #46)
+  // -------------------------------------------------------------------------
+
+  testWidgets('entry time renders 12h AM/PM when alwaysUse24HourFormat=false',
+      (tester) async {
+    final repo = _FakeRepo();
+    // consumedAt = 09:30 UTC — widget displays local time; use UTC for a
+    // deterministic display string that avoids timezone offsets in CI.
+    final consumedAt = DateTime.utc(2026, 6, 23, 9, 30);
+    final entries = [
+      _entry(id: 'e1', name: 'Morning Water', consumedAt: consumedAt),
+    ];
+
+    await tester.pumpWidget(_buildScreen(
+      entries: entries,
+      repo: repo,
+      alwaysUse24HourFormat: false,
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('9:30 AM'), findsWidgets);
+  });
+
+  testWidgets('entry time renders 24h when alwaysUse24HourFormat=true',
+      (tester) async {
+    final repo = _FakeRepo();
+    final consumedAt = DateTime.utc(2026, 6, 23, 9, 30);
+    final entries = [
+      _entry(id: 'e1', name: 'Morning Water', consumedAt: consumedAt),
+    ];
+
+    await tester.pumpWidget(_buildScreen(
+      entries: entries,
+      repo: repo,
+      alwaysUse24HourFormat: true,
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('09:30'), findsWidgets);
+  });
+
+  // -------------------------------------------------------------------------
   // 3. Entries appear in the order provided (reverse-chronological)
   //    The widget renders in list order; the repository guarantees DESC order.
   //    We pass a pre-ordered list and assert index 0 appears above index 1.
@@ -226,6 +280,60 @@ void main() {
     // The edit sheet shows 'Edit drink' as its title.
     // Source: today_drinks_screen.dart _EditEntrySheetState.build
     expect(find.text('Edit drink'), findsOneWidget);
+  });
+
+  // -------------------------------------------------------------------------
+  // 4b. Edit sheet's time button honours the device's 12h/24h preference
+  //     (Parity Rulebook: "Time-of-day display format", issue #46) — this
+  //     also verifies MediaQuery reaches the modal bottom sheet route.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+      'edit sheet time button renders 12h AM/PM when alwaysUse24HourFormat=false',
+      (tester) async {
+    final repo = _FakeRepo();
+    final entries = [
+      _entry(
+        id: 'e1',
+        name: 'Edit Me',
+        consumedAt: DateTime.utc(2026, 6, 23, 9, 30),
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(
+      entries: entries,
+      repo: repo,
+      alwaysUse24HourFormat: false,
+    ));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(OutlinedButton, '9:30 AM'), findsOneWidget);
+  });
+
+  testWidgets(
+      'edit sheet time button renders 24h when alwaysUse24HourFormat=true',
+      (tester) async {
+    final repo = _FakeRepo();
+    final entries = [
+      _entry(
+        id: 'e1',
+        name: 'Edit Me',
+        consumedAt: DateTime.utc(2026, 6, 23, 9, 30),
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(
+      entries: entries,
+      repo: repo,
+      alwaysUse24HourFormat: true,
+    ));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(OutlinedButton, '09:30'), findsOneWidget);
   });
 
   // -------------------------------------------------------------------------
