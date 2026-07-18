@@ -1976,9 +1976,22 @@ void main() {
         },
       );
 
-      test('rejects abvPercent <= 0', () async {
+      test(
+        'accepts abvPercent 0 (legal — e.g. a 0%-ABV alcoholic preset, same '
+        'as DrinksRepository.createPreset/logDrink) and persists it',
+        () async {
+          await repo.updateDrinkEntry(id: entryId, abvPercent: 0);
+
+          final row = await persisted();
+          expect(row.abvPercent, 0);
+          expect(row.volumeMl, beerPreset.volumeMl);
+          expect(row.name, beerPreset.name);
+        },
+      );
+
+      test('rejects a negative abvPercent', () async {
         expect(
-          () => repo.updateDrinkEntry(id: entryId, abvPercent: 0),
+          () => repo.updateDrinkEntry(id: entryId, abvPercent: -1),
           throwsA(isA<ArgumentError>()),
         );
       });

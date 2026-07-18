@@ -127,6 +127,16 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
   /// an edit that never touched price at all (data-model.md §Snapshot
   /// semantics: only a "direct, deliberate user edit" may change a field).
   late String _initialPriceText;
+
+  /// The ABV/name fields' initial text — compared against at save time so
+  /// an untouched field isn't unconditionally re-validated/resent. Without
+  /// this, an entry whose stored `abvPercent` is `0` (legal at preset
+  /// creation/log time — only `null` is rejected there) or whose stored
+  /// `name` is `null` (legal for a no-preset log) could never be saved
+  /// through this sheet again for *any* field, since a fresh `0`/empty
+  /// value fails this sheet's own stricter "must be present" validation.
+  late String _initialAbvText;
+  late String _initialNameText;
   String? _nameError;
   bool _submitting = false;
 
@@ -136,9 +146,11 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
   void initState() {
     super.initState();
     final entry = widget.entry;
-    _nameCtrl = TextEditingController(text: entry.name ?? '');
+    _initialNameText = entry.name ?? '';
+    _nameCtrl = TextEditingController(text: _initialNameText);
     _volumeCtrl = TextEditingController(text: entry.volumeMl.toString());
-    _abvCtrl = TextEditingController(text: entry.abvPercent?.toString() ?? '');
+    _initialAbvText = entry.abvPercent?.toString() ?? '';
+    _abvCtrl = TextEditingController(text: _initialAbvText);
     _initialPriceText = entry.priceMinor != null
         ? (entry.priceMinor! / 100).toStringAsFixed(2)
         : '';
@@ -182,8 +194,13 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
       return;
     }
 
+    // Only re-validate/send ABV if the field was actually touched — an
+    // entry whose stored abvPercent is 0 (legal at preset creation/log
+    // time) must still round-trip through unrelated edits (volume/price/
+    // time) without being rejected by this sheet's stricter "> 0" rule.
     double? abv;
-    if (_isAlcoholic) {
+    final abvTouched = _isAlcoholic && _abvCtrl.text.trim() != _initialAbvText;
+    if (abvTouched) {
       abv = double.tryParse(_abvCtrl.text.trim());
       if (abv == null || abv <= 0) {
         _showError('ABV must be greater than 0%');
@@ -191,7 +208,11 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
       }
     }
 
-    if (widget.showName && _nameError != null) return;
+    // Same reasoning as ABV above: an entry with no stored name (logged
+    // without a preset) must still round-trip through unrelated edits
+    // without being rejected by "Name is required".
+    final nameTouched = widget.showName && _nameCtrl.text != _initialNameText;
+    if (nameTouched && _nameError != null) return;
 
     // Only send a price change if the field was actually touched — this
     // field is money-only, so an entry priced in tokens renders it blank;
@@ -223,7 +244,7 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
     try {
       await widget.onSave(
         volumeMl: volume,
-        name: widget.showName ? _nameCtrl.text : null,
+        name: nameTouched ? _nameCtrl.text : null,
         abvPercent: abv,
         priceMinor: priceMinor,
         currency: currency,
@@ -470,8 +491,13 @@ Future<DateTime?> _pickFreeDateTime(
   );
   if (time == null) return null;
 
-  final result =
-      DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  final result = DateTime(
+    date.year,
+    date.month,
+    date.day,
+    time.hour,
+    time.minute,
+  );
   // The date picker only constrains the calendar day — the time-of-day
   // picker can still push the combined instant outside [first, last] (e.g.
   // picking `last`'s calendar day but a time-of-day later than "now").

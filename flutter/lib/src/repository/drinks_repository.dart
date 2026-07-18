@@ -799,10 +799,13 @@ class DrinksRepository {
   /// `partySessionId`-attached rows).
   ///
   /// Throws [ArgumentError] if [volumeMl] is provided and `< 1`, if
-  /// [abvPercent] is provided and `<= 0`, if [name] fails
-  /// [validatePresetName], or if [priceMinor] is present with a null value
-  /// but [currency] is absent (or vice versa) — clearing the price requires
-  /// clearing both together.
+  /// [abvPercent] is provided and `< 0` (0 is a legal ABV — e.g. a
+  /// declared-alcoholic-but-0%-ABV preset — matching [createPreset]'s and
+  /// the log sheet's own advanced-editor validation, so an entry logged
+  /// from such a preset can still round-trip through this method), if
+  /// [name] fails [validatePresetName], or if [priceMinor] is present with
+  /// a null value but [currency] is absent (or vice versa) — clearing the
+  /// price requires clearing both together.
   Future<void> updateDrinkEntry({
     required String id,
     int? volumeMl,
@@ -815,8 +818,8 @@ class DrinksRepository {
     if (volumeMl != null && volumeMl < 1) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'must be ≥ 1 ml');
     }
-    if (abvPercent != null && abvPercent <= 0) {
-      throw ArgumentError.value(abvPercent, 'abvPercent', 'must be > 0');
+    if (abvPercent != null && abvPercent < 0) {
+      throw ArgumentError.value(abvPercent, 'abvPercent', 'must be >= 0');
     }
     var normalizedName = name;
     if (name != null) {

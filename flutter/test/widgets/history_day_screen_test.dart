@@ -777,4 +777,114 @@ void main() {
       expect(call.currency, const Optional.value('EUR'));
     },
   );
+
+  // -------------------------------------------------------------------------
+  // 7. Touch-gating regression (PR #91 fix): a stored abvPercent of 0 or a
+  //    null name are legal stored values (accepted at preset-creation/log
+  //    time — engineering/decisions/design-system.md's ABV rule only rejects
+  //    null/negative; data-model.md's username/name rule only rejects an
+  //    absent name at creation) but previously could never round-trip
+  //    through this sheet again for ANY field, since ABV/name were always
+  //    re-validated/resent even when untouched, and this sheet's own
+  //    stricter ">0"/"non-empty" save-validation rejected them.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'editing only volume on an alcoholic entry with stored abvPercent 0 '
+    'succeeds and does not resend abvPercent (untouched field sent as '
+    'null, not re-validated/resent)',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entry = _entry(
+        id: 'e-zero-abv',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        name: 'Zero-ABV Beer',
+        abvPercent: 0,
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      // Declaration order in EntryEditSheet.build: name, volume, abv, price.
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(4));
+      expect(
+        tester.widget<TextField>(textFields.at(2)).controller!.text,
+        '0.0',
+      );
+
+      // Touch only volume — ABV/name are left exactly as pre-filled.
+      await tester.enterText(textFields.at(1), '500');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-zero-abv');
+      expect(call.volumeMl, 500);
+      // Untouched — must be sent as null ("no change"), not resent as 0
+      // (which would pass) or rejected by the sheet's own ">0" validation
+      // (the bug this test guards against: previously this entry could
+      // never be saved through this sheet at all).
+      expect(call.abvPercent, isNull);
+      expect(call.name, isNull);
+    },
+  );
+
+  testWidgets(
+    'editing only volume on an entry with a null name (S3, showName: '
+    'true) succeeds and does not resend name (untouched field sent as '
+    'null, not re-validated/resent as empty string)',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entry = _entry(
+        id: 'e-no-name',
+        beverageType: BeverageType.water,
+        volumeMl: 250,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      // Non-alcoholic: 3 fields (name, volume, price) — no ABV.
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(3));
+      expect(tester.widget<TextField>(textFields.at(0)).controller!.text, '');
+
+      // Touch only volume — name is left exactly as pre-filled (empty).
+      await tester.enterText(textFields.at(1), '400');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-no-name');
+      expect(call.volumeMl, 400);
+      // Untouched — must be sent as null ("no change"), not resent as ''
+      // (which would be rejected by the sheet's own "Name is required"
+      // validation — the bug this test guards against).
+      expect(call.name, isNull);
+    },
+  );
 }
