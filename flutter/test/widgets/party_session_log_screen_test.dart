@@ -110,14 +110,14 @@ UserProfile _makeProfile() {
   );
 }
 
-UserPreferences _makePrefs() {
+UserPreferences _makePrefs({String currency = 'EUR'}) {
   return UserPreferences(
     id: kUserPreferencesId,
     username: 'tester',
     dailyGoalMl: 2000,
     dayBoundaryHour: 5,
     units: 'metric',
-    currency: 'EUR',
+    currency: currency,
     reminderEnabled: false,
     reminderStartHour: 8,
     reminderEndHour: 22,
@@ -201,6 +201,7 @@ Widget _buildScreen({
   DateTime? now,
   SessionDaySummary? endedSummary,
   bool alwaysUse24HourFormat = false,
+  String prefsCurrency = 'EUR',
   required _FakePartySessionRepo partyRepo,
   required _FakeDrinksRepo drinksRepo,
 }) {
@@ -217,7 +218,7 @@ Widget _buildScreen({
       partySessionMealsProvider.overrideWith((ref, id) => Stream.value(meals)),
       userProfileProvider.overrideWith((_) => Stream.value(profile)),
       userPreferencesProvider.overrideWith(
-        (_) => Stream.value(_makePrefs()),
+        (_) => Stream.value(_makePrefs(currency: prefsCurrency)),
       ),
       nowTickerProvider
           .overrideWith((_) => Stream.value(now ?? DateTime.now())),
@@ -549,6 +550,54 @@ void main() {
         expect(call.volumeMl, 500);
         expect(call.priceMinor, const Optional<int?>.absent());
         expect(call.currency, const Optional<String?>.absent());
+      },
+    );
+
+    testWidgets(
+      'setting a first-time price on an entry logged with no price/currency '
+      "falls back to the user's preferred currency (defaultCurrency), not "
+      "a hardcoded 'EUR'",
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entry = _alcoholicEntry(
+          id: 'beer-1',
+          consumedAt: startedAt,
+        );
+        final repo = _FakePartySessionRepo();
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: [entry],
+            profile: _makeProfile(),
+            now: startedAt,
+            prefsCurrency: 'USD',
+            partyRepo: repo,
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(ListTile));
+        await tester.pumpAndSettle();
+
+        final textFields = find.byType(TextField);
+        await tester.enterText(textFields.at(2), '6.00');
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateAlcoholicEntryCalls, hasLength(1));
+        final call = repo.updateAlcoholicEntryCalls.single;
+        expect(call.priceMinor, const Optional.value(600));
+        expect(call.currency, const Optional.value('USD'));
       },
     );
 

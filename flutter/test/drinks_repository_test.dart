@@ -612,24 +612,26 @@ void main() {
       );
     });
 
-    test('iconKey: null (default) leaves the existing iconKey untouched',
-        () async {
-      // Source: updatePreset() docstring — "Only fields with a present
-      // Optional are written; omitted fields retain their current values."
-      // iconKey is a plain nullable String (not Optional), so null means
-      // "leave unchanged" and must not be validated against kDrinkIconKeys.
-      final id = await _createUserPreset(
-        repo,
-        name: 'My Water',
-        iconKey: 'glass',
-      );
+    test(
+      'iconKey: null (default) leaves the existing iconKey untouched',
+      () async {
+        // Source: updatePreset() docstring — "Only fields with a present
+        // Optional are written; omitted fields retain their current values."
+        // iconKey is a plain nullable String (not Optional), so null means
+        // "leave unchanged" and must not be validated against kDrinkIconKeys.
+        final id = await _createUserPreset(
+          repo,
+          name: 'My Water',
+          iconKey: 'glass',
+        );
 
-      await repo.updatePreset(id: id, name: 'Renamed Water');
+        await repo.updatePreset(id: id, name: 'Renamed Water');
 
-      final presets = await repo.watchAllPresets().first;
-      final updated = presets.firstWhere((p) => p.id == id);
-      expect(updated.iconKey, 'glass');
-    });
+        final presets = await repo.watchAllPresets().first;
+        final updated = presets.firstWhere((p) => p.id == id);
+        expect(updated.iconKey, 'glass');
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -740,10 +742,7 @@ void main() {
       final presets = await repo.watchAllPresets().first;
       final seeded = presets.firstWhere((p) => !p.isUserCreated);
 
-      expect(
-        () => repo.deletePreset(seeded.id),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => repo.deletePreset(seeded.id), throwsA(isA<StateError>()));
 
       // The seeded default is untouched: still present in watchAllPresets()
       // and its raw row has no deletedAt.
@@ -798,12 +797,21 @@ void main() {
         addTearDown(db.close);
         final repo = DrinksRepository(db);
 
-        final idA =
-            await _createUserPreset(repo, name: 'Preset A', sortOrder: 1000);
-        final idB =
-            await _createUserPreset(repo, name: 'Preset B', sortOrder: 1001);
-        final idC =
-            await _createUserPreset(repo, name: 'Preset C', sortOrder: 1002);
+        final idA = await _createUserPreset(
+          repo,
+          name: 'Preset A',
+          sortOrder: 1000,
+        );
+        final idB = await _createUserPreset(
+          repo,
+          name: 'Preset B',
+          sortOrder: 1001,
+        );
+        final idC = await _createUserPreset(
+          repo,
+          name: 'Preset C',
+          sortOrder: 1002,
+        );
 
         await repo.deletePreset(idB);
 
@@ -930,19 +938,16 @@ void main() {
       );
     });
 
-    test(
-      'throws StateError when orderedIds contains an unknown id',
-      () async {
-        final db = _memDb();
-        addTearDown(db.close);
-        final repo = DrinksRepository(db);
+    test('throws StateError when orderedIds contains an unknown id', () async {
+      final db = _memDb();
+      addTearDown(db.close);
+      final repo = DrinksRepository(db);
 
-        await expectLater(
-          () => repo.reorderPresets(['unknown-id-that-does-not-exist']),
-          throwsA(isA<StateError>()),
-        );
-      },
-    );
+      await expectLater(
+        () => repo.reorderPresets(['unknown-id-that-does-not-exist']),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1038,95 +1043,90 @@ void main() {
     );
 
     test(
-      'Optional.value(null) priceMinor/currency logs this entry with no '
-      'price, without touching the preset\'s stored price (S2 Advanced '
-      '"Confirm" — entry-only, preset unchanged)',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Priced Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          abvPercent: 5.0,
-          regularPriceMinor: 450,
-          regularCurrency: 'EUR',
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          sortOrder: 99,
-        );
+        'Optional.value(null) priceMinor/currency logs this entry with no '
+        'price, without touching the preset\'s stored price (S2 Advanced '
+        '"Confirm" — entry-only, preset unchanged)', () async {
+      final preset = await repo.createPreset(
+        name: 'Priced Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        regularPriceMinor: 450,
+        regularCurrency: 'EUR',
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        sortOrder: 99,
+      );
 
-        await repo.logDrink(
-          preset: preset,
-          priceMinor: const Optional.value(null),
-          currency: const Optional.value(null),
-        );
+      await repo.logDrink(
+        preset: preset,
+        priceMinor: const Optional.value(null),
+        currency: const Optional.value(null),
+      );
 
-        final entry = await loggedRow();
-        expect(entry.priceMinor, isNull);
-        expect(entry.currency, isNull);
+      final entry = await loggedRow();
+      expect(entry.priceMinor, isNull);
+      expect(entry.currency, isNull);
 
-        // The preset's own stored price must be untouched.
-        final row = await db.getPresetById(preset.id);
-        expect(row!.regularPriceMinor, 450);
-        expect(row.regularCurrency, 'EUR');
-      },
-    );
+      // The preset's own stored price must be untouched.
+      final row = await db.getPresetById(preset.id);
+      expect(row!.regularPriceMinor, 450);
+      expect(row.regularCurrency, 'EUR');
+    });
 
     test(
-      'Optional.value with an explicit priceMinor/currency overrides the '
-      "preset's stored price for this entry only",
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Priced Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          abvPercent: 5.0,
-          regularPriceMinor: 450,
-          regularCurrency: 'EUR',
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          sortOrder: 99,
-        );
+        'Optional.value with an explicit priceMinor/currency overrides the '
+        "preset's stored price for this entry only", () async {
+      final preset = await repo.createPreset(
+        name: 'Priced Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        regularPriceMinor: 450,
+        regularCurrency: 'EUR',
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        sortOrder: 99,
+      );
 
-        await repo.logDrink(
-          preset: preset,
-          priceMinor: const Optional.value(999),
-          currency: const Optional.value('USD'),
-        );
+      await repo.logDrink(
+        preset: preset,
+        priceMinor: const Optional.value(999),
+        currency: const Optional.value('USD'),
+      );
 
-        final entry = await loggedRow();
-        expect(entry.priceMinor, 999);
-        expect(entry.currency, 'USD');
-      },
-    );
+      final entry = await loggedRow();
+      expect(entry.priceMinor, 999);
+      expect(entry.currency, 'USD');
+    });
 
     test(
-      'effective priceMinor non-null with effective currency null throws '
-      'ArgumentError (data-model.md: currency required when priceMinor is '
-      'set)',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Free Water',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
+        'effective priceMinor non-null with effective currency null throws '
+        'ArgumentError (data-model.md: currency required when priceMinor is '
+        'set)', () async {
+      final preset = await repo.createPreset(
+        name: 'Free Water',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
 
-        expect(
-          () => repo.logDrink(
-            preset: preset,
-            priceMinor: const Optional.value(300),
-          ),
-          throwsA(isA<ArgumentError>()),
-        );
-      },
-    );
+      expect(
+        () => repo.logDrink(
+          preset: preset,
+          priceMinor: const Optional.value(300),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
 
     test('name override is written to the logged entry', () async {
       final presetId = await _createUserPreset(repo, name: 'Original Name');
-      final preset = (await repo.watchAllPresets().first)
-          .firstWhere((p) => p.id == presetId);
+      final preset = (await repo.watchAllPresets().first).firstWhere(
+        (p) => p.id == presetId,
+      );
 
       await repo.logDrink(preset: preset, name: 'Entry-only Name');
 
@@ -1135,106 +1135,98 @@ void main() {
     });
 
     test(
-      'name override is NFC-normalized before persisting, matching '
-      'createPreset/updatePreset (username.dart normalizeNfc doc: '
-      '"visually identical inputs produce the same stored bytes")',
-      () async {
-        final presetId = await _createUserPreset(repo, name: 'Original Name');
-        final preset = (await repo.watchAllPresets().first)
-            .firstWhere((p) => p.id == presetId);
+        'name override is NFC-normalized before persisting, matching '
+        'createPreset/updatePreset (username.dart normalizeNfc doc: '
+        '"visually identical inputs produce the same stored bytes")', () async {
+      final presetId = await _createUserPreset(repo, name: 'Original Name');
+      final preset = (await repo.watchAllPresets().first).firstWhere(
+        (p) => p.id == presetId,
+      );
 
-        // NFD form of 'café' — 'e' followed by a combining acute accent
-        // (U+0301) instead of the precomposed 'é' (U+00E9).
-        const nfdName = 'Café Latte';
-        await repo.logDrink(preset: preset, name: nfdName);
+      // NFD form of 'café' — 'e' followed by a combining acute accent
+      // (U+0301) instead of the precomposed 'é' (U+00E9).
+      const nfdName = 'Café Latte';
+      await repo.logDrink(preset: preset, name: nfdName);
 
-        final entry = await loggedRow();
-        expect(entry.name, normalizeNfc(nfdName));
-        expect(entry.name, isNot(equals(nfdName)));
-      },
-    );
-
-    test(
-      'name override failing validatePresetName throws ArgumentError, same '
-      'as createPreset/updatePreset',
-      () async {
-        final presetId = await _createUserPreset(repo, name: 'Original Name');
-        final preset = (await repo.watchAllPresets().first)
-            .firstWhere((p) => p.id == presetId);
-
-        expect(
-          () => repo.logDrink(preset: preset, name: 'ab'),
-          throwsA(isA<ArgumentError>()),
-        );
-      },
-    );
+      final entry = await loggedRow();
+      expect(entry.name, normalizeNfc(nfdName));
+      expect(entry.name, isNot(equals(nfdName)));
+    });
 
     test(
-      'logDrink sets presetId to the logged preset\'s id (issue #78 — feeds '
-      'watchPresetUsageStats\' last-used/30-day-count aggregation behind '
-      'the Recently-used/Most-used sort modes)',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Sort Mode Preset',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
+        'name override failing validatePresetName throws ArgumentError, same '
+        'as createPreset/updatePreset', () async {
+      final presetId = await _createUserPreset(repo, name: 'Original Name');
+      final preset = (await repo.watchAllPresets().first).firstWhere(
+        (p) => p.id == presetId,
+      );
 
-        await repo.logDrink(preset: preset);
-
-        final entry = await loggedRow();
-        expect(entry.presetId, preset.id);
-      },
-    );
+      expect(
+        () => repo.logDrink(preset: preset, name: 'ab'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
 
     test(
-      'logDrink returns a freshly generated id when none is supplied, and '
-      'that id matches the written row (S2 quick-tap toast needs the id '
-      'back to wire an Undo action)',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Undo-able Drink',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
+        'logDrink sets presetId to the logged preset\'s id (issue #78 — feeds '
+        'watchPresetUsageStats\' last-used/30-day-count aggregation behind '
+        'the Recently-used/Most-used sort modes)', () async {
+      final preset = await repo.createPreset(
+        name: 'Sort Mode Preset',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
 
-        final returnedId = await repo.logDrink(preset: preset);
+      await repo.logDrink(preset: preset);
 
-        final entry = await loggedRow();
-        expect(returnedId, entry.id);
-      },
-    );
+      final entry = await loggedRow();
+      expect(entry.presetId, preset.id);
+    });
 
     test(
-      'logDrink writes under a caller-supplied id instead of generating one '
-      '— S2\'s "pop before the write settles" flow needs the id known '
-      'synchronously, before this future resolves',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Caller-Id Drink',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
+        'logDrink returns a freshly generated id when none is supplied, and '
+        'that id matches the written row (S2 quick-tap toast needs the id '
+        'back to wire an Undo action)', () async {
+      final preset = await repo.createPreset(
+        name: 'Undo-able Drink',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
 
-        final returnedId = await repo.logDrink(
-          preset: preset,
-          id: 'caller-supplied-id',
-        );
+      final returnedId = await repo.logDrink(preset: preset);
 
-        expect(returnedId, 'caller-supplied-id');
-        final entry = await loggedRow();
-        expect(entry.id, 'caller-supplied-id');
-      },
-    );
+      final entry = await loggedRow();
+      expect(returnedId, entry.id);
+    });
+
+    test(
+        'logDrink writes under a caller-supplied id instead of generating one '
+        '— S2\'s "pop before the write settles" flow needs the id known '
+        'synchronously, before this future resolves', () async {
+      final preset = await repo.createPreset(
+        name: 'Caller-Id Drink',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
+
+      final returnedId = await repo.logDrink(
+        preset: preset,
+        id: 'caller-supplied-id',
+      );
+
+      expect(returnedId, 'caller-supplied-id');
+      final entry = await loggedRow();
+      expect(entry.id, 'caller-supplied-id');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1258,98 +1250,89 @@ void main() {
     });
 
     test(
-      'lastUsedAt is the all-time max consumedAt per preset; count30d only '
-      'counts entries within the trailing 30-day window ending "now" '
-      '(inclusive of both ends) — Source: drinks_repository.dart '
-      'watchPresetUsageStats doc comment',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Usage Preset',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
-        final now = DateTime.utc(2026, 7, 16, 12, 0);
+        'lastUsedAt is the all-time max consumedAt per preset; count30d only '
+        'counts entries within the trailing 30-day window ending "now" '
+        '(inclusive of both ends) — Source: drinks_repository.dart '
+        'watchPresetUsageStats doc comment', () async {
+      final preset = await repo.createPreset(
+        name: 'Usage Preset',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
+      final now = DateTime.utc(2026, 7, 16, 12, 0);
 
-        // Inside the 30-day window, and the most recent — must set both
-        // lastUsedAt and count toward count30d.
-        final recent = now.subtract(const Duration(days: 5));
-        await repo.logDrink(preset: preset, consumedAt: recent);
+      // Inside the 30-day window, and the most recent — must set both
+      // lastUsedAt and count toward count30d.
+      final recent = now.subtract(const Duration(days: 5));
+      await repo.logDrink(preset: preset, consumedAt: recent);
 
-        // Deliberately older than 30 days — must NOT count toward count30d,
-        // and must NOT win lastUsedAt over the more recent entry above.
-        final stale = now.subtract(const Duration(days: 45));
-        await repo.logDrink(preset: preset, consumedAt: stale);
+      // Deliberately older than 30 days — must NOT count toward count30d,
+      // and must NOT win lastUsedAt over the more recent entry above.
+      final stale = now.subtract(const Duration(days: 45));
+      await repo.logDrink(preset: preset, consumedAt: stale);
 
-        final stats = await repo.watchPresetUsageStats(now: now).first;
+      final stats = await repo.watchPresetUsageStats(now: now).first;
 
-        expect(stats.containsKey(preset.id), isTrue);
-        expect(
-          stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(recent),
-          isTrue,
-          reason: 'lastUsedAt must be the all-time max consumedAt, not just '
-              'the max within the 30-day count window',
-        );
-        expect(
-          stats[preset.id]!.count30d,
-          1,
-          reason: 'the 45-day-old entry must not count toward count30d',
-        );
-      },
-    );
+      expect(stats.containsKey(preset.id), isTrue);
+      expect(
+        stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(recent),
+        isTrue,
+        reason: 'lastUsedAt must be the all-time max consumedAt, not just '
+            'the max within the 30-day count window',
+      );
+      expect(
+        stats[preset.id]!.count30d,
+        1,
+        reason: 'the 45-day-old entry must not count toward count30d',
+      );
+    });
 
     test(
-      'a backdated entry that is still the most recent updates lastUsedAt '
-      'even though it falls outside the count30d window',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Backdated Preset',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
-        final now = DateTime.utc(2026, 7, 16, 12, 0);
-        // The ONLY entry for this preset — 40 days ago, outside the window.
-        final backdated = now.subtract(const Duration(days: 40));
-        await repo.logDrink(preset: preset, consumedAt: backdated);
+        'a backdated entry that is still the most recent updates lastUsedAt '
+        'even though it falls outside the count30d window', () async {
+      final preset = await repo.createPreset(
+        name: 'Backdated Preset',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
+      final now = DateTime.utc(2026, 7, 16, 12, 0);
+      // The ONLY entry for this preset — 40 days ago, outside the window.
+      final backdated = now.subtract(const Duration(days: 40));
+      await repo.logDrink(preset: preset, consumedAt: backdated);
 
-        final stats = await repo.watchPresetUsageStats(now: now).first;
+      final stats = await repo.watchPresetUsageStats(now: now).first;
 
-        expect(
-          stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(backdated),
-          isTrue,
-        );
-        expect(stats[preset.id]!.count30d, 0);
-      },
-    );
+      expect(stats[preset.id]!.lastUsedAt!.isAtSameMomentAs(backdated), isTrue);
+      expect(stats[preset.id]!.count30d, 0);
+    });
 
     test(
-      'count30d window is inclusive of both ends: consumedAt exactly at '
-      'now-30d and exactly at now both count',
-      () async {
-        final preset = await repo.createPreset(
-          name: 'Boundary Preset',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 99,
-        );
-        final now = DateTime.utc(2026, 7, 16, 12, 0);
-        final windowStart = now.subtract(const Duration(days: 30));
+        'count30d window is inclusive of both ends: consumedAt exactly at '
+        'now-30d and exactly at now both count', () async {
+      final preset = await repo.createPreset(
+        name: 'Boundary Preset',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 99,
+      );
+      final now = DateTime.utc(2026, 7, 16, 12, 0);
+      final windowStart = now.subtract(const Duration(days: 30));
 
-        await repo.logDrink(preset: preset, consumedAt: windowStart);
-        await repo.logDrink(preset: preset, consumedAt: now);
+      await repo.logDrink(preset: preset, consumedAt: windowStart);
+      await repo.logDrink(preset: preset, consumedAt: now);
 
-        final stats = await repo.watchPresetUsageStats(now: now).first;
+      final stats = await repo.watchPresetUsageStats(now: now).first;
 
-        expect(stats[preset.id]!.count30d, 2);
-      },
-    );
+      expect(stats[preset.id]!.count30d, 2);
+    });
 
     test(
       'a soft-deleted entry does not appear in usage stats at all',
@@ -1383,58 +1366,56 @@ void main() {
     );
 
     test(
-      'stats for two different presets are tracked independently — a heavy '
-      'user of preset A does not pollute preset B\'s stats',
-      () async {
-        final presetA = await repo.createPreset(
-          name: 'Preset A',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 1,
-        );
-        final presetB = await repo.createPreset(
-          name: 'Preset B',
-          beverageType: BeverageType.water,
-          volumeMl: 300,
-          iconKey: 'glass',
-          iconColor: '#3b82f6',
-          sortOrder: 2,
-        );
-        final now = DateTime.utc(2026, 7, 16, 12, 0);
+        'stats for two different presets are tracked independently — a heavy '
+        'user of preset A does not pollute preset B\'s stats', () async {
+      final presetA = await repo.createPreset(
+        name: 'Preset A',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 1,
+      );
+      final presetB = await repo.createPreset(
+        name: 'Preset B',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        iconKey: 'glass',
+        iconColor: '#3b82f6',
+        sortOrder: 2,
+      );
+      final now = DateTime.utc(2026, 7, 16, 12, 0);
 
-        // Preset A: logged three times in the last week.
-        for (var i = 1; i <= 3; i++) {
-          await repo.logDrink(
-            preset: presetA,
-            consumedAt: now.subtract(Duration(days: i)),
-          );
-        }
-        // Preset B: logged once, longer ago.
+      // Preset A: logged three times in the last week.
+      for (var i = 1; i <= 3; i++) {
         await repo.logDrink(
-          preset: presetB,
-          consumedAt: now.subtract(const Duration(days: 10)),
+          preset: presetA,
+          consumedAt: now.subtract(Duration(days: i)),
         );
+      }
+      // Preset B: logged once, longer ago.
+      await repo.logDrink(
+        preset: presetB,
+        consumedAt: now.subtract(const Duration(days: 10)),
+      );
 
-        final stats = await repo.watchPresetUsageStats(now: now).first;
+      final stats = await repo.watchPresetUsageStats(now: now).first;
 
-        expect(stats[presetA.id]!.count30d, 3);
-        expect(stats[presetB.id]!.count30d, 1);
-        expect(
-          stats[presetA.id]!.lastUsedAt!.isAtSameMomentAs(
-                now.subtract(const Duration(days: 1)),
-              ),
-          isTrue,
-        );
-        expect(
-          stats[presetB.id]!.lastUsedAt!.isAtSameMomentAs(
-                now.subtract(const Duration(days: 10)),
-              ),
-          isTrue,
-        );
-      },
-    );
+      expect(stats[presetA.id]!.count30d, 3);
+      expect(stats[presetB.id]!.count30d, 1);
+      expect(
+        stats[presetA.id]!.lastUsedAt!.isAtSameMomentAs(
+              now.subtract(const Duration(days: 1)),
+            ),
+        isTrue,
+      );
+      expect(
+        stats[presetB.id]!.lastUsedAt!.isAtSameMomentAs(
+              now.subtract(const Duration(days: 10)),
+            ),
+        isTrue,
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1910,214 +1891,210 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group(
-    'DrinksRepository.updateDrinkEntry — name/ABV/price (S3 exposes name; '
-    'S6 does not, but the repository itself is field-agnostic — each '
-    "screen's UI decides which fields it exposes)",
-    () {
-      late AppDatabase db;
-      late DrinksRepository repo;
-      late String entryId;
+      'DrinksRepository.updateDrinkEntry — name/ABV/price (S3 exposes name; '
+      'S6 does not, but the repository itself is field-agnostic — each '
+      "screen's UI decides which fields it exposes)", () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+    late String entryId;
 
-      const beerPreset = DrinkPreset(
-        id: 'test-beer-preset',
-        name: 'Test Beer',
-        beverageType: BeverageType.beer,
-        volumeMl: 330,
-        abvPercent: 5.0,
-        iconKey: 'beer_glass',
-        iconColor: '#d97706',
-        isUserCreated: false,
-        isHidden: false,
-        sortOrder: 99,
+    const beerPreset = DrinkPreset(
+      id: 'test-beer-preset',
+      name: 'Test Beer',
+      beverageType: BeverageType.beer,
+      volumeMl: 330,
+      abvPercent: 5.0,
+      iconKey: 'beer_glass',
+      iconColor: '#d97706',
+      isUserCreated: false,
+      isHidden: false,
+      sortOrder: 99,
+    );
+
+    setUp(() async {
+      db = _memDb();
+      repo = DrinksRepository(db);
+      entryId = await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
       );
+    });
 
-      setUp(() async {
-        db = _memDb();
-        repo = DrinksRepository(db);
-        entryId = await repo.logDrink(
-          preset: beerPreset,
-          consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
+    tearDown(() => db.close());
+
+    Future<DrinkEntryRow> persisted() async =>
+        (await db.select(db.drinkEntries).get()).singleWhere(
+          (e) => e.id == entryId,
         );
-      });
 
-      tearDown(() => db.close());
-
-      Future<DrinkEntryRow> persisted() async =>
-          (await db.select(db.drinkEntries).get())
-              .singleWhere((e) => e.id == entryId);
-
-      test(
+    test(
         'updating abvPercent independently persists and leaves volume/name '
-        'untouched',
-        () async {
-          await repo.updateDrinkEntry(id: entryId, abvPercent: 8.5);
+        'untouched', () async {
+      await repo.updateDrinkEntry(id: entryId, abvPercent: 8.5);
 
-          final row = await persisted();
-          expect(row.abvPercent, 8.5);
-          expect(row.volumeMl, beerPreset.volumeMl);
-          expect(row.name, beerPreset.name);
-        },
-      );
+      final row = await persisted();
+      expect(row.abvPercent, 8.5);
+      expect(row.volumeMl, beerPreset.volumeMl);
+      expect(row.name, beerPreset.name);
+    });
 
-      test(
+    test(
         'updating name independently persists (NFC-normalized) and leaves '
-        'volume/abv untouched',
-        () async {
-          // NFD form of 'café' — same convention as party_session_repository
-          // _test.dart's equivalent NFC test.
-          const nfdName = 'Cafe\u{0301} Latte';
-          await repo.updateDrinkEntry(id: entryId, name: nfdName);
+        'volume/abv untouched', () async {
+      // NFD form of 'café' — same convention as party_session_repository
+      // _test.dart's equivalent NFC test.
+      const nfdName = 'Cafe\u{0301} Latte';
+      await repo.updateDrinkEntry(id: entryId, name: nfdName);
 
-          final row = await persisted();
-          expect(row.name, normalizeNfc(nfdName));
-          expect(row.name, isNot(equals(nfdName)));
-          expect(row.volumeMl, beerPreset.volumeMl);
-          expect(row.abvPercent, beerPreset.abvPercent);
-        },
-      );
+      final row = await persisted();
+      expect(row.name, normalizeNfc(nfdName));
+      expect(row.name, isNot(equals(nfdName)));
+      expect(row.volumeMl, beerPreset.volumeMl);
+      expect(row.abvPercent, beerPreset.abvPercent);
+    });
 
-      test(
+    test(
         'accepts abvPercent 0 (legal — e.g. a 0%-ABV alcoholic preset, same '
-        'as DrinksRepository.createPreset/logDrink) and persists it',
-        () async {
-          await repo.updateDrinkEntry(id: entryId, abvPercent: 0);
+        'as DrinksRepository.createPreset/logDrink) and persists it', () async {
+      await repo.updateDrinkEntry(id: entryId, abvPercent: 0);
 
-          final row = await persisted();
-          expect(row.abvPercent, 0);
-          expect(row.volumeMl, beerPreset.volumeMl);
-          expect(row.name, beerPreset.name);
-        },
+      final row = await persisted();
+      expect(row.abvPercent, 0);
+      expect(row.volumeMl, beerPreset.volumeMl);
+      expect(row.name, beerPreset.name);
+    });
+
+    test('rejects a negative abvPercent', () async {
+      expect(
+        () => repo.updateDrinkEntry(id: entryId, abvPercent: -1),
+        throwsA(isA<ArgumentError>()),
       );
+    });
 
-      test('rejects a negative abvPercent', () async {
-        expect(
-          () => repo.updateDrinkEntry(id: entryId, abvPercent: -1),
-          throwsA(isA<ArgumentError>()),
-        );
-      });
+    test('rejects an invalid name', () async {
+      expect(
+        () => repo.updateDrinkEntry(id: entryId, name: 'ab'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
 
-      test('rejects an invalid name', () async {
-        expect(
-          () => repo.updateDrinkEntry(id: entryId, name: 'ab'),
-          throwsA(isA<ArgumentError>()),
-        );
-      });
-
-      test(
+    test(
         'setting priceMinor+currency sets a money price AND clears any '
         'pre-existing token price (data-model.md §DrinkEntry: money/tokens '
-        'are mutually exclusive)',
-        () async {
-          // DrinksRepository.logDrink has no token-price param (tokens are
-          // Party-Session-specific — PartySessionRepository.logAlcoholicDrink
-          // only); write one directly via the DAO to simulate an entry that
-          // was absorbed from a session and now has a lingering token price.
-          final tokenEntryId = await repo.logDrink(
-            preset: beerPreset,
-            consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
-          );
-          await db.updateDrinkEntryFields(
-            tokenEntryId,
-            const DrinkEntriesCompanion(
-              priceTokens: Value(2),
-              tokenValueMinor: Value(150),
-              tokenValueCurrency: Value('EUR'),
-            ),
-          );
-
-          await repo.updateDrinkEntry(
-            id: tokenEntryId,
-            priceMinor: const Optional.value(1234),
-            currency: const Optional.value('EUR'),
-          );
-
-          final row = (await db.select(db.drinkEntries).get())
-              .singleWhere((e) => e.id == tokenEntryId);
-          expect(row.priceMinor, 1234);
-          expect(row.currency, 'EUR');
-          expect(row.priceTokens, isNull);
-          expect(row.tokenValueMinor, isNull);
-          expect(row.tokenValueCurrency, isNull);
-        },
+        'are mutually exclusive)', () async {
+      // DrinksRepository.logDrink has no token-price param (tokens are
+      // Party-Session-specific — PartySessionRepository.logAlcoholicDrink
+      // only); write one directly via the DAO to simulate an entry that
+      // was absorbed from a session and now has a lingering token price.
+      final tokenEntryId = await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime.utc(2026, 7, 10, 20, 0),
+      );
+      await db.updateDrinkEntryFields(
+        tokenEntryId,
+        const DrinkEntriesCompanion(
+          priceTokens: Value(2),
+          tokenValueMinor: Value(150),
+          tokenValueCurrency: Value('EUR'),
+        ),
       );
 
-      test(
+      await repo.updateDrinkEntry(
+        id: tokenEntryId,
+        priceMinor: const Optional.value(1234),
+        currency: const Optional.value('EUR'),
+      );
+
+      final row = (await db.select(db.drinkEntries).get()).singleWhere(
+        (e) => e.id == tokenEntryId,
+      );
+      expect(row.priceMinor, 1234);
+      expect(row.currency, 'EUR');
+      expect(row.priceTokens, isNull);
+      expect(row.tokenValueMinor, isNull);
+      expect(row.tokenValueCurrency, isNull);
+    });
+
+    test(
         'priceMinor: Optional.value(null), currency: Optional.value(null) '
-        'clears the price entirely',
-        () async {
-          await repo.updateDrinkEntry(
+        'clears the price entirely', () async {
+      await repo.updateDrinkEntry(
+        id: entryId,
+        priceMinor: const Optional.value(500),
+        currency: const Optional.value('EUR'),
+      );
+
+      await repo.updateDrinkEntry(
+        id: entryId,
+        priceMinor: const Optional.value(null),
+        currency: const Optional.value(null),
+      );
+
+      final row = await persisted();
+      expect(row.priceMinor, isNull);
+      expect(row.currency, isNull);
+    });
+
+    test(
+        'leaving priceMinor/currency at Optional.absent() (the default) '
+        "leaves the entry's existing price completely untouched", () async {
+      await repo.updateDrinkEntry(
+        id: entryId,
+        priceMinor: const Optional.value(777),
+        currency: const Optional.value('USD'),
+      );
+
+      await repo.updateDrinkEntry(id: entryId, volumeMl: 350);
+
+      final row = await persisted();
+      expect(row.priceMinor, 777);
+      expect(row.currency, 'USD');
+      expect(row.volumeMl, 350);
+    });
+
+    test(
+      'throws ArgumentError if priceMinor.isPresent != currency.isPresent',
+      () async {
+        expect(
+          () => repo.updateDrinkEntry(
             id: entryId,
             priceMinor: const Optional.value(500),
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(
+          () => repo.updateDrinkEntry(
+            id: entryId,
             currency: const Optional.value('EUR'),
-          );
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
 
-          await repo.updateDrinkEntry(
-            id: entryId,
-            priceMinor: const Optional.value(null),
-            currency: const Optional.value(null),
-          );
-
-          final row = await persisted();
-          expect(row.priceMinor, isNull);
-          expect(row.currency, isNull);
-        },
-      );
-
-      test(
-        'leaving priceMinor/currency at Optional.absent() (the default) '
-        "leaves the entry's existing price completely untouched",
-        () async {
-          await repo.updateDrinkEntry(
-            id: entryId,
-            priceMinor: const Optional.value(777),
-            currency: const Optional.value('USD'),
-          );
-
-          await repo.updateDrinkEntry(id: entryId, volumeMl: 350);
-
-          final row = await persisted();
-          expect(row.priceMinor, 777);
-          expect(row.currency, 'USD');
-          expect(row.volumeMl, 350);
-        },
-      );
-
-      test(
-        'throws ArgumentError if priceMinor.isPresent != currency.isPresent',
-        () async {
-          expect(
-            () => repo.updateDrinkEntry(
-              id: entryId,
-              priceMinor: const Optional.value(500),
-            ),
-            throwsA(isA<ArgumentError>()),
-          );
-          expect(
-            () => repo.updateDrinkEntry(
-              id: entryId,
-              currency: const Optional.value('EUR'),
-            ),
-            throwsA(isA<ArgumentError>()),
-          );
-        },
-      );
-
-      test(
+    test(
         'setting priceMinor sets manualPriceOverride, matching '
-        "PartySessionRepository.updateAlcoholicEntry's semantics",
-        () async {
-          await repo.updateDrinkEntry(
-            id: entryId,
-            priceMinor: const Optional.value(350),
-            currency: const Optional.value('EUR'),
-          );
-
-          final row = await persisted();
-          expect(row.manualPriceOverride, isTrue);
-        },
+        "PartySessionRepository.updateAlcoholicEntry's semantics", () async {
+      await repo.updateDrinkEntry(
+        id: entryId,
+        priceMinor: const Optional.value(350),
+        currency: const Optional.value('EUR'),
       );
-    },
-  );
+
+      final row = await persisted();
+      expect(row.manualPriceOverride, isTrue);
+    });
+
+    test(
+        'throws StateError when id does not match a live entry, matching '
+        "PartySessionRepository.updateAlcoholicEntry's and this file's own "
+        "updatePreset's not-found guard", () async {
+      expect(
+        () => repo.updateDrinkEntry(id: 'no-such-entry', volumeMl: 350),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // S6 — deleteDrinkEntry
@@ -2188,34 +2165,32 @@ void main() {
     });
 
     test(
-      'returns the max consumedAt across mixed alcoholic/non-alcoholic '
-      'entries — unlike the hydration-total queries, any type counts here '
-      '(notifications.md §Inactive-user silence: "most recent DrinkEntry", '
-      'not "most recent non-alcoholic DrinkEntry")',
-      () async {
-        const beerPreset = DrinkPreset(
-          id: 'test-beer-preset-latest',
-          name: 'Test Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 250,
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          isUserCreated: false,
-          isHidden: false,
-          sortOrder: 99,
-        );
+        'returns the max consumedAt across mixed alcoholic/non-alcoholic '
+        'entries — unlike the hydration-total queries, any type counts here '
+        '(notifications.md §Inactive-user silence: "most recent DrinkEntry", '
+        'not "most recent non-alcoholic DrinkEntry")', () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-latest',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 250,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
 
-        final earlier = DateTime(2026, 6, 20, 9, 0);
-        final latest = DateTime(2026, 6, 23, 18, 0); // the alcoholic one
+      final earlier = DateTime(2026, 6, 20, 9, 0);
+      final latest = DateTime(2026, 6, 23, 18, 0); // the alcoholic one
 
-        await repo.logDrink(preset: _waterPreset, consumedAt: earlier);
-        await repo.logDrink(preset: beerPreset, consumedAt: latest);
+      await repo.logDrink(preset: _waterPreset, consumedAt: earlier);
+      await repo.logDrink(preset: beerPreset, consumedAt: latest);
 
-        final result = await repo.getLatestDrinkConsumedAt();
-        expect(result, isNotNull);
-        expect(result!.isAtSameMomentAs(latest.toUtc()), isTrue);
-      },
-    );
+      final result = await repo.getLatestDrinkConsumedAt();
+      expect(result, isNotNull);
+      expect(result!.isAtSameMomentAs(latest.toUtc()), isTrue);
+    });
 
     test('ignores soft-deleted entries', () async {
       final earlier = DateTime(2026, 6, 20, 9, 0);
@@ -2226,9 +2201,9 @@ void main() {
 
       // Find and soft-delete the most recent entry.
       final entries = await db.select(db.drinkEntries).get();
-      final latestRow = entries.firstWhere((e) => e.consumedAt.isAtSameMomentAs(
-            latest.toUtc(),
-          ));
+      final latestRow = entries.firstWhere(
+        (e) => e.consumedAt.isAtSameMomentAs(latest.toUtc()),
+      );
       await repo.deleteDrinkEntry(latestRow.id);
 
       final result = await repo.getLatestDrinkConsumedAt();
@@ -2262,35 +2237,33 @@ void main() {
     });
 
     test(
-      'sums non-alcoholic intake within the day window, excludes alcoholic '
-      '(same filter as watchTodayTotalMl)',
-      () async {
-        const beerPreset = DrinkPreset(
-          id: 'test-beer-preset-total',
-          name: 'Test Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 250,
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          isUserCreated: false,
-          isHidden: false,
-          sortOrder: 99,
-        );
-        final now = DateTime(2026, 6, 23, 12, 0);
+        'sums non-alcoholic intake within the day window, excludes alcoholic '
+        '(same filter as watchTodayTotalMl)', () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-total',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 250,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+      final now = DateTime(2026, 6, 23, 12, 0);
 
-        await repo.logDrink(
-          preset: _waterPreset, // 300 ml, inside window
-          consumedAt: DateTime(2026, 6, 23, 8, 0),
-        );
-        await repo.logDrink(
-          preset: beerPreset, // excluded regardless of window
-          consumedAt: DateTime(2026, 6, 23, 9, 0),
-        );
+      await repo.logDrink(
+        preset: _waterPreset, // 300 ml, inside window
+        consumedAt: DateTime(2026, 6, 23, 8, 0),
+      );
+      await repo.logDrink(
+        preset: beerPreset, // excluded regardless of window
+        consumedAt: DateTime(2026, 6, 23, 9, 0),
+      );
 
-        final total = await repo.getTodayTotalMl(now: now, boundaryHour: 5);
-        expect(total, equals(300));
-      },
-    );
+      final total = await repo.getTodayTotalMl(now: now, boundaryHour: 5);
+      expect(total, equals(300));
+    });
 
     test(
       'respects boundaryHour — same day-window semantics as watchTodayTotalMl',
@@ -2338,45 +2311,43 @@ void main() {
     });
 
     test(
-      'counts today (partial data) as part of the ISO week — unlike '
-      'watch7DayDaysOnGoal, which excludes today',
-      () async {
-        // ISO week containing `now` (Wed 2026-01-14) is Mon 2026-01-12 –
-        // Sun 2026-01-18 (isoWeekWindow). Source: DrinksRepository
-        // .isoWeekDaysOnGoal docstring — "includes today".
-        final now = DateTime(2026, 1, 14, 14, 0);
+        'counts today (partial data) as part of the ISO week — unlike '
+        'watch7DayDaysOnGoal, which excludes today', () async {
+      // ISO week containing `now` (Wed 2026-01-14) is Mon 2026-01-12 –
+      // Sun 2026-01-18 (isoWeekWindow). Source: DrinksRepository
+      // .isoWeekDaysOnGoal docstring — "includes today".
+      final now = DateTime(2026, 1, 14, 14, 0);
 
-        // Monday: meets goal.
-        await repo.logDrink(
-          preset: _waterPreset, // 300 ml
-          volumeMl: 2000,
-          consumedAt: DateTime(2026, 1, 12, 10, 0),
-        );
-        // Today (Wednesday, partial data so far): also meets goal.
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 2000,
-          consumedAt: DateTime(2026, 1, 14, 9, 0),
-        );
-        // Tuesday: below goal.
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 500,
-          consumedAt: DateTime(2026, 1, 13, 10, 0),
-        );
+      // Monday: meets goal.
+      await repo.logDrink(
+        preset: _waterPreset, // 300 ml
+        volumeMl: 2000,
+        consumedAt: DateTime(2026, 1, 12, 10, 0),
+      );
+      // Today (Wednesday, partial data so far): also meets goal.
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 2000,
+        consumedAt: DateTime(2026, 1, 14, 9, 0),
+      );
+      // Tuesday: below goal.
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 500,
+        consumedAt: DateTime(2026, 1, 13, 10, 0),
+      );
 
-        final daysOnGoal = await repo.isoWeekDaysOnGoal(
-          dailyGoalMl: 2000,
-          now: now,
-        );
-        expect(
-          daysOnGoal,
-          equals(2),
-          reason: 'Monday and today (Wednesday) meet the 2000 ml goal; '
-              "Tuesday's 500 ml does not.",
-        );
-      },
-    );
+      final daysOnGoal = await repo.isoWeekDaysOnGoal(
+        dailyGoalMl: 2000,
+        now: now,
+      );
+      expect(
+        daysOnGoal,
+        equals(2),
+        reason: 'Monday and today (Wednesday) meet the 2000 ml goal; '
+            "Tuesday's 500 ml does not.",
+      );
+    });
 
     test('excludes alcoholic intake from the daily totals', () async {
       const beerPreset = DrinkPreset(
@@ -2431,49 +2402,47 @@ void main() {
     tearDown(() => db.close());
 
     test(
-      'sums non-alcoholic ml per day-window across the range, zero-filling '
-      'days with no entries, ordered oldest-first',
-      () async {
-        // Monday: two entries, 300 + 500 = 800 ml.
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 300,
-          consumedAt: DateTime(2026, 6, 22, 8, 0),
-        );
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 500,
-          consumedAt: DateTime(2026, 6, 22, 20, 0),
-        );
-        // Wednesday: one entry, 200 ml. Tuesday and Thursday: nothing.
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 200,
-          consumedAt: DateTime(2026, 6, 24, 10, 0),
-        );
+        'sums non-alcoholic ml per day-window across the range, zero-filling '
+        'days with no entries, ordered oldest-first', () async {
+      // Monday: two entries, 300 + 500 = 800 ml.
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 300,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 500,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
+      // Wednesday: one entry, 200 ml. Tuesday and Thursday: nothing.
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 200,
+        consumedAt: DateTime(2026, 6, 24, 10, 0),
+      );
 
-        final buckets = await repo
-            .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
-            .first;
+      final buckets = await repo
+          .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
 
-        expect(buckets.length, equals(4));
-        expect(
-          buckets.map((b) => b.dayStart).toList(),
-          equals([
-            DateTime(2026, 6, 22, 5, 0), // Mon
-            DateTime(2026, 6, 23, 5, 0), // Tue
-            DateTime(2026, 6, 24, 5, 0), // Wed
-            DateTime(2026, 6, 25, 5, 0), // Thu
-          ]),
-          reason: 'buckets must be ordered oldest-first, one per day-window',
-        );
-        expect(
-          buckets.map((b) => b.value).toList(),
-          equals([800, 0, 200, 0]),
-          reason: 'Tue and Thu have no entries → zero-filled, not omitted',
-        );
-      },
-    );
+      expect(buckets.length, equals(4));
+      expect(
+        buckets.map((b) => b.dayStart).toList(),
+        equals([
+          DateTime(2026, 6, 22, 5, 0), // Mon
+          DateTime(2026, 6, 23, 5, 0), // Tue
+          DateTime(2026, 6, 24, 5, 0), // Wed
+          DateTime(2026, 6, 25, 5, 0), // Thu
+        ]),
+        reason: 'buckets must be ordered oldest-first, one per day-window',
+      );
+      expect(
+        buckets.map((b) => b.value).toList(),
+        equals([800, 0, 200, 0]),
+        reason: 'Tue and Thu have no entries → zero-filled, not omitted',
+      );
+    });
 
     test('excludes alcoholic entries from the daily totals', () async {
       const beerPreset = DrinkPreset(
@@ -2533,38 +2502,36 @@ void main() {
     });
 
     test(
-      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
-      'is excluded (half-open [rangeStart, rangeEnd))',
-      () async {
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 111,
-          consumedAt: rangeStart,
-        );
-        await repo.logDrink(
-          preset: _waterPreset,
-          volumeMl: 222,
-          consumedAt: rangeEnd,
-        );
+        'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+        'is excluded (half-open [rangeStart, rangeEnd))', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 111,
+        consumedAt: rangeStart,
+      );
+      await repo.logDrink(
+        preset: _waterPreset,
+        volumeMl: 222,
+        consumedAt: rangeEnd,
+      );
 
-        final buckets = await repo
-            .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
-            .first;
+      final buckets = await repo
+          .watchDailyTotalsMl(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
 
-        expect(
-          buckets.first.value,
-          equals(111),
-          reason: 'consumedAt == rangeStart must be included in the first '
-              'bucket',
-        );
-        expect(
-          buckets.fold<int>(0, (s, b) => s + b.value),
-          equals(111),
-          reason: 'consumedAt == rangeEnd must be excluded entirely — it '
-              'falls outside every day-window in [rangeStart, rangeEnd)',
-        );
-      },
-    );
+      expect(
+        buckets.first.value,
+        equals(111),
+        reason: 'consumedAt == rangeStart must be included in the first '
+            'bucket',
+      );
+      expect(
+        buckets.fold<int>(0, (s, b) => s + b.value),
+        equals(111),
+        reason: 'consumedAt == rangeEnd must be excluded entirely — it '
+            'falls outside every day-window in [rangeStart, rangeEnd)',
+      );
+    });
 
     test(
       'boundaryHour ≠ midnight: entry logged at 02:00 local falls into the '
@@ -2617,36 +2584,34 @@ void main() {
     tearDown(() => db.close());
 
     test(
-      'counts non-alcoholic entries per day-window across the range, '
-      'zero-filling days with no entries, ordered oldest-first',
-      () async {
-        // Monday: two entries. Wednesday: one entry. Tue/Thu: none.
-        await repo.logDrink(
-          preset: _waterPreset,
-          consumedAt: DateTime(2026, 6, 22, 8, 0),
-        );
-        await repo.logDrink(
-          preset: _waterPreset,
-          consumedAt: DateTime(2026, 6, 22, 20, 0),
-        );
-        await repo.logDrink(
-          preset: _waterPreset,
-          consumedAt: DateTime(2026, 6, 24, 10, 0),
-        );
+        'counts non-alcoholic entries per day-window across the range, '
+        'zero-filling days with no entries, ordered oldest-first', () async {
+      // Monday: two entries. Wednesday: one entry. Tue/Thu: none.
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 24, 10, 0),
+      );
 
-        final buckets = await repo
-            .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
-            .first;
+      final buckets = await repo
+          .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
 
-        expect(buckets.length, equals(4));
-        expect(
-          buckets.map((b) => b.value).toList(),
-          equals([2, 0, 1, 0]),
-          reason: 'Tue and Thu have no entries → zero-filled counts, not '
-              'omitted buckets',
-        );
-      },
-    );
+      expect(buckets.length, equals(4));
+      expect(
+        buckets.map((b) => b.value).toList(),
+        equals([2, 0, 1, 0]),
+        reason: 'Tue and Thu have no entries → zero-filled counts, not '
+            'omitted buckets',
+      );
+    });
 
     test('excludes alcoholic entries from the drink counts', () async {
       const beerPreset = DrinkPreset(
@@ -2704,20 +2669,18 @@ void main() {
     });
 
     test(
-      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
-      'is excluded (half-open [rangeStart, rangeEnd))',
-      () async {
-        await repo.logDrink(preset: _waterPreset, consumedAt: rangeStart);
-        await repo.logDrink(preset: _waterPreset, consumedAt: rangeEnd);
+        'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+        'is excluded (half-open [rangeStart, rangeEnd))', () async {
+      await repo.logDrink(preset: _waterPreset, consumedAt: rangeStart);
+      await repo.logDrink(preset: _waterPreset, consumedAt: rangeEnd);
 
-        final buckets = await repo
-            .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
-            .first;
+      final buckets = await repo
+          .watchDrinksPerDay(rangeStart: rangeStart, rangeEnd: rangeEnd)
+          .first;
 
-        expect(buckets.first.value, equals(1));
-        expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
-      },
-    );
+      expect(buckets.first.value, equals(1));
+      expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
+    });
 
     test(
       'boundaryHour ≠ midnight: an entry logged at 02:00 local is counted in '
@@ -2788,88 +2751,83 @@ void main() {
     }
 
     test(
-      'counts session-attached alcoholic entries, zero-filling days with '
-      'none, ordered oldest-first',
-      () async {
-        await insertSessionDrink(
-          id: 'e1',
-          consumedAt: DateTime(2026, 6, 22, 20, 0),
-        );
-        await insertSessionDrink(
-          id: 'e2',
-          consumedAt: DateTime(2026, 6, 22, 21, 0),
-        );
-        await insertSessionDrink(
-          id: 'e3',
-          consumedAt: DateTime(2026, 6, 24, 20, 0),
-        );
+        'counts session-attached alcoholic entries, zero-filling days with '
+        'none, ordered oldest-first', () async {
+      await insertSessionDrink(
+        id: 'e1',
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
+      await insertSessionDrink(
+        id: 'e2',
+        consumedAt: DateTime(2026, 6, 22, 21, 0),
+      );
+      await insertSessionDrink(
+        id: 'e3',
+        consumedAt: DateTime(2026, 6, 24, 20, 0),
+      );
 
-        final buckets = await repo
-            .watchAlcoholicDrinksPerDay(
-              rangeStart: rangeStart,
-              rangeEnd: rangeEnd,
-            )
-            .first;
+      final buckets = await repo
+          .watchAlcoholicDrinksPerDay(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          )
+          .first;
 
-        expect(buckets.length, equals(4));
-        expect(
-          buckets.map((b) => b.value).toList(),
-          equals([2, 0, 1, 0]),
-        );
-      },
-    );
+      expect(buckets.length, equals(4));
+      expect(buckets.map((b) => b.value).toList(), equals([2, 0, 1, 0]));
+    });
 
     test(
-      'excludes non-alcoholic entries but includes orphaned alcoholic '
-      'entries (partySessionId == null)',
-      () async {
-        // Non-alcoholic, via the normal logDrink path.
-        await repo.logDrink(
-          preset: _waterPreset,
-          consumedAt: DateTime(2026, 6, 22, 8, 0),
-        );
-        // Orphaned alcoholic drink — logDrink() never sets partySessionId,
-        // e.g. logged from the Today tab's LogDrinkSheet outside Party Mode.
-        const beerPreset = DrinkPreset(
-          id: 'test-beer-preset-alcoholic-counts',
-          name: 'Test Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          abvPercent: 5.0,
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          isUserCreated: false,
-          isHidden: false,
-          sortOrder: 99,
-        );
-        await repo.logDrink(
-          preset: beerPreset,
-          consumedAt: DateTime(2026, 6, 22, 20, 0),
-        );
+        'excludes non-alcoholic entries but includes orphaned alcoholic '
+        'entries (partySessionId == null)', () async {
+      // Non-alcoholic, via the normal logDrink path.
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+      // Orphaned alcoholic drink — logDrink() never sets partySessionId,
+      // e.g. logged from the Today tab's LogDrinkSheet outside Party Mode.
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-alcoholic-counts',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+      await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
 
-        final buckets = await repo
-            .watchAlcoholicDrinksPerDay(
-              rangeStart: rangeStart,
-              rangeEnd: rangeEnd,
-            )
-            .first;
+      final buckets = await repo
+          .watchAlcoholicDrinksPerDay(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          )
+          .first;
 
-        expect(
-          buckets.fold<int>(0, (s, b) => s + b.value),
-          equals(1),
-          reason: 'Orphan alcoholic entries count toward the '
-              'alcoholic-drinks-per-day chart same as session-attached ones '
-              '(issue #66) — only the non-alcoholic water entry is excluded',
-        );
-      },
-    );
+      expect(
+        buckets.fold<int>(0, (s, b) => s + b.value),
+        equals(1),
+        reason: 'Orphan alcoholic entries count toward the '
+            'alcoholic-drinks-per-day chart same as session-attached ones '
+            '(issue #66) — only the non-alcoholic water entry is excluded',
+      );
+    });
 
     test('excludes soft-deleted entries', () async {
       await insertSessionDrink(consumedAt: DateTime(2026, 6, 22, 8, 0));
 
       final before = await repo
           .watchAlcoholicDrinksPerDay(
-              rangeStart: rangeStart, rangeEnd: rangeEnd)
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          )
           .first;
       expect(before.first.value, equals(1));
 
@@ -2877,29 +2835,29 @@ void main() {
 
       final after = await repo
           .watchAlcoholicDrinksPerDay(
-              rangeStart: rangeStart, rangeEnd: rangeEnd)
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          )
           .first;
       expect(after.first.value, equals(0));
     });
 
     test(
-      'entry exactly at rangeStart is included; entry exactly at rangeEnd '
-      'is excluded (half-open [rangeStart, rangeEnd))',
-      () async {
-        await insertSessionDrink(id: 'e1', consumedAt: rangeStart);
-        await insertSessionDrink(id: 'e2', consumedAt: rangeEnd);
+        'entry exactly at rangeStart is included; entry exactly at rangeEnd '
+        'is excluded (half-open [rangeStart, rangeEnd))', () async {
+      await insertSessionDrink(id: 'e1', consumedAt: rangeStart);
+      await insertSessionDrink(id: 'e2', consumedAt: rangeEnd);
 
-        final buckets = await repo
-            .watchAlcoholicDrinksPerDay(
-              rangeStart: rangeStart,
-              rangeEnd: rangeEnd,
-            )
-            .first;
+      final buckets = await repo
+          .watchAlcoholicDrinksPerDay(
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+          )
+          .first;
 
-        expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
-        expect(buckets.first.value, equals(1));
-      },
-    );
+      expect(buckets.fold<int>(0, (s, b) => s + b.value), equals(1));
+      expect(buckets.first.value, equals(1));
+    });
   });
 
   group('DrinksRepository.watchDayEntries', () {
@@ -2917,38 +2875,36 @@ void main() {
     tearDown(() => db.close());
 
     test(
-      'returns both hydration and alcoholic entries within the day window, '
-      'newest-first',
-      () async {
-        await repo.logDrink(
-          preset: _waterPreset,
-          consumedAt: DateTime(2026, 6, 22, 8, 0),
-        );
-        const beerPreset = DrinkPreset(
-          id: 'test-beer-preset-day-entries',
-          name: 'Test Beer',
-          beverageType: BeverageType.beer,
-          volumeMl: 330,
-          abvPercent: 5.0,
-          iconKey: 'beer_glass',
-          iconColor: '#d97706',
-          isUserCreated: false,
-          isHidden: false,
-          sortOrder: 99,
-        );
-        await repo.logDrink(
-          preset: beerPreset,
-          consumedAt: DateTime(2026, 6, 22, 20, 0),
-        );
+        'returns both hydration and alcoholic entries within the day window, '
+        'newest-first', () async {
+      await repo.logDrink(
+        preset: _waterPreset,
+        consumedAt: DateTime(2026, 6, 22, 8, 0),
+      );
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-day-entries',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+      await repo.logDrink(
+        preset: beerPreset,
+        consumedAt: DateTime(2026, 6, 22, 20, 0),
+      );
 
-        final entries = await repo.watchDayEntries(dayStart, dayEnd).first;
+      final entries = await repo.watchDayEntries(dayStart, dayEnd).first;
 
-        expect(entries, hasLength(2));
-        // Newest-first: the 20:00 beer before the 08:00 water.
-        expect(entries[0].beverageType, BeverageType.beer);
-        expect(entries[1].beverageType, BeverageType.water);
-      },
-    );
+      expect(entries, hasLength(2));
+      // Newest-first: the 20:00 beer before the 08:00 water.
+      expect(entries[0].beverageType, BeverageType.beer);
+      expect(entries[1].beverageType, BeverageType.water);
+    });
 
     test('excludes entries outside the day window', () async {
       await repo.logDrink(

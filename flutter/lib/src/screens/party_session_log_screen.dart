@@ -57,6 +57,8 @@ class _ActiveLog extends ConsumerWidget {
     final now = ref.watch(nowTickerProvider).valueOrNull ?? DateTime.now();
     final profile = ref.watch(userProfileProvider).valueOrNull;
     final fmt = ref.watch(formatServiceProvider);
+    final defaultCurrency =
+        ref.watch(userPreferencesProvider).valueOrNull?.currency;
 
     if (profile == null ||
         profile.birthDate == null ||
@@ -102,6 +104,7 @@ class _ActiveLog extends ConsumerWidget {
                     active: true,
                     sessionStartedAt: session.startedAt,
                     fmt: fmt,
+                    defaultCurrency: defaultCurrency,
                   ),
               ],
             ),
@@ -302,6 +305,7 @@ class _EntryRow extends ConsumerWidget {
     required this.active,
     this.sessionStartedAt,
     this.fmt,
+    this.defaultCurrency,
   });
 
   final DrinkEntry entry;
@@ -315,6 +319,12 @@ class _EntryRow extends ConsumerWidget {
   /// [active] is true — ended-mode rows never open the edit sheet, so
   /// [_EndedLog] passes nothing here.
   final DateTime? sessionStartedAt;
+
+  /// The user's preferred currency — falls back for a first-time price entry
+  /// on an entry logged with no price/currency yet (mirrors S6/S3's wiring
+  /// of the same field through [EntryEditSheet]). Only meaningful when
+  /// [active] is true, same as [sessionStartedAt].
+  final String? defaultCurrency;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -333,6 +343,7 @@ class _EntryRow extends ConsumerWidget {
       useSafeArea: true,
       builder: (_) => EntryEditSheet(
         entry: entry,
+        defaultCurrency: defaultCurrency,
         // Bounded to this session's own window — never unbounded, unlike
         // S3's DateEditPicker.free() — since moving a session-attached
         // entry outside [session.startedAt, now] would break that

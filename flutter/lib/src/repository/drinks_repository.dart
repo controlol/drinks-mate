@@ -802,10 +802,14 @@ class DrinksRepository {
   /// [abvPercent] is provided and `< 0` (0 is a legal ABV — e.g. a
   /// declared-alcoholic-but-0%-ABV preset — matching [createPreset]'s and
   /// the log sheet's own advanced-editor validation, so an entry logged
-  /// from such a preset can still round-trip through this method), if
-  /// [name] fails [validatePresetName], or if [priceMinor] is present with
-  /// a null value but [currency] is absent (or vice versa) — clearing the
-  /// price requires clearing both together.
+  /// from such a preset can still round-trip through this method; this is
+  /// intentionally more permissive than
+  /// [PartySessionRepository.updateAlcoholicEntry]'s `<= 0` check — tightening
+  /// this one to match would reintroduce the same round-trip bug for S6/S3
+  /// that motivated relaxing it here), if [name] fails [validatePresetName],
+  /// or if [priceMinor] is present with a null value but [currency] is
+  /// absent (or vice versa) — clearing the price requires clearing both
+  /// together. Throws [StateError] if [id] does not match a live entry.
   Future<void> updateDrinkEntry({
     required String id,
     int? volumeMl,
@@ -814,7 +818,7 @@ class DrinksRepository {
     double? abvPercent,
     Optional<int?> priceMinor = const Optional.absent(),
     Optional<String?> currency = const Optional.absent(),
-  }) {
+  }) async {
     if (volumeMl != null && volumeMl < 1) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'must be ≥ 1 ml');
     }
@@ -843,7 +847,7 @@ class DrinksRepository {
     }
 
     final now = DateTime.now().toUtc();
-    return _db.updateDrinkEntryFields(
+    final rows = await _db.updateDrinkEntryFields(
       id,
       DrinkEntriesCompanion(
         name: normalizedName != null
@@ -873,6 +877,7 @@ class DrinksRepository {
         updatedAt: Value(now),
       ),
     );
+    if (rows == 0) throw StateError('DrinkEntry $id not found.');
   }
 
   /// Soft-deletes an entry by setting [deletedAt] = now (F7).
