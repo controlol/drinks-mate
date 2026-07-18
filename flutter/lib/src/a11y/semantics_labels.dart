@@ -42,7 +42,6 @@ abstract final class SemanticsLabels {
   // Today drinks log screen (S6)
   // ---------------------------------------------------------------------------
 
-  static const String editEntryButton = 'Edit drink entry';
   static const String deleteEntryButton = 'Delete drink entry';
   static const String emptyDrinkLog = 'No drinks logged yet today';
   static const String logFirstDrinkButton = 'Log a drink';

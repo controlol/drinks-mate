@@ -1,26 +1,27 @@
-import 'package:core/core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
-import '../models/optional.dart';
 import '../models/party_session.dart';
 import '../repository/providers.dart';
 import '../services/bac_estimator.dart';
-import '../utils/color_utils.dart';
+import '../services/format_service.dart';
+import '../widgets/entry_edit_sheet.dart';
+import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_session_flows.dart';
 
 /// S9 — Party Session Log (user-experience.md §S9).
 ///
-/// One screen serves both an active session (editable) and any ended session
-/// (read-only). [sessionId] identifies the session; mode is derived
-/// reactively from whether it matches the currently-active session, so a
-/// session ending while this screen is open switches it to read-only rather
-/// than requiring a fresh navigation.
+/// One screen serves both an active session (editable — tapping a row opens
+/// the edit sheet directly, and each row also carries a delete button; see
+/// [EntryRow]) and any ended session (fully read-only). [sessionId]
+/// identifies the session; mode is derived reactively from whether it
+/// matches the currently-active session, so a session ending while this
+/// screen is open switches it to read-only rather than requiring a fresh
+/// navigation.
 class PartySessionLogScreen extends ConsumerWidget {
   const PartySessionLogScreen({super.key, required this.sessionId});
 
@@ -55,6 +56,9 @@ class _ActiveLog extends ConsumerWidget {
     final mealsAsync = ref.watch(partySessionMealsProvider(session.id));
     final now = ref.watch(nowTickerProvider).valueOrNull ?? DateTime.now();
     final profile = ref.watch(userProfileProvider).valueOrNull;
+    final fmt = ref.watch(formatServiceProvider);
+    final defaultCurrency =
+        ref.watch(userPreferencesProvider).valueOrNull?.currency;
 
     if (profile == null ||
         profile.birthDate == null ||
@@ -95,7 +99,13 @@ class _ActiveLog extends ConsumerWidget {
             child: Column(
               children: [
                 for (final entry in displayEntries)
-                  _EntryRow(entry: entry, active: true),
+                  _EntryRow(
+                    entry: entry,
+                    active: true,
+                    sessionStartedAt: session.startedAt,
+                    fmt: fmt,
+                    defaultCurrency: defaultCurrency,
+                  ),
               ],
             ),
           ),
@@ -236,6 +246,7 @@ class _EndedLog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(partySessionSummaryProvider(sessionId));
     final entriesAsync = ref.watch(partySessionEntriesProvider(sessionId));
+    final fmt = ref.watch(formatServiceProvider);
 
     return summaryAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -273,7 +284,7 @@ class _EndedLog extends ConsumerWidget {
                 child: Column(
                   children: [
                     for (final entry in displayEntries)
-                      _EntryRow(entry: entry, active: false),
+                      _EntryRow(entry: entry, active: false, fmt: fmt),
                   ],
                 ),
               ),
@@ -288,76 +299,80 @@ class _EndedLog extends ConsumerWidget {
 // Entry row (shared)
 // ---------------------------------------------------------------------------
 
-enum _EntryAction { edit, delete }
-
 class _EntryRow extends ConsumerWidget {
-  const _EntryRow({required this.entry, required this.active});
+  const _EntryRow({
+    required this.entry,
+    required this.active,
+    this.sessionStartedAt,
+    this.fmt,
+    this.defaultCurrency,
+  });
 
   final DrinkEntry entry;
   final bool active;
+  final FormatService? fmt;
+
+  /// The session's `startedAt` — bounds the edit sheet's free date picker to
+  /// `[sessionStartedAt, now]`, so a session-attached entry can never be
+  /// moved outside its own session's window (which would break that
+  /// session's BAC/duration math). Only meaningful (and only read) when
+  /// [active] is true — ended-mode rows never open the edit sheet, so
+  /// [_EndedLog] passes nothing here.
+  final DateTime? sessionStartedAt;
+
+  /// The user's preferred currency — falls back for a first-time price entry
+  /// on an entry logged with no price/currency yet (mirrors S6/S3's wiring
+  /// of the same field through [EntryEditSheet]). Only meaningful when
+  /// [active] is true, same as [sessionStartedAt].
+  final String? defaultCurrency;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = entry.consumedAt.toLocal();
-    final timeLabel = '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
-    final volumeText = '${entry.volumeMl} ml';
-    final abvText =
-        entry.abvPercent != null ? ' · ${entry.abvPercent}% ABV' : '';
-    final name = entry.name ?? 'Drink';
-    final iconColor = entry.iconColor != null
-        ? parseIconColor(entry.iconColor!) ??
-            Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.primary;
-
-    return Semantics(
-      label: '$name, $volumeText$abvText, $timeLabel',
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(38),
-          child: Icon(Icons.local_bar_outlined, color: iconColor, size: 22),
-        ),
-        title: Text(name),
-        subtitle: Text('$volumeText$abvText · $timeLabel'),
-        trailing: active ? const Icon(Icons.chevron_right) : null,
-        onTap: active ? () => _openActions(context, ref) : null,
-      ),
+    return EntryRow(
+      entry: entry,
+      fmt: fmt,
+      onTap: active ? () => _showEditSheet(context, ref) : null,
+      onDelete: active ? () => _confirmDelete(context, ref) : null,
     );
   }
 
-  Future<void> _openActions(BuildContext context, WidgetRef ref) async {
-    final action = await showModalBottomSheet<_EntryAction>(
+  Future<void> _showEditSheet(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit'),
-              onTap: () => Navigator.of(context).pop(_EntryAction.edit),
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Delete'),
-              onTap: () => Navigator.of(context).pop(_EntryAction.delete),
-            ),
-          ],
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => EntryEditSheet(
+        entry: entry,
+        defaultCurrency: defaultCurrency,
+        // Bounded to this session's own window — never unbounded, unlike
+        // S3's DateEditPicker.free() — since moving a session-attached
+        // entry outside [session.startedAt, now] would break that
+        // session's BAC/duration math.
+        datePicker: DateEditPicker.free(
+          minDate: sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: entry.consumedAt,
+          ),
+          maxDate: DateTime.now(),
         ),
+        onSave: ({
+          required volumeMl,
+          name,
+          abvPercent,
+          required priceMinor,
+          required currency,
+          required consumedAt,
+        }) =>
+            ref.read(partySessionRepositoryProvider).updateAlcoholicEntry(
+                  id: entry.id,
+                  volumeMl: volumeMl,
+                  abvPercent: abvPercent,
+                  priceMinor: priceMinor,
+                  currency: currency,
+                  consumedAt: consumedAt,
+                ),
       ),
     );
-    if (action == null || !context.mounted) return;
-
-    if (action == _EntryAction.edit) {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        builder: (_) => _EditAlcoholicEntrySheet(entry: entry),
-      );
-    } else {
-      await _confirmDelete(context, ref);
-    }
   }
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
@@ -391,254 +406,28 @@ class _EntryRow extends ConsumerWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Edit entry sheet (active mode only)
-// ---------------------------------------------------------------------------
-
-class _EditAlcoholicEntrySheet extends ConsumerStatefulWidget {
-  const _EditAlcoholicEntrySheet({required this.entry});
-
-  final DrinkEntry entry;
-
-  @override
-  ConsumerState<_EditAlcoholicEntrySheet> createState() =>
-      _EditAlcoholicEntrySheetState();
-}
-
-class _EditAlcoholicEntrySheetState
-    extends ConsumerState<_EditAlcoholicEntrySheet> {
-  late TextEditingController _nameCtrl;
-  late TextEditingController _volumeCtrl;
-  late TextEditingController _abvCtrl;
-  late TextEditingController _priceCtrl;
-  late DateTime _consumedAt;
-
-  /// The price field's initial text — compared against at save time so an
-  /// entry priced in tokens (which this money-only field can't represent,
-  /// and so leaves blank) doesn't get its token price silently cleared by
-  /// an edit that never touched price at all (data-model.md §Snapshot
-  /// semantics: only a "direct, deliberate user edit" may change a field).
-  late String _initialPriceText;
-  String? _nameError;
-  bool _submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final entry = widget.entry;
-    _nameCtrl = TextEditingController(text: entry.name ?? '');
-    _volumeCtrl = TextEditingController(text: entry.volumeMl.toString());
-    _abvCtrl = TextEditingController(text: entry.abvPercent?.toString() ?? '');
-    _initialPriceText = entry.priceMinor != null
-        ? (entry.priceMinor! / 100).toStringAsFixed(2)
-        : '';
-    _priceCtrl = TextEditingController(text: _initialPriceText);
-    _consumedAt = entry.consumedAt.toLocal();
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _volumeCtrl.dispose();
-    _abvCtrl.dispose();
-    _priceCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onNameChanged(String value) {
-    final result = value.isEmpty
-        ? const UsernameValidation.invalid('Name is required')
-        : validatePresetName(value);
-    setState(() => _nameError = result.isValid ? null : result.error);
-  }
-
-  Future<void> _save() async {
-    if (_submitting) return;
-    final volume = int.tryParse(_volumeCtrl.text.trim());
-    if (volume == null || volume < 1) {
-      _showError('Volume must be at least 1 ml');
-      return;
-    }
-    final abv = double.tryParse(_abvCtrl.text.trim());
-    if (abv == null || abv <= 0) {
-      _showError('ABV must be greater than 0%');
-      return;
-    }
-    if (_nameError != null) return;
-
-    // Only send a price change if the field was actually touched — this
-    // field is money-only, so an entry priced in tokens renders it blank;
-    // leaving it untouched must not clear that token price as a side
-    // effect of an unrelated volume/name/ABV/time edit.
-    final priceTouched = _priceCtrl.text.trim() != _initialPriceText;
-    var priceMinor = const Optional<int?>.absent();
-    var currency = const Optional<String?>.absent();
-    if (priceTouched) {
-      // Non-blank is a one-off, this-entry-only money override
-      // (party-session.md §Logging an alcoholic drink), same semantics as
-      // the log-time sheet; blank clears any existing money/token price.
-      int? priceMinorValue;
-      if (_priceCtrl.text.trim().isNotEmpty) {
-        final major = double.tryParse(_priceCtrl.text.trim());
-        if (major == null || major < 0) {
-          _showError('Price must be a positive number');
-          return;
-        }
-        priceMinorValue = (major * 100).round();
-      }
-      final currencyValue = priceMinorValue == null
-          ? null
-          : (widget.entry.currency ??
-              ref.read(userPreferencesProvider).valueOrNull?.currency ??
-              'EUR');
-      priceMinor = Optional.value(priceMinorValue);
-      currency = Optional.value(currencyValue);
-    }
-
-    setState(() => _submitting = true);
-    final repo = ref.read(partySessionRepositoryProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
-    try {
-      await repo.updateAlcoholicEntry(
-        id: widget.entry.id,
-        volumeMl: volume,
-        name: _nameCtrl.text,
-        abvPercent: abv,
-        consumedAt: _consumedAt,
-        priceMinor: priceMinor,
-        currency: currency,
-      );
-    } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Failed to save changes')),
-      );
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _pickDateTime() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _consumedAt,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(_consumedAt),
-    );
-    if (time == null || !mounted) return;
-    setState(() {
-      _consumedAt =
-          DateTime(date.year, date.month, date.day, time.hour, time.minute);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dateLabel = '${_consumedAt.year}-'
-        '${_consumedAt.month.toString().padLeft(2, '0')}-'
-        '${_consumedAt.day.toString().padLeft(2, '0')} '
-        '${_consumedAt.hour.toString().padLeft(2, '0')}:'
-        '${_consumedAt.minute.toString().padLeft(2, '0')}';
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Edit drink', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 20),
-            Text('Name', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nameCtrl,
-              onChanged: _onNameChanged,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                errorText: _nameError,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Volume (ml)', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _volumeCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                suffixText: 'ml',
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('ABV (%)', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _abvCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
-              ],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                suffixText: '%',
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Price (optional, this entry only)',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _priceCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                // This field is money-only, so a token-priced entry can't be
-                // shown here directly — leaving it blank keeps the existing
-                // token price untouched (see _initialPriceText's doc).
-                helperText: widget.entry.priceTokens != null
-                    ? 'Currently priced in tokens — enter an amount to '
-                        'switch this entry to a one-off money price'
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Time', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.schedule),
-              label: Text(dateLabel),
-              onPressed: _pickDateTime,
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _submitting ? null : _save,
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+/// The lower bound for S9's edit-sheet date picker — the **earlier** of
+/// [sessionStartedAt] and [entryConsumedAt], not [sessionStartedAt] alone.
+///
+/// An absorbed orphan drink can predate the session it was absorbed into
+/// (party-session.md §Absorbing orphan drinks — "absorbed orphans extend
+/// backwards in time"), so clamping every entry's lower bound to session
+/// start would make an orphan's existing pre-session timestamp both
+/// unreachable in the picker and force-moved forward the moment the sheet
+/// opens. Taking the entry's own timestamp as a floor when it's already
+/// earlier preserves that case, while a normal (non-orphan) entry — whose
+/// `consumedAt` is never before `sessionStartedAt` — still gets
+/// [sessionStartedAt] as its floor, exactly as intended.
+///
+/// Returns null (meaning [DateEditPicker.free]'s own default, `2000-01-01`)
+/// when [sessionStartedAt] is null — [_EndedLog] rows, where editing is
+/// unreachable, are the only case that passes null.
+DateTime? sessionEditMinDate({
+  required DateTime? sessionStartedAt,
+  required DateTime entryConsumedAt,
+}) {
+  if (sessionStartedAt == null) return null;
+  return entryConsumedAt.isBefore(sessionStartedAt)
+      ? entryConsumedAt
+      : sessionStartedAt;
 }

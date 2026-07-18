@@ -777,26 +777,107 @@ class DrinksRepository {
         .map((rows) => rows.map(_rowToEntry).toList());
   }
 
-  /// Updates the [volumeMl] and/or [consumedAt] of an existing entry.
+  /// Updates fields of an existing entry — the shared edit affordance
+  /// behind S6 (Today Drinks Log) and S3 (History day drill-down); S9
+  /// (Party Session Log) uses the equivalent
+  /// [PartySessionRepository.updateAlcoholicEntry] for session-attached
+  /// entries instead. [volumeMl], [abvPercent], [priceMinor]/[currency], and
+  /// [consumedAt] are editable from every caller; [name] is additionally
+  /// exposed by S3 only — S6's UI never passes it (data-model.md §Snapshot
+  /// semantics: "the only path to change a DrinkEntry is a direct,
+  /// deliberate user edit of that entry" — this permits, rather than
+  /// forbids, editing snapshot fields; each screen's own UI decides which
+  /// fields it exposes).
   ///
-  /// Snapshot fields (name, icon, ABV, etc.) are never changed — log
-  /// immutability (data-model.md §Snapshot semantics).
-  /// [volumeMl] must be ≥ 1 ml if provided.
+  /// [priceMinor]/[currency] mirror [PartySessionRepository]'s pairing rule:
+  /// a **one-off, this-entry-only** override (same semantics as at log
+  /// time), a present pair always writes a money price and clears any token
+  /// price (money/tokens stay mutually exclusive — data-model.md
+  /// §DrinkEntry), and touching them sets `manualPriceOverride`, exempting
+  /// the entry from a future retroactive party-price sweep (harmless for a
+  /// non-session entry, since the sweep only ever touches
+  /// `partySessionId`-attached rows).
+  ///
+  /// Throws [ArgumentError] if [volumeMl] is provided and `< 1`, if
+  /// [abvPercent] is provided and `< 0` (0 is a legal ABV — e.g. a
+  /// declared-alcoholic-but-0%-ABV preset — matching [createPreset]'s and
+  /// the log sheet's own advanced-editor validation, so an entry logged
+  /// from such a preset can still round-trip through this method; this is
+  /// intentionally more permissive than
+  /// [PartySessionRepository.updateAlcoholicEntry]'s `<= 0` check — tightening
+  /// this one to match would reintroduce the same round-trip bug for S6/S3
+  /// that motivated relaxing it here), if [name] fails [validatePresetName],
+  /// or if [priceMinor] is present with a null value but [currency] is
+  /// absent (or vice versa) — clearing the price requires clearing both
+  /// together. Throws [StateError] if [id] does not match a live entry.
   Future<void> updateDrinkEntry({
     required String id,
     int? volumeMl,
     DateTime? consumedAt,
-  }) {
+    String? name,
+    double? abvPercent,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
+  }) async {
     if (volumeMl != null && volumeMl < 1) {
       throw ArgumentError.value(volumeMl, 'volumeMl', 'must be ≥ 1 ml');
     }
+    if (abvPercent != null && abvPercent < 0) {
+      throw ArgumentError.value(abvPercent, 'abvPercent', 'must be >= 0');
+    }
+    var normalizedName = name;
+    if (name != null) {
+      final result = validatePresetName(name);
+      if (!result.isValid) {
+        throw ArgumentError.value(name, 'name', result.error);
+      }
+      normalizedName = normalizeNfc(name);
+    }
+    if (priceMinor.isPresent != currency.isPresent) {
+      throw ArgumentError(
+        'priceMinor and currency must be set or cleared together',
+      );
+    }
+    if (priceMinor.isPresent &&
+        (priceMinor.value == null) != (currency.value == null)) {
+      throw ArgumentError(
+        'currency is required when priceMinor is set, and must be null '
+        'otherwise',
+      );
+    }
+
     final now = DateTime.now().toUtc();
-    return _db.updateDrinkEntryPartial(
+    final rows = await _db.updateDrinkEntryFields(
       id,
-      volumeMl: volumeMl,
-      consumedAtUtc: consumedAt?.toUtc(),
-      updatedAtUtc: now,
+      DrinkEntriesCompanion(
+        name: normalizedName != null
+            ? Value(normalizedName)
+            : const Value.absent(),
+        volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
+        abvPercent:
+            abvPercent != null ? Value(abvPercent) : const Value.absent(),
+        consumedAt: consumedAt != null
+            ? Value(consumedAt.toUtc())
+            : const Value.absent(),
+        priceMinor: priceMinor.isPresent
+            ? Value(priceMinor.value)
+            : const Value.absent(),
+        currency:
+            priceMinor.isPresent ? Value(currency.value) : const Value.absent(),
+        // Money and tokens are mutually exclusive per drink — a one-off
+        // money override on this entry must clear any prior token price.
+        priceTokens:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        tokenValueMinor:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        tokenValueCurrency:
+            priceMinor.isPresent ? const Value(null) : const Value.absent(),
+        manualPriceOverride:
+            priceMinor.isPresent ? const Value(true) : const Value.absent(),
+        updatedAt: Value(now),
+      ),
     );
+    if (rows == 0) throw StateError('DrinkEntry $id not found.');
   }
 
   /// Soft-deletes an entry by setting [deletedAt] = now (F7).

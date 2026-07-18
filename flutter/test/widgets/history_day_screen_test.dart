@@ -1,4 +1,5 @@
-// Widget tests for HistoryDayScreen (F4/S3 day drill-down, issue #26).
+// Widget tests for HistoryDayScreen (F4/S3 day drill-down, issue #26; edit/
+// delete added for #67).
 //
 // Coverage:
 //  1. Entry list renders in the order the (fake) provider supplies —
@@ -10,24 +11,80 @@
 //     peakBacGPerL is null (incomplete profile).
 //  4. Hydration header total excludes alcoholic entries (data-model.md
 //     §BeverageType: disjoint flows) and shows the daily goal alongside it.
+//  5. Edit/delete affordances (#67): edit button opens the edit sheet,
+//     delete button shows a confirmation dialog whose confirm calls
+//     deleteDrinkEntry with the entry id, and a Party-Session-attached
+//     alcoholic entry (partySessionId set) has neither — mirroring S6's
+//     read-only rule (design/user-experience.md §S3/§S6).
 //
 // Provider override pattern mirrors history_screen_test.dart: the two #26
 // day-drilldown family providers (historyDayEntriesProvider,
 // historyDaySessionSummariesProvider) are overridden directly with
-// caller-supplied fake data — no fake-repo subclass or real DB needed.
+// caller-supplied fake data. Edit/delete tests additionally override
+// drinksRepositoryProvider with a _FakeRepo (pattern mirrors
+// today_drinks_screen_test.dart's _FakeRepo) — no real DB needed.
 
+import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
+import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/session_day_summary.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
+import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/history_day_screen.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+// ---------------------------------------------------------------------------
+// Fake repository — records delete calls; never touches the real DB.
+// ---------------------------------------------------------------------------
+
+class _FakeRepo extends DrinksRepository {
+  _FakeRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<String> deletedIds = [];
+  final List<
+      ({
+        String id,
+        int? volumeMl,
+        String? name,
+        double? abvPercent,
+        Optional<int?> priceMinor,
+        Optional<String?> currency,
+        DateTime? consumedAt,
+      })> updateDrinkEntryCalls = [];
+
+  @override
+  Future<void> deleteDrinkEntry(String id) async {
+    deletedIds.add(id);
+  }
+
+  @override
+  Future<void> updateDrinkEntry({
+    required String id,
+    int? volumeMl,
+    DateTime? consumedAt,
+    String? name,
+    double? abvPercent,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
+  }) async {
+    updateDrinkEntryCalls.add((
+      id: id,
+      volumeMl: volumeMl,
+      name: name,
+      abvPercent: abvPercent,
+      priceMinor: priceMinor,
+      currency: currency,
+      consumedAt: consumedAt,
+    ));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,6 +125,7 @@ DrinkEntry _entry({
   required DateTime consumedAt,
   String? name,
   String? partySessionId,
+  double? abvPercent,
 }) {
   return DrinkEntry(
     id: id,
@@ -75,6 +133,7 @@ DrinkEntry _entry({
     beverageType: beverageType,
     volumeMl: volumeMl,
     partySessionId: partySessionId,
+    abvPercent: abvPercent,
     consumedAt: consumedAt,
     createdAt: _epoch,
     updatedAt: _epoch,
@@ -104,6 +163,7 @@ Widget _buildScreen({
   List<SessionDaySummary> summaries = const [],
   UserPreferences? prefs,
   bool alwaysUse24HourFormat = false,
+  _FakeRepo? repo,
 }) {
   return ProviderScope(
     overrides: [
@@ -118,6 +178,7 @@ Widget _buildScreen({
       historyDaySessionSummariesProvider.overrideWith(
         (ref, key) => Future.value(summaries),
       ),
+      if (repo != null) drinksRepositoryProvider.overrideWithValue(repo),
     ],
     child: MaterialApp(
       builder: (context, child) => MediaQuery(
@@ -172,6 +233,30 @@ void main() {
     expect(find.text('330 ml · 8:30 PM'), findsOneWidget);
     expect(find.text('250 ml · 8:00 AM'), findsOneWidget);
     expect(find.byType(ListTile), findsNWidgets(2));
+  });
+
+  // -------------------------------------------------------------------------
+  // 1a. Alcoholic entry's row subtitle includes its ABV (EntryRow — shared
+  //     across S6/S3/S9, entry_row.dart)
+  // -------------------------------------------------------------------------
+
+  testWidgets('alcoholic entry row subtitle includes "% ABV"', (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 30),
+        name: 'Lager',
+        abvPercent: 5.0,
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(entries: entries));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('5.0% ABV'), findsOneWidget);
   });
 
   // -------------------------------------------------------------------------
@@ -424,6 +509,382 @@ void main() {
       // (data-model.md §BeverageType: "the two flows are strictly disjoint").
       expect(find.text('500 ml'), findsOneWidget);
       expect(find.text('/ 2500 ml hydration goal'), findsOneWidget);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 5. Edit/delete affordances (#67)
+  // -------------------------------------------------------------------------
+
+  testWidgets('tapping a row opens the edit sheet', (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Edit Me',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildScreen(entries: entries, repo: _FakeRepo()),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // There is no separate Edit button — tapping the row itself opens the
+    // edit sheet (EntryRow.onTap).
+    expect(find.byTooltip('Edit'), findsNothing);
+    await tester.tap(find.byType(ListTile));
+    await tester.pumpAndSettle();
+
+    // Source: entry_edit_sheet.dart _EntryEditSheetState.build.
+    expect(find.text('Edit drink'), findsOneWidget);
+  });
+
+  testWidgets('tapping delete button shows a confirmation dialog',
+      (tester) async {
+    final entries = [
+      _entry(
+        id: 'e1',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Delete Me',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      _buildScreen(entries: entries, repo: _FakeRepo()),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byTooltip('Delete'), findsOneWidget);
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete entry?'), findsOneWidget);
+  });
+
+  testWidgets(
+      'confirming the delete dialog calls deleteDrinkEntry with the entry id',
+      (tester) async {
+    final repo = _FakeRepo();
+    const entryId = 'e-to-delete';
+    final entries = [
+      _entry(
+        id: entryId,
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Deletable Drink',
+      ),
+    ];
+
+    await tester.pumpWidget(_buildScreen(entries: entries, repo: repo));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete entry?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(
+      repo.deletedIds,
+      contains(entryId),
+      reason:
+          'deleteDrinkEntry must be called with the entry id after the user '
+          'confirms deletion (S3 spec: soft-delete, mirroring S6)',
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 5b. Session-attached alcoholic entries are read-only (no Edit/Delete)
+  //
+  // Source: design/user-experience.md §S3: an alcoholic drink attached to a
+  // Party Session (partySessionId set) is read-only in the day drill-down —
+  // edit or delete it from S9 Party Session Log instead. A normal entry and
+  // an orphan alcoholic entry (isAlcoholic but no partySessionId) must still
+  // show both actions — the rule keys off partySessionId, not off
+  // beverageType.isAlcoholic alone. Mirrors
+  // today_drinks_screen_test.dart's equivalent S6 case.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'session-attached alcoholic entry is not tappable and has no Delete '
+    'button, while a normal entry and an orphan alcoholic entry in the same '
+    'day still are',
+    (tester) async {
+      final sessionAttached = _entry(
+        id: 'e-session',
+        beverageType: BeverageType.beer, // isAlcoholic == true
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        name: 'Session Beer',
+        partySessionId: 'test-session-1',
+      );
+
+      final normal = _entry(
+        id: 'e-normal',
+        beverageType: BeverageType.water,
+        volumeMl: 300,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+        name: 'Plain Water',
+      );
+
+      // Orphan alcoholic entry — alcoholic but NOT session-attached
+      // (partySessionId == null); must remain fully editable/deletable.
+      final orphanAlcoholic = _entry(
+        id: 'e-orphan',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 18, 0),
+        name: 'Orphan Beer',
+      );
+
+      await tester.pumpWidget(
+        _buildScreen(
+          entries: [sessionAttached, normal, orphanAlcoholic],
+          repo: _FakeRepo(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Session Beer'), findsOneWidget);
+      expect(find.text('Plain Water'), findsOneWidget);
+      expect(find.text('Orphan Beer'), findsOneWidget);
+
+      // Exactly two Delete buttons — one each for the normal entry and the
+      // orphan alcoholic entry; none for the session-attached alcoholic
+      // entry, which renders read-only.
+      expect(find.byTooltip('Delete'), findsNWidgets(2));
+
+      // The session-attached row has no tap target (read-only); the other
+      // two do (tapping opens the edit sheet directly).
+      ListTile tileFor(String title) =>
+          tester.widget<ListTile>(find.widgetWithText(ListTile, title));
+      expect(tileFor('Session Beer').onTap, isNull);
+      expect(tileFor('Plain Water').onTap, isNotNull);
+      expect(tileFor('Orphan Beer').onTap, isNotNull);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 6. Name, ABV, and price fields — S3 is the only screen that additionally
+  //    exposes name (design/user-experience.md §S3), unlike S6/S9.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'edit sheet shows name+volume+price (3 fields, no ABV) for a '
+    'non-alcoholic entry',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entries = [
+        _entry(
+          id: 'e1',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+          name: 'Water',
+        ),
+      ];
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: entries, repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsNWidgets(3));
+      expect(find.text('ABV (%)'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'edit sheet shows name+volume+ABV+price (4 fields) for an orphan '
+    'alcoholic entry, pre-filled from the entry; saving calls '
+    'updateDrinkEntry with the edited values, including name',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entry = DrinkEntry(
+        id: 'e-beer',
+        name: 'Original Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        abvPercent: 5.0,
+        priceMinor: 450,
+        currency: 'EUR',
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        createdAt: _epoch,
+        updatedAt: _epoch,
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(4));
+      // Declaration order in EntryEditSheet.build: name, volume, abv, price.
+      expect(tester.widget<TextField>(textFields.at(0)).controller!.text,
+          'Original Beer');
+      expect(
+          tester.widget<TextField>(textFields.at(1)).controller!.text, '330');
+      expect(
+          tester.widget<TextField>(textFields.at(2)).controller!.text, '5.0');
+      expect(
+          tester.widget<TextField>(textFields.at(3)).controller!.text, '4.50');
+
+      // The time button must show the date, not just the time-of-day — S3
+      // (unlike S6) lets an entry move to a different day entirely, since
+      // it's the historical-correction surface (EntryEditSheet's
+      // DateEditPicker.free()).
+      expect(find.textContaining('2026-06-22'), findsOneWidget);
+
+      await tester.enterText(textFields.at(0), 'Edited Beer');
+      await tester.enterText(textFields.at(1), '500');
+      await tester.enterText(textFields.at(2), '8.0');
+      await tester.enterText(textFields.at(3), '6.00');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-beer');
+      expect(call.name, 'Edited Beer');
+      expect(call.volumeMl, 500);
+      expect(call.abvPercent, 8.0);
+      expect(call.priceMinor, const Optional.value(600));
+      expect(call.currency, const Optional.value('EUR'));
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 7. Touch-gating regression (PR #91 fix): a stored abvPercent of 0 or a
+  //    null name are legal stored values (accepted at preset-creation/log
+  //    time — engineering/decisions/design-system.md's ABV rule only rejects
+  //    null/negative; data-model.md's username/name rule only rejects an
+  //    absent name at creation) but previously could never round-trip
+  //    through this sheet again for ANY field, since ABV/name were always
+  //    re-validated/resent even when untouched, and this sheet's own
+  //    stricter ">0"/"non-empty" save-validation rejected them.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'editing only volume on an alcoholic entry with stored abvPercent 0 '
+    'succeeds and does not resend abvPercent (untouched field sent as '
+    'null, not re-validated/resent)',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entry = _entry(
+        id: 'e-zero-abv',
+        beverageType: BeverageType.beer,
+        volumeMl: 330,
+        consumedAt: DateTime.utc(2026, 6, 22, 20, 0),
+        name: 'Zero-ABV Beer',
+        abvPercent: 0,
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      // Declaration order in EntryEditSheet.build: name, volume, abv, price.
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(4));
+      expect(
+        tester.widget<TextField>(textFields.at(2)).controller!.text,
+        '0.0',
+      );
+
+      // Touch only volume — ABV/name are left exactly as pre-filled.
+      await tester.enterText(textFields.at(1), '500');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-zero-abv');
+      expect(call.volumeMl, 500);
+      // Untouched — must be sent as null ("no change"), not resent as 0
+      // (which would pass) or rejected by the sheet's own ">0" validation
+      // (the bug this test guards against: previously this entry could
+      // never be saved through this sheet at all).
+      expect(call.abvPercent, isNull);
+      expect(call.name, isNull);
+    },
+  );
+
+  testWidgets(
+    'editing only volume on an entry with a null name (S3, showName: '
+    'true) succeeds and does not resend name (untouched field sent as '
+    'null, not re-validated/resent as empty string)',
+    (tester) async {
+      final repo = _FakeRepo();
+      final entry = _entry(
+        id: 'e-no-name',
+        beverageType: BeverageType.water,
+        volumeMl: 250,
+        consumedAt: DateTime.utc(2026, 6, 22, 9, 0),
+      );
+
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildScreen(entries: [entry], repo: repo));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byType(ListTile));
+      await tester.pumpAndSettle();
+
+      // Non-alcoholic: 3 fields (name, volume, price) — no ABV.
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(3));
+      expect(tester.widget<TextField>(textFields.at(0)).controller!.text, '');
+
+      // Touch only volume — name is left exactly as pre-filled (empty).
+      await tester.enterText(textFields.at(1), '400');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateDrinkEntryCalls, hasLength(1));
+      final call = repo.updateDrinkEntryCalls.single;
+      expect(call.id, 'e-no-name');
+      expect(call.volumeMl, 400);
+      // Untouched — must be sent as null ("no change"), not resent as ''
+      // (which would be rejected by the sheet's own "Name is required"
+      // validation — the bug this test guards against).
+      expect(call.name, isNull);
     },
   );
 }

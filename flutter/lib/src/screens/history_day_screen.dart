@@ -4,17 +4,25 @@ import 'package:intl/intl.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
+import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
-import '../utils/color_utils.dart';
+import '../widgets/entry_edit_sheet.dart';
+import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
 
-/// History day drill-down (F4/S3, issue #26).
+/// History day drill-down (F4/S3, issue #26; edit/delete added for #67).
 ///
-/// Reached by tapping a day bar on any History chart. Read-only — per
-/// user-experience.md S3 ("Charts are read-only"), this screen shows the
-/// day's data but does not expose edit/delete affordances (unlike the S6
-/// Today Drinks Log), keeping this issue's scope to display only.
+/// Reached by tapping a day bar on any History chart. Per
+/// user-experience.md §S3, this is one of only two general-purpose editing
+/// surfaces app-wide (alongside the S6 Today Drinks Log) — tapping a row
+/// opens the edit sheet directly, and each row also carries a delete button
+/// (see [EntryRow]), except an alcoholic drink attached to a Party Session
+/// (`partySessionId` set), which renders fully read-only here; the S9
+/// Party Session Log is the authoritative place to edit or delete those.
+/// Editable fields: volume, name, ABV (alcoholic entries only), price, and
+/// time — S3 is the only screen that additionally exposes name (unlike S6);
+/// see [EntryEditSheet] for the shared edit-sheet implementation.
 ///
 /// [dayStart]/[dayEnd] must be the exact day-window instants (from
 /// `core`'s `dayWindow`/History bucketing) — not just calendar-day
@@ -78,7 +86,7 @@ class HistoryDayScreen extends ConsumerWidget {
                   child: Column(
                     children: [
                       for (final entry in entries)
-                        _DayEntryTile(entry: entry, fmt: fmt),
+                        _DayEntryTile(entry: entry, fmt: fmt, prefs: prefs),
                     ],
                   ),
                 ),
@@ -133,43 +141,90 @@ class _DayTotalsHeader extends StatelessWidget {
 // Entry tile
 // ---------------------------------------------------------------------------
 
-class _DayEntryTile extends StatelessWidget {
-  const _DayEntryTile({required this.entry, required this.fmt});
+class _DayEntryTile extends ConsumerWidget {
+  const _DayEntryTile({required this.entry, required this.fmt, this.prefs});
 
   final DrinkEntry entry;
   final FormatService? fmt;
+  final UserPreferences? prefs;
+
+  /// Session-attached alcoholic entries are read-only here — the S9 Party
+  /// Session Log is the single authoritative place to edit or delete them
+  /// (design/user-experience.md §S3, mirroring §S6).
+  bool get _isSessionAttached =>
+      entry.beverageType.isAlcoholic && entry.partySessionId != null;
 
   @override
-  Widget build(BuildContext context) {
-    final local = entry.consumedAt.toLocal();
-    // Source: Parity Rulebook — "Time-of-day display format" (honours the
-    // device's 12h/24h preference rather than a hardcoded format).
-    final timeLabel = TimeOfDay.fromDateTime(local).format(context);
-    final volumeText =
-        fmt?.formatVolume(entry.volumeMl.toDouble()) ?? '${entry.volumeMl} ml';
-    final name = entry.name ?? entry.beverageType.displayName;
-    final iconColor = entry.iconColor != null
-        ? parseIconColor(entry.iconColor!) ??
-            Theme.of(context).colorScheme.primary
-        : Theme.of(context).colorScheme.primary;
+  Widget build(BuildContext context, WidgetRef ref) {
+    return EntryRow(
+      entry: entry,
+      fmt: fmt,
+      onTap: _isSessionAttached ? null : () => _showEditSheet(context, ref),
+      onDelete: _isSessionAttached ? null : () => _confirmDelete(context, ref),
+    );
+  }
 
-    return Semantics(
-      label: '$name, $volumeText, $timeLabel',
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withAlpha(38),
-          child: Icon(
-            entry.beverageType.isAlcoholic
-                ? Icons.local_bar_outlined
-                : Icons.local_drink_outlined,
-            color: iconColor,
-            size: 22,
-          ),
-        ),
-        title: Text(name),
-        subtitle: Text('$volumeText · $timeLabel'),
+  Future<void> _showEditSheet(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => EntryEditSheet(
+        entry: entry,
+        showName: true,
+        defaultCurrency: prefs?.currency,
+        // Free, not day-locked — S3 is the historical-correction surface,
+        // so unlike S6 it lets the user move an entry to a different day
+        // (e.g. a drink logged just after midnight that should count for
+        // the previous day). Bounded to "never the future" by
+        // DateEditPicker.free's default; no lower bound.
+        datePicker: const DateEditPicker.free(),
+        onSave: ({
+          required volumeMl,
+          name,
+          abvPercent,
+          required priceMinor,
+          required currency,
+          required consumedAt,
+        }) =>
+            ref.read(drinksRepositoryProvider).updateDrinkEntry(
+                  id: entry.id,
+                  volumeMl: volumeMl,
+                  name: name,
+                  abvPercent: abvPercent,
+                  priceMinor: priceMinor,
+                  currency: currency,
+                  consumedAt: consumedAt,
+                ),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete entry?'),
+        content: Text(
+          'Remove "${entry.name ?? 'this drink'}" from this day\'s log? '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await ref.read(drinksRepositoryProvider).deleteDrinkEntry(entry.id);
+    }
   }
 }
 

@@ -110,14 +110,14 @@ UserProfile _makeProfile() {
   );
 }
 
-UserPreferences _makePrefs() {
+UserPreferences _makePrefs({String currency = 'EUR'}) {
   return UserPreferences(
     id: kUserPreferencesId,
     username: 'tester',
     dailyGoalMl: 2000,
     dayBoundaryHour: 5,
     units: 'metric',
-    currency: 'EUR',
+    currency: currency,
     reminderEnabled: false,
     reminderStartHour: 8,
     reminderEndHour: 22,
@@ -187,6 +187,11 @@ DrinkEntry _waterEntry({required String id, required DateTime consumedAt}) {
 
 /// Builds a testable PartySessionLogScreen with every provider it reads
 /// overridden — no real Drift stream is ever started.
+/// [alwaysUse24HourFormat] drives `MediaQuery.alwaysUse24HourFormat`, which
+/// is what `TimeOfDay.format(context)` actually keys off (not [Locale]) —
+/// see the "Time-of-day display format" Parity Rulebook row. Mirrors
+/// today_drinks_screen_test.dart's/history_day_screen_test.dart's
+/// `_buildScreen` helper.
 Widget _buildScreen({
   required String sessionId,
   PartySession? activeSession,
@@ -195,6 +200,8 @@ Widget _buildScreen({
   UserProfile? profile,
   DateTime? now,
   SessionDaySummary? endedSummary,
+  bool alwaysUse24HourFormat = false,
+  String prefsCurrency = 'EUR',
   required _FakePartySessionRepo partyRepo,
   required _FakeDrinksRepo drinksRepo,
 }) {
@@ -211,7 +218,7 @@ Widget _buildScreen({
       partySessionMealsProvider.overrideWith((ref, id) => Stream.value(meals)),
       userProfileProvider.overrideWith((_) => Stream.value(profile)),
       userPreferencesProvider.overrideWith(
-        (_) => Stream.value(_makePrefs()),
+        (_) => Stream.value(_makePrefs(currency: prefsCurrency)),
       ),
       nowTickerProvider
           .overrideWith((_) => Stream.value(now ?? DateTime.now())),
@@ -220,7 +227,14 @@ Widget _buildScreen({
           (ref, id) async => endedSummary,
         ),
     ],
-    child: MaterialApp(home: PartySessionLogScreen(sessionId: sessionId)),
+    child: MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+        child: child!,
+      ),
+      home: PartySessionLogScreen(sessionId: sessionId),
+    ),
   );
 }
 
@@ -339,10 +353,72 @@ void main() {
       },
     );
 
+    // -----------------------------------------------------------------------
+    // 3a. Row subtitle: FormatService-backed volume, ABV, and a time label
+    //     that honours the device's 12h/24h preference (EntryRow — shared
+    //     across S6/S3/S9, entry_row.dart). Before the shared EntryRow
+    //     extraction, S9 rendered a hand-built, always-24h "HH:mm" string —
+    //     this pins the fix (Parity Rulebook "Time-of-day display format").
+    // -----------------------------------------------------------------------
+
     testWidgets(
-      'tapping a row and choosing Edit opens the edit sheet pre-filled with '
-      'the entry\'s current name/volume/ABV/price; saving calls '
-      'updateAlcoholicEntry with the edited values',
+      'row subtitle shows volume, ABV, and a 12h/24h time label honouring '
+      'the device preference',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entries = [
+          _alcoholicEntry(id: 'beer-1', consumedAt: startedAt),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: entries,
+            profile: _makeProfile(),
+            now: startedAt,
+            alwaysUse24HourFormat: false,
+            partyRepo: _FakePartySessionRepo(),
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('330 ml · 5.0% ABV · 8:00 PM'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'row subtitle time label renders 24h when alwaysUse24HourFormat=true',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entries = [
+          _alcoholicEntry(id: 'beer-1', consumedAt: startedAt),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: entries,
+            profile: _makeProfile(),
+            now: startedAt,
+            alwaysUse24HourFormat: true,
+            partyRepo: _FakePartySessionRepo(),
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('330 ml · 5.0% ABV · 20:00'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping a row opens the edit sheet directly, pre-filled with the '
+      'entry\'s current volume/ABV/price (no name field — S9 no longer '
+      'edits name, matching S6); saving calls updateAlcoholicEntry with the '
+      'edited values',
       (tester) async {
         final session = _makeSession(startedAt: startedAt);
         final entry = _alcoholicEntry(
@@ -356,8 +432,8 @@ void main() {
         );
         final repo = _FakePartySessionRepo();
 
-        // _EditAlcoholicEntrySheet's 4 fields + Save button are taller than
-        // the default 800x600 test surface — widen it (same convention as
+        // EntryEditSheet's 3 fields + Save button are taller than the
+        // default 800x600 test surface — widen it (same convention as
         // party_screen_test.dart's PartyLogDrinkSheet tests) so the Save
         // button is on-screen and hit-testable without scrolling a
         // fragile-to-target Scrollable.
@@ -379,31 +455,30 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // No intermediate action menu — tapping the row opens the edit
+        // sheet directly.
         await tester.tap(find.byType(ListTile));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Edit'), findsOneWidget);
-        await tester.tap(find.text('Edit'));
         await tester.pumpAndSettle();
 
         expect(find.text('Edit drink'), findsOneWidget);
         final textFields = find.byType(TextField);
-        expect(textFields, findsNWidgets(4));
-        // Declaration order in _EditAlcoholicEntrySheet.build: name, volume,
-        // abv, price.
-        final nameField = tester.widget<TextField>(textFields.at(0));
-        final volumeField = tester.widget<TextField>(textFields.at(1));
-        final abvField = tester.widget<TextField>(textFields.at(2));
-        final priceField = tester.widget<TextField>(textFields.at(3));
-        expect(nameField.controller!.text, 'Original Beer');
+        expect(textFields, findsNWidgets(3));
+        // Declaration order in EntryEditSheet.build: volume, abv, price.
+        final volumeField = tester.widget<TextField>(textFields.at(0));
+        final abvField = tester.widget<TextField>(textFields.at(1));
+        final priceField = tester.widget<TextField>(textFields.at(2));
         expect(volumeField.controller!.text, '330');
         expect(abvField.controller!.text, '5.0');
         expect(priceField.controller!.text, '4.50');
 
-        await tester.enterText(textFields.at(0), 'Edited Beer');
-        await tester.enterText(textFields.at(1), '500');
-        await tester.enterText(textFields.at(2), '8.0');
-        await tester.enterText(textFields.at(3), '6.00');
+        // The time button must show the date, not just the time-of-day — S9
+        // (unlike S6/S3) lets an entry move across calendar days, since a
+        // session can span midnight (EntryEditSheet's `showDate: true`).
+        expect(find.textContaining('2026-07-10'), findsOneWidget);
+
+        await tester.enterText(textFields.at(0), '500');
+        await tester.enterText(textFields.at(1), '8.0');
+        await tester.enterText(textFields.at(2), '6.00');
         await tester.pump();
 
         await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -412,7 +487,7 @@ void main() {
         expect(repo.updateAlcoholicEntryCalls, hasLength(1));
         final call = repo.updateAlcoholicEntryCalls.single;
         expect(call.id, 'beer-1');
-        expect(call.name, 'Edited Beer');
+        expect(call.name, isNull, reason: 'S9 no longer edits name');
         expect(call.volumeMl, 500);
         expect(call.abvPercent, 8.0);
         expect(call.priceMinor, const Optional.value(600));
@@ -421,7 +496,7 @@ void main() {
     );
 
     testWidgets(
-      'editing only the name of a token-priced entry leaves its price '
+      'editing only volume of a token-priced entry leaves its price '
       'untouched (Optional.absent()) — the money-only price field renders '
       'blank for a token price, and must not be treated as "clear the '
       'price" just because it was never touched',
@@ -457,16 +532,14 @@ void main() {
 
         await tester.tap(find.byType(ListTile));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Edit'));
-        await tester.pumpAndSettle();
 
         final textFields = find.byType(TextField);
-        final priceField = tester.widget<TextField>(textFields.at(3));
+        final priceField = tester.widget<TextField>(textFields.at(2));
         // Blank — the field can't represent a token price.
         expect(priceField.controller!.text, '');
 
-        // Only touch the name field; leave price alone.
-        await tester.enterText(textFields.at(0), 'Renamed Token Beer');
+        // Only touch the volume field; leave price alone.
+        await tester.enterText(textFields.at(0), '500');
         await tester.pump();
 
         await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -474,14 +547,62 @@ void main() {
 
         expect(repo.updateAlcoholicEntryCalls, hasLength(1));
         final call = repo.updateAlcoholicEntryCalls.single;
-        expect(call.name, 'Renamed Token Beer');
+        expect(call.volumeMl, 500);
         expect(call.priceMinor, const Optional<int?>.absent());
         expect(call.currency, const Optional<String?>.absent());
       },
     );
 
     testWidgets(
-      'tapping a row and choosing Delete then confirming calls '
+      'setting a first-time price on an entry logged with no price/currency '
+      "falls back to the user's preferred currency (defaultCurrency), not "
+      "a hardcoded 'EUR'",
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final entry = _alcoholicEntry(
+          id: 'beer-1',
+          consumedAt: startedAt,
+        );
+        final repo = _FakePartySessionRepo();
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: [entry],
+            profile: _makeProfile(),
+            now: startedAt,
+            prefsCurrency: 'USD',
+            partyRepo: repo,
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(ListTile));
+        await tester.pumpAndSettle();
+
+        final textFields = find.byType(TextField);
+        await tester.enterText(textFields.at(2), '6.00');
+        await tester.pump();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateAlcoholicEntryCalls, hasLength(1));
+        final call = repo.updateAlcoholicEntryCalls.single;
+        expect(call.priceMinor, const Optional.value(600));
+        expect(call.currency, const Optional.value('USD'));
+      },
+    );
+
+    testWidgets(
+      'tapping the row\'s Delete button then confirming calls '
       'DrinksRepository.deleteDrinkEntry with the entry\'s id',
       (tester) async {
         final session = _makeSession(startedAt: startedAt);
@@ -502,9 +623,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byType(ListTile));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Delete'));
+        // No intermediate action menu — a Delete button sits directly on
+        // the row (mirrors S6/S3's EntryRow).
+        await tester.tap(find.byTooltip('Delete'));
         await tester.pumpAndSettle();
 
         expect(find.text('Delete entry?'), findsOneWidget);
@@ -596,7 +717,8 @@ void main() {
       );
 
       testWidgets(
-        'entries are read-only — no chevron and tapping a row does nothing',
+        'entries are read-only — no Delete button, and tapping a row does '
+        'nothing',
         (tester) async {
           final session = _makeSession(startedAt: startedAt);
           final entry = _alcoholicEntry(id: 'beer-1', consumedAt: startedAt);
@@ -621,12 +743,16 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byIcon(Icons.chevron_right), findsNothing);
+          expect(find.byTooltip('Delete'), findsNothing);
+          expect(
+            tester.widget<ListTile>(find.byType(ListTile)).onTap,
+            isNull,
+          );
 
           await tester.tap(find.byType(ListTile));
           await tester.pumpAndSettle();
 
-          expect(find.text('Edit'), findsNothing);
+          expect(find.text('Edit drink'), findsNothing);
           expect(find.text('Delete entry?'), findsNothing);
         },
       );
@@ -665,4 +791,69 @@ void main() {
       );
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // sessionEditMinDate — pure helper behind the edit sheet's date-picker
+  // lower bound (see the DateEditPicker.free wiring in
+  // party_session_log_screen.dart's _openActions).
+  // ---------------------------------------------------------------------------
+
+  group('sessionEditMinDate', () {
+    final sessionStartedAt = DateTime.utc(2026, 7, 10, 20, 0);
+
+    test('returns null when sessionStartedAt is null (ended-mode rows)', () {
+      expect(
+        sessionEditMinDate(
+          sessionStartedAt: null,
+          entryConsumedAt: DateTime.utc(2026, 7, 10, 21, 0),
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'returns sessionStartedAt for a normal entry logged during the '
+      'session (consumedAt >= sessionStartedAt)',
+      () {
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: DateTime.utc(2026, 7, 10, 21, 0),
+          ),
+          sessionStartedAt,
+        );
+      },
+    );
+
+    test(
+      'returns the entry\'s own consumedAt for an absorbed orphan that '
+      'predates the session (party-session.md: "absorbed orphans extend '
+      'backwards in time") — sessionStartedAt alone would make that '
+      'earlier timestamp unreachable in the picker',
+      () {
+        final orphanConsumedAt = DateTime.utc(2026, 7, 10, 18, 0);
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: orphanConsumedAt,
+          ),
+          orphanConsumedAt,
+        );
+      },
+    );
+
+    test(
+      'returns sessionStartedAt (not entryConsumedAt) when consumedAt '
+      'exactly equals sessionStartedAt',
+      () {
+        expect(
+          sessionEditMinDate(
+            sessionStartedAt: sessionStartedAt,
+            entryConsumedAt: sessionStartedAt,
+          ),
+          sessionStartedAt,
+        );
+      },
+    );
+  });
 }
