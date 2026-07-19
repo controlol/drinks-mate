@@ -35,8 +35,17 @@ final _appDatabaseProvider = Provider<AppDatabase>((ref) {
 });
 
 /// Repository provider — the only seam widgets use to reach persisted data.
+///
+/// Depends on [partySessionRepositoryProvider] so [DrinksRepository.logDrink]
+/// can run the lazy 12h auto-end check on every drink logged, including
+/// non-alcoholic ones (party-session.md §Auto-end is computed lazily,
+/// "a drink is logged" trigger) — not just alcoholic entries logged via
+/// [PartySessionRepository.logAlcoholicDrink].
 final drinksRepositoryProvider = Provider<DrinksRepository>((ref) {
-  return DrinksRepository(ref.watch(_appDatabaseProvider));
+  return DrinksRepository(
+    ref.watch(_appDatabaseProvider),
+    partySessionRepository: ref.watch(partySessionRepositoryProvider),
+  );
 });
 
 /// Stream of visible (non-hidden, non-deleted) presets, sorted by sortOrder.

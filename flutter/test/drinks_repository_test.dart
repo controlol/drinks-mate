@@ -8,7 +8,9 @@ import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/optional.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 
 // ---------------------------------------------------------------------------
 // Helper: open an in-memory database (no file I/O, safe in tests).
@@ -2933,5 +2935,132 @@ void main() {
 
       expect(entries, isEmpty);
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // DrinksRepository.logDrink — PartySession auto-end trigger (issue #94)
+  //
+  // party-session.md §Auto-end is computed lazily lists "a drink is logged"
+  // as one of the five trigger points. logDrink() is the Today-tab quick-log
+  // / S2 drawer path — it must run PartySessionRepository.checkAndApplyAutoEnd
+  // for *any* drink (including non-alcoholic ones), not just the ones
+  // PartySessionRepository.logAlcoholicDrink() itself handles. The wiring is
+  // an optional named constructor param specifically so the five pre-existing
+  // callers that construct `DrinksRepository(db)` positionally (this file,
+  // party_session_repository_test.dart, services/reminder_scheduler_test.dart,
+  // widget_test.dart, widgets/goal_celebration_test.dart) keep working
+  // unchanged.
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.logDrink — PartySession auto-end trigger', () {
+    test(
+      'wired with a partySessionRepository: logging a non-alcoholic drink '
+      'after the active session\'s auto-end mark retroactively ends it, '
+      'with endedAt at the 12h mark (not "now")',
+      () async {
+        // Source: party-session.md §Ending a session — "12 hours after the
+        // most recently logged alcoholic drink (or 12 hours after startedAt
+        // if no alcoholic drinks were logged)"; endedAt is the mark, not the
+        // discovery time. logDrink() has no injectable `now`, so the session
+        // is seeded with a real-clock startedAt far enough in the past that
+        // it is already stale by the time logDrink runs.
+        final db = _memDb();
+        addTearDown(db.close);
+        final partySessionRepo = PartySessionRepository(db);
+        final repo =
+            DrinksRepository(db, partySessionRepository: partySessionRepo);
+
+        // Truncated to whole-second precision — Drift's default DateTime
+        // column stores a unix-seconds INTEGER, so a raw DateTime.now()
+        // (which carries sub-second precision) would never compare
+        // isAtSameMomentAs-equal to the value read back after storage.
+        final startedAt = DateTime.fromMillisecondsSinceEpoch(
+          (DateTime.now()
+                          .toUtc()
+                          .subtract(const Duration(hours: 20))
+                          .millisecondsSinceEpoch /
+                      1000)
+                  .floor() *
+              1000,
+          isUtc: true,
+        );
+        final session = await partySessionRepo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        final mark = startedAt.add(const Duration(hours: 12));
+
+        await repo.logDrink(preset: _waterPreset);
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt, isNotNull);
+        expect(row.endedAt!.isAtSameMomentAs(mark), isTrue);
+        expect(row.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(await db.getActiveSession(), isNull);
+      },
+    );
+
+    test(
+      'wired with a partySessionRepository: logging a drink before the '
+      'active session\'s auto-end mark leaves it untouched',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        final partySessionRepo = PartySessionRepository(db);
+        final repo =
+            DrinksRepository(db, partySessionRepository: partySessionRepo);
+
+        // Started 1h ago — nowhere near the 12h mark.
+        final startedAt = DateTime.now().toUtc().subtract(
+              const Duration(hours: 1),
+            );
+        final session = await partySessionRepo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+
+        await repo.logDrink(preset: _waterPreset);
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt, isNull);
+        final active = await db.getActiveSession();
+        expect(active!.id, session.id);
+      },
+    );
+
+    test(
+      'partySessionRepository omitted (the default, matching every '
+      'pre-existing `DrinksRepository(db)` call site): logDrink() does not '
+      'throw, and a stale active session is left untouched — proves the '
+      'auto-end wiring is a pure addition with no side effect when absent',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        // Seeded via a *separate* PartySessionRepository instance, deliberately
+        // never handed to DrinksRepository — mirrors the 5 existing call
+        // sites that still construct `DrinksRepository(db)` positionally.
+        final partySessionRepo = PartySessionRepository(db);
+        final startedAt = DateTime.now().toUtc().subtract(
+              const Duration(hours: 20),
+            );
+        final session = await partySessionRepo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+
+        final repo = DrinksRepository(db);
+        await expectLater(repo.logDrink(preset: _waterPreset), completes);
+
+        final row = await db.getPartySessionById(session.id);
+        expect(
+          row!.endedAt,
+          isNull,
+          reason: 'without a wired partySessionRepository, logDrink must have '
+              'no auto-end side effect at all',
+        );
+        final active = await db.getActiveSession();
+        expect(active!.id, session.id);
+      },
+    );
   });
 }

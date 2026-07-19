@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:core/core.dart';
@@ -56,7 +57,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('History'),
-        actions: [_settingsButton(context)],
+        actions: [_settingsButton(context, ref)],
       ),
       body: prefs == null
           ? const Center(child: CircularProgressIndicator())
@@ -71,13 +72,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
-Widget _settingsButton(BuildContext context) => IconButton(
+Widget _settingsButton(BuildContext context, WidgetRef ref) => IconButton(
       icon: const Icon(Icons.settings_outlined),
       tooltip: 'Settings',
-      onPressed: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-      ),
+      onPressed: () {
+        unawaited(
+            ref.read(partySessionRepositoryProvider).checkAndApplyAutoEnd());
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+        );
+      },
     );
 
 // ---------------------------------------------------------------------------

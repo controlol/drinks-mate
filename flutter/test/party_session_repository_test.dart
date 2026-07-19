@@ -1187,6 +1187,45 @@ void main() {
         expect(active!.id, secondSession.id);
       },
     );
+
+    test(
+      'logAlcoholicDrink() with a backdated consumedAt more than 12h in the '
+      'past retroactively ends the session it was just logged into '
+      '(issue #94 — "a drink is logged" trigger point)',
+      () async {
+        // Source: party-session.md §Ending a session — "12 hours after the
+        // most recently logged alcoholic drink" — plus §Auto-end is computed
+        // lazily's "a drink is logged" trigger. The call's own `now` (when
+        // the log actually happens) is well past the backdated drink's
+        // 12h mark, so logAlcoholicDrink's post-insert checkAndApplyAutoEnd
+        // call must catch it immediately, not wait for a later trigger.
+        final now = DateTime.utc(2026, 7, 10, 22, 0);
+        final startedAt = now.subtract(const Duration(hours: 14));
+        final drinkAt = now.subtract(const Duration(hours: 13));
+        final mark = drinkAt.add(const Duration(hours: 12)); // now − 1h
+
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+
+        final entry = await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: drinkAt,
+          now: now,
+        );
+
+        // The entry itself is still recorded against the session even
+        // though the session ends immediately after.
+        expect(entry.partySessionId, session.id);
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt!.isAtSameMomentAs(mark), isTrue);
+        expect(row.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(await db.getActiveSession(), isNull);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------

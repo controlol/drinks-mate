@@ -34,6 +34,7 @@ import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/preferences_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/today_screen.dart';
+import 'package:drinks_mate/src/services/app_info_service.dart';
 import 'package:drinks_mate/src/services/goal_celebration_guard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -704,4 +705,110 @@ void main() {
       expect(wideDelegate.crossAxisCount, 3);
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // "Settings opened" auto-end trigger point (issue #94)
+  //
+  // party-session.md §Auto-end is computed lazily lists "Settings opened" as
+  // one of the five trigger points; today_screen.dart's `_settingsButton`
+  // calls PartySessionRepository.checkAndApplyAutoEnd() immediately before
+  // pushing SettingsScreen. Unlike the other tests in this file, this one
+  // wires a REAL PartySessionRepository (backed by a real in-memory
+  // AppDatabase) into partySessionRepositoryProvider instead of a fake, so
+  // the retroactive end is asserted against actual DB state — proving the
+  // gear icon's onPressed really runs the check, not just that the method
+  // exists on the repository (already covered by
+  // party_session_repository_test.dart's "lazy 12h auto-end" group).
+  // ---------------------------------------------------------------------------
+
+  group('TodayScreen — Settings-opened auto-end trigger', () {
+    testWidgets(
+      'tapping the settings gear retroactively ends a session whose 12h '
+      'mark has already passed',
+      (tester) async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+        final realPartyRepo = PartySessionRepository(db);
+
+        // Source: party-session.md §Ending a session — "12 hours after
+        // startedAt if no alcoholic drinks were logged"; endedAt is the mark,
+        // not "now". Truncated to whole-second precision — Drift's default
+        // DateTime column stores a unix-seconds INTEGER, so a raw
+        // DateTime.now() would never round-trip byte-for-byte.
+        final nowSeconds =
+            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000 * 1000;
+        final startedAt = DateTime.fromMillisecondsSinceEpoch(
+          nowSeconds,
+          isUtc: true,
+        ).subtract(const Duration(hours: 20));
+        final session = await realPartyRepo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        final mark = startedAt.add(const Duration(hours: 12));
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              drinksRepositoryProvider.overrideWithValue(
+                _FakeDrinksRepo(),
+              ),
+              preferencesRepositoryProvider.overrideWithValue(
+                _FakePreferencesRepo(),
+              ),
+              partySessionRepositoryProvider.overrideWithValue(
+                realPartyRepo,
+              ),
+              activePartySessionProvider.overrideWith(
+                (_) => Stream.value(null),
+              ),
+              userProfileProvider.overrideWith((_) => Stream.value(null)),
+              visiblePresetsProvider.overrideWith(
+                (_) => Stream.value(const <DrinkPreset>[]),
+              ),
+              // SettingsScreen (pushed after the gear tap) watches this
+              // directly — without an override it hits _FakeDrinksRepo's own
+              // real (if otherwise-unused) Drift stream, which leaves a
+              // pending cleanup Timer when the route is popped mid-test.
+              visibleNonAlcoholicPresetsProvider.overrideWith(
+                (_) => Stream.value(const <DrinkPreset>[]),
+              ),
+              presetUsageStatsProvider.overrideWith(
+                (_) => Stream.value(const <String, PresetUsageStats>{}),
+              ),
+              todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
+              sevenDayAverageMlProvider.overrideWith(
+                (_) => Stream.value(0.0),
+              ),
+              sevenDayDaysOnGoalProvider.overrideWith(
+                (_) => Stream.value(0),
+              ),
+              userPreferencesProvider.overrideWith(
+                (_) => Stream.value(_makePrefs()),
+              ),
+              goalCelebrationGuardProvider.overrideWithValue(
+                InMemoryGoalCelebrationGuard(),
+              ),
+              appInfoServiceProvider.overrideWithValue(
+                const FakeAppInfoService(),
+              ),
+            ],
+            child: const MaterialApp(home: TodayScreen()),
+          ),
+        );
+        await tester.pump();
+
+        expect((await db.getPartySessionById(session.id))!.endedAt, isNull);
+
+        await tester.tap(find.byTooltip('Settings'));
+        await tester.pumpAndSettle();
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt, isNotNull);
+        expect(row.endedAt!.isAtSameMomentAs(mark), isTrue);
+        expect(row.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(await db.getActiveSession(), isNull);
+      },
+    );
+  });
 }

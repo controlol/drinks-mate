@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:core/core.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -37,7 +39,7 @@ class PartyScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Party'),
-        actions: [_settingsButton(context)],
+        actions: [_settingsButton(context, ref)],
       ),
       body: sessionAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -159,10 +161,7 @@ class _PastSessionsList extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Past sessions',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Past sessions', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           for (final summary in summaries) _PastSessionRow(summary: summary),
         ],
@@ -725,10 +724,7 @@ class _BacLineChartCard extends StatelessWidget {
   static List<FlSpot> _spots(List<BacChartPoint> points, DateTime axisStart) {
     return [
       for (final p in points)
-        FlSpot(
-          p.time.difference(axisStart).inMinutes.toDouble(),
-          p.gPerL,
-        ),
+        FlSpot(p.time.difference(axisStart).inMinutes.toDouble(), p.gPerL),
     ];
   }
 }
@@ -835,8 +831,10 @@ class _MealIndicator extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child:
-                    Text(label, style: Theme.of(context).textTheme.bodyMedium),
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
               ),
             ],
           ),
@@ -1306,11 +1304,15 @@ Future<void> _confirmEndSession(
 // Shared
 // ---------------------------------------------------------------------------
 
-Widget _settingsButton(BuildContext context) => IconButton(
+Widget _settingsButton(BuildContext context, WidgetRef ref) => IconButton(
       icon: const Icon(Icons.settings_outlined),
       tooltip: 'Settings',
-      onPressed: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-      ),
+      onPressed: () {
+        unawaited(
+            ref.read(partySessionRepositoryProvider).checkAndApplyAutoEnd());
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+        );
+      },
     );
