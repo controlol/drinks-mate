@@ -49,7 +49,7 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 | `iconKey`        | string                | Required. References one of the bundled SVG icons.                                     |
 | `iconColor`      | string                | Required. Hex colour (e.g. `#3b82f6`). Default per beverage type.                       |
 | `isUserCreated`  | boolean               | `true` for user-created presets, `false` for app-seeded defaults.                       |
-| `isHidden`       | boolean               | Default `false`. When `true`, the preset is excluded from the "Log a drink" grid and the log-drink picker but kept in the database. Lets users dismiss seeded defaults without losing the option to restore them. |
+| `isHidden`       | boolean               | Default `false`. When `true`, the preset is excluded from the "Quick Log" grid and the log-drink picker but kept in the database. Lets users dismiss seeded defaults without losing the option to restore them. |
 | `sortOrder`      | integer               | Per-user ordering for display. Lower values come first.                                 |
 | `createdAt`      | timestamp             | Record creation time.                                                                  |
 | `updatedAt`      | timestamp             | Updated on every edit. Used by phase 2 sync.                                           |
@@ -121,7 +121,7 @@ A single per-device record holding the user's settings. Edited via [user-experie
 | `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md → Lock-screen visibility](./notifications.md#lock-screen-visibility). |
 | `bacCapGramsPerL`        | decimal \| null       | Optional personal cap, stored canonically in g/L. Null means no cap is set. The UI shows g/L as primary and mmol/L as secondary. Persistent across sessions. |
 | `alcoholicPresetsAlwaysVisible` | boolean        | Default `true`. Governs alcoholic-preset visibility in the Manage Drinks screen (F14). When `true`, alcoholic presets are always listed there, matching the S2 log-drink picker (which never filters alcoholic presets by session state — see [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active)). When `false`, alcoholic presets are shown there only while a `PartySession` is active (`endedAt IS NULL`). Settings → Drinks → "Always show alcoholic drinks". |
-| `drinkSortMode`          | enum                  | `manual` / `recentlyUsed` (**default**) / `mostUsed`. One setting drives two surfaces: which presets rank into the Today "Log a drink" grid's top 8 (and in what order), and the ordering of the S2 log-drink picker's full list. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation) for the ranking rules and the `sortOrder` tie-break. |
+| `drinkSortMode`          | enum                  | `manual` / `recentlyUsed` (**default**) / `mostUsed`. One setting drives two surfaces: which presets rank into the Today "Quick Log" grid's top 8 (and in what order), and the ordering of the S2 log-drink picker's full list. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation) for the ranking rules and the `sortOrder` tie-break. |
 | `updatedAt`              | timestamp             | Used by phase 2 sync.                                       |
 
 **Phase 2 sync notes for `UserPreferences`.** `[OPEN]` — confirm which preferences travel across devices vs. stay per-device. Recommended split: `dailyGoalMl`, `unitsDisplay`, `currency`, `dayBoundary`, `defaultDrinkPresetId`, `drinkSortMode`, `bacCapGramsPerL`, and the notification-type toggles sync; the reminder schedule (`reminderStartTime`, `reminderEndTime`, `reminderIntervalMin`) stays per-device since a user's phone and tablet may want different windows. `installedAt` is per-device by definition.
@@ -146,6 +146,7 @@ A discrete drinking occasion. There is at most one active session (`endedAt IS N
 | Field         | Type                  | Notes                                                                                |
 | ------------- | --------------------- | ------------------------------------------------------------------------------------ |
 | `id`          | string / UUID         | Stable identifier, generated locally.                                                |
+| `name`        | string \| null        | Optional, user-set freeform label (e.g. "Sarah's birthday"). Settable in the start-session flow (skippable) and editable any time after — during an active session from the Party tab, or on an ended session from [user-experience.md → S9](./user-experience.md#s9--party-session-log). Max 40 characters after trimming leading/trailing whitespace; empty-after-trim is stored as `null`, not an empty string. **Not** validated against the `username`/`tokenName` structural whitelist (that whitelist rejects spaces and apostrophes, which a natural-language session name needs) — any character is allowed except control characters (`Cc`), which are stripped. Shown in the past-sessions list ahead of the date — see [user-experience.md → S7](./user-experience.md#s7--party). |
 | `startedAt`   | timestamp (with tz)   | When the session was started (manually or via auto-start on logging an alcoholic drink). |
 | `endedAt`     | timestamp \| null     | Null while active. Set when the session ends.                                        |
 | `endReason`   | enum \| null          | `manual` or `auto_timeout`. Null while active.                                       |
@@ -160,6 +161,14 @@ A discrete drinking occasion. There is at most one active session (`endedAt IS N
 #### Auto-end semantics
 
 A session auto-ends 12 hours after the most recently logged alcoholic drink within the session (or 12 hours after `startedAt` if none were logged). The check is run lazily — on app foreground, today-view open, drink log, and settings open — and `endedAt` is set to the correct 12-hour mark, **not** to the time the app happened to notice. This keeps history correct even after long absences.
+
+#### Zero-drink sessions are discarded, not saved
+
+If a session has **zero alcoholic drinks** (in-session or absorbed orphans) at the moment it ends — by either path, manual or `auto_timeout` — the session is discarded instead of kept: it is soft-deleted (`deletedAt` set) immediately and silently, with no confirmation prompt. This covers a session started and then abandoned with nothing ever logged. See [party-session.md → Ending a session](./party-session.md#ending-a-session).
+
+#### Deleting a session
+
+A user can explicitly delete an **ended** session (not the active one) from the past-sessions list or [S9](./user-experience.md#s9--party-session-log)'s ended-mode header. Deleting sets `deletedAt` (same soft-delete semantics as `DrinkEntry`) and detaches every drink that was attached to it: each affected `DrinkEntry.partySessionId` is set to `null`, turning the drinks back into orphans. The drinks themselves are never deleted and remain visible in history. See [party-session.md → Ending a session](./party-session.md#ending-a-session).
 
 ### PartySessionPrice
 
