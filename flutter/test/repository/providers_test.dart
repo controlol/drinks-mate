@@ -1,4 +1,4 @@
-// Regression test for issue #95's remediation: AppShell invalidates
+// Regression tests for issue #95's remediation: AppShell invalidates
 // [todayTotalMlProvider] on every app resume so the day-window UI
 // recomputes "now" (see navigation/shell.dart). [reminderReschedulerProvider]
 // also watches [todayTotalMlProvider] to re-run [ReminderScheduler.reschedule]
@@ -6,9 +6,13 @@
 // would rebuild on the resume-triggered resubscription too — even when the
 // resubscribed stream re-emits the exact same total — re-anchoring the
 // hydration reminder to that resume moment, which notifications.md
-// §Scheduling reserves for "logging a drink". This proves the
-// `.select((async) => async.valueOrNull)` fix in providers.dart suppresses
-// the no-op rebuild while still reacting to a genuine value change.
+// §Scheduling reserves for "logging a drink". These prove the
+// `_todayTotalMlValueProvider` wrapper in providers.dart suppresses the
+// no-op rebuild while still reacting to a genuine value change — and that
+// pairing the total with [todayDayStartProvider] means a genuine
+// day-boundary rollover still notifies even when the total happens to
+// repeat (e.g. a zero-intake streak), which a total-value-only suppression
+// would otherwise silently swallow.
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -134,6 +138,58 @@ void main() {
       scheduler.rescheduleCalls,
       baseline + 1,
       reason: 'a real total change must still re-run reschedule()',
+    );
+  });
+
+  test(
+      'reminderReschedulerProvider still re-runs reschedule() on a genuine '
+      'day-boundary rollover even when the total re-emits an identical '
+      'value (e.g. 0 ml -> 0 ml on a zero-intake streak) — '
+      'ReminderScheduler places only a single one-time notification for the '
+      'daily inactivity reminder per reschedule() call, so it depends on '
+      'reschedule() running again at least once per day', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final scheduler = _CountingReminderScheduler(
+      FakeNotificationService(),
+      DrinksRepository(db),
+    );
+    var dayStart = DateTime(2026, 7, 19, 5);
+
+    final container = ProviderContainer(
+      overrides: [
+        userPreferencesProvider.overrideWith((ref) => Stream.value(_prefs())),
+        defaultDrinkPresetProvider.overrideWith((ref) async => null),
+        reminderSchedulerProvider.overrideWithValue(scheduler),
+        todayTotalMlProvider.overrideWith((ref) => Stream.value(0)),
+        todayDayStartProvider.overrideWith((ref) => dayStart),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.listen(reminderReschedulerProvider, (_, __) {});
+    await container.read(userPreferencesProvider.future);
+    await container.read(defaultDrinkPresetProvider.future);
+    await container.read(todayTotalMlProvider.future);
+    container.read(reminderReschedulerProvider);
+    final baseline = scheduler.rescheduleCalls;
+    expect(baseline, 1, reason: 'initial settle should reschedule once');
+
+    // Simulate AppShell._invalidateDayWindowProviders on a resume that
+    // genuinely crosses a day boundary: the total happens to stay at 0 ml
+    // (a zero-intake streak), but the day window has advanced.
+    dayStart = dayStart.add(const Duration(days: 1));
+    container.invalidate(todayTotalMlProvider);
+    container.invalidate(todayDayStartProvider);
+    await container.read(todayTotalMlProvider.future);
+    container.read(reminderReschedulerProvider);
+
+    expect(
+      scheduler.rescheduleCalls,
+      baseline + 1,
+      reason: 'a genuine day-boundary rollover must re-run reschedule() '
+          'even when the total happens to repeat, or the once-daily '
+          'inactivity reminder never gets placed for the new day',
     );
   });
 }

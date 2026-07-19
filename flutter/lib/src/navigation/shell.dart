@@ -100,6 +100,10 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.invalidate(sevenDayAverageMlProvider);
     ref.invalidate(sevenDayDaysOnGoalProvider);
     ref.invalidate(presetUsageStatsProvider);
+    // Not itself UI-facing, but reminderReschedulerProvider depends on it to
+    // tell a genuine day-boundary rollover apart from this same resume
+    // invalidating todayTotalMlProvider (see todayDayStartProvider's doc).
+    ref.invalidate(todayDayStartProvider);
   }
 
   @override

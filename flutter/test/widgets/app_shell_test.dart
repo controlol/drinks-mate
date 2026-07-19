@@ -34,10 +34,14 @@
 //     every ref.invalidate, distinct from a rebuild for some other reason)
 //     to prove AppShell._invalidateDayWindowProviders() actually runs on
 //     resume, and does NOT run on `inactive` alone or on a tab switch. The
-//     fifth provider in that method, todayEntriesProvider, is only watched
-//     by today_drinks_screen.dart, which AppShell never mounts — it is never
-//     created in this widget tree, so ref.invalidate on it is an
-//     unobservable no-op here and is intentionally left unspied.
+//     other two providers in that method — todayEntriesProvider (only
+//     watched by today_drinks_screen.dart, which AppShell never mounts) and
+//     todayDayStartProvider (only watched by reminderReschedulerProvider,
+//     which only `_AppGate` in app.dart watches, not AppShell) — are never
+//     created in this widget tree, so ref.invalidate on them is an
+//     unobservable no-op here and both are intentionally left unspied (see
+//     reminder_reschedule_on_resume_test.dart / providers_test.dart for
+//     todayDayStartProvider's own coverage).
 //
 // Provider override list mirrors flutter/test/widget_test.dart's
 // `_appWithFakeStreams` — AppShell's IndexedStack builds Today/Party/History
@@ -241,79 +245,69 @@ void main() {
   );
 
   testWidgets(
-    'switching tabs via NavigationBar runs the auto-end check again, '
-    'distinct from the cold-start call',
-    (tester) async {
-      final spy = _AutoEndSpyPartySessionRepo();
+      'switching tabs via NavigationBar runs the auto-end check again, '
+      'distinct from the cold-start call', (tester) async {
+    final spy = _AutoEndSpyPartySessionRepo();
 
-      await tester.pumpWidget(_buildAppShell(spy));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildAppShell(spy));
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        spy.checkAndApplyAutoEndCalls,
-        1,
-        reason: 'initState() should have run the check exactly once',
-      );
+    expect(
+      spy.checkAndApplyAutoEndCalls,
+      1,
+      reason: 'initState() should have run the check exactly once',
+    );
 
-      final navBar = find.byType(NavigationBar);
-      await tester.tap(
-        find.descendant(of: navBar, matching: find.text('Party')),
-      );
-      await tester.pumpAndSettle();
+    final navBar = find.byType(NavigationBar);
+    await tester.tap(find.descendant(of: navBar, matching: find.text('Party')));
+    await tester.pumpAndSettle();
 
-      expect(
-        spy.checkAndApplyAutoEndCalls,
-        2,
-        reason: 'NavigationBar.onDestinationSelected must run the check again, '
-            'since IndexedStack keeps every tab\'s State alive and never '
-            're-runs its initState after the first build',
-      );
+    expect(
+      spy.checkAndApplyAutoEndCalls,
+      2,
+      reason: 'NavigationBar.onDestinationSelected must run the check again, '
+          'since IndexedStack keeps every tab\'s State alive and never '
+          're-runs its initState after the first build',
+    );
 
-      await tester.tap(
-        find.descendant(of: navBar, matching: find.text('History')),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: navBar, matching: find.text('History')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(spy.checkAndApplyAutoEndCalls, 3);
-    },
-  );
+    expect(spy.checkAndApplyAutoEndCalls, 3);
+  });
 
   testWidgets(
-    'app foregrounded (didChangeAppLifecycleState(resumed)) runs the '
-    'auto-end check',
-    (tester) async {
-      final spy = _AutoEndSpyPartySessionRepo();
+      'app foregrounded (didChangeAppLifecycleState(resumed)) runs the '
+      'auto-end check', (tester) async {
+    final spy = _AutoEndSpyPartySessionRepo();
 
-      await tester.pumpWidget(_buildAppShell(spy));
-      await tester.pump();
-      await tester.pump();
+    await tester.pumpWidget(_buildAppShell(spy));
+    await tester.pump();
+    await tester.pump();
 
-      final callsAfterColdStart = spy.checkAndApplyAutoEndCalls;
-      expect(callsAfterColdStart, 1);
+    final callsAfterColdStart = spy.checkAndApplyAutoEndCalls;
+    expect(callsAfterColdStart, 1);
 
-      // Transition through a genuinely different state first —
-      // handleAppLifecycleStateChanged is a no-op when the dispatched state
-      // equals the binding's current one, and mirrors how the OS actually
-      // backgrounds an app before resuming it.
-      tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.inactive,
-      );
-      await tester.pump();
-      expect(
-        spy.checkAndApplyAutoEndCalls,
-        callsAfterColdStart,
-        reason: 'only AppLifecycleState.resumed should trigger the check',
-      );
+    // Transition through a genuinely different state first —
+    // handleAppLifecycleStateChanged is a no-op when the dispatched state
+    // equals the binding's current one, and mirrors how the OS actually
+    // backgrounds an app before resuming it.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(
+      spy.checkAndApplyAutoEndCalls,
+      callsAfterColdStart,
+      reason: 'only AppLifecycleState.resumed should trigger the check',
+    );
 
-      tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.resumed,
-      );
-      await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
 
-      expect(spy.checkAndApplyAutoEndCalls, callsAfterColdStart + 1);
-    },
-  );
+    expect(spy.checkAndApplyAutoEndCalls, callsAfterColdStart + 1);
+  });
 
   testWidgets(
     'app resumed invalidates the day-window providers (issue #95), and '
@@ -345,15 +339,13 @@ void main() {
             sevenDayAverageMlCreateCalls++;
             return Stream.value(0.0);
           }),
-          sevenDayDaysOnGoalOverride: sevenDayDaysOnGoalProvider.overrideWith(
-            (_) {
-              sevenDayDaysOnGoalCreateCalls++;
-              return Stream.value(0);
-            },
-          ),
-          presetUsageStatsOverride: presetUsageStatsProvider.overrideWith((
+          sevenDayDaysOnGoalOverride: sevenDayDaysOnGoalProvider.overrideWith((
             _,
           ) {
+            sevenDayDaysOnGoalCreateCalls++;
+            return Stream.value(0);
+          }),
+          presetUsageStatsOverride: presetUsageStatsProvider.overrideWith((_) {
             presetUsageStatsCreateCalls++;
             return Stream.value(const <String, PresetUsageStats>{});
           }),
@@ -386,9 +378,7 @@ void main() {
 
       // Transition through a genuinely different state first, mirroring the
       // auto-end resumed test above.
-      tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.inactive,
-      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       await tester.pump();
       expectCreateCalls(
         1,
@@ -396,9 +386,7 @@ void main() {
             'day-window providers',
       );
 
-      tester.binding.handleAppLifecycleStateChanged(
-        AppLifecycleState.resumed,
-      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       await tester.pump();
 
