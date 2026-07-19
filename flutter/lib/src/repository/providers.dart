@@ -252,6 +252,25 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   );
 });
 
+/// Today's total intake in ml, or `null` while unresolved — a stable
+/// [Provider] wrapper around [todayTotalMlProvider] so
+/// [reminderReschedulerProvider] only rebuilds when the *value* changes.
+///
+/// `AppShell._invalidateDayWindowProviders` (issue #95) invalidates
+/// [todayTotalMlProvider] on every app resume to force it to recompute
+/// "now". A plain `ref.watch(todayTotalMlProvider)` inside
+/// [reminderReschedulerProvider] would rebuild on that resubscription too —
+/// even when it re-emits the same total — re-anchoring the hydration
+/// reminder to the resume moment (notifications.md §Scheduling reserves
+/// that for *logging a drink*). Watching this provider's resolved `int?`
+/// instead of the raw [AsyncValue] means Riverpod's default `!=` equality
+/// suppresses the downstream notification whenever a resubscription
+/// resolves to the same total (see providers_test.dart /
+/// reminder_reschedule_on_resume_test.dart for the regression coverage).
+final _todayTotalMlValueProvider = Provider<int?>((ref) {
+  return ref.watch(todayTotalMlProvider).valueOrNull;
+});
+
 /// Side-effect provider: re-runs [ReminderScheduler.reschedule] whenever
 /// preferences, the resolved default drink, or today's intake change.
 ///
@@ -263,8 +282,10 @@ final reminderReschedulerProvider = Provider<void>((ref) {
   if (prefs == null) return;
   final defaultPreset = ref.watch(defaultDrinkPresetProvider).valueOrNull;
   // Re-run on every log/delete so the "reset timer on log" and "cancel on
-  // goal met" rules (notifications.md §Scheduling) take effect promptly.
-  ref.watch(todayTotalMlProvider);
+  // goal met" rules (notifications.md §Scheduling) take effect promptly —
+  // see [_todayTotalMlValueProvider]'s doc for why this watches that rather
+  // than [todayTotalMlProvider] directly.
+  ref.watch(_todayTotalMlValueProvider);
   final scheduler = ref.watch(reminderSchedulerProvider);
   unawaited(
     scheduler.reschedule(prefs: prefs, defaultDrinkPreset: defaultPreset),
