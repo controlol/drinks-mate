@@ -96,7 +96,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today'),
-        actions: [_settingsButton(context)],
+        actions: [_settingsButton(context, ref)],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -715,9 +715,8 @@ class _LogADrinkTile extends ConsumerWidget {
         );
         entryId = entry.id;
       } else {
-        entryId = await ref.read(drinksRepositoryProvider).logDrink(
-              preset: preset,
-            );
+        entryId =
+            await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
       }
       if (context.mounted) {
         _showLoggedSnackBar(
@@ -837,11 +836,15 @@ void _showLoggedSnackBar(
   );
 }
 
-Widget _settingsButton(BuildContext context) => IconButton(
+Widget _settingsButton(BuildContext context, WidgetRef ref) => IconButton(
       icon: const Icon(Icons.settings_outlined),
       tooltip: 'Settings',
-      onPressed: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-      ),
+      onPressed: () {
+        unawaited(
+            ref.read(partySessionRepositoryProvider).checkAndApplyAutoEnd());
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+        );
+      },
     );

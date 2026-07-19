@@ -39,12 +39,15 @@ import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/bac_daily_bucket.dart';
 import 'package:drinks_mate/src/models/daily_bucket.dart';
+import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/history_day_screen.dart';
 import 'package:drinks_mate/src/screens/history_screen.dart';
+import 'package:drinks_mate/src/services/app_info_service.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -883,4 +886,103 @@ void main() {
       expect(annotations.single.x2, 1.5);
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // "Settings opened" auto-end trigger point (issue #94)
+  //
+  // party-session.md §Auto-end is computed lazily lists "Settings opened" as
+  // one of the five trigger points; history_screen.dart's `_settingsButton`
+  // calls PartySessionRepository.checkAndApplyAutoEnd() immediately before
+  // pushing SettingsScreen. Unlike every other test in this file, this one
+  // wires a REAL PartySessionRepository (backed by a real in-memory
+  // AppDatabase) into partySessionRepositoryProvider instead of relying on
+  // the family-provider overrides alone, so the retroactive end is asserted
+  // against actual DB state — proving HistoryScreen's gear icon really runs
+  // the check, not just that the repository method exists (already covered
+  // by party_session_repository_test.dart's "lazy 12h auto-end" group).
+  // ---------------------------------------------------------------------------
+
+  group('HistoryScreen — Settings-opened auto-end trigger', () {
+    testWidgets(
+      'tapping the settings gear retroactively ends a session whose 12h '
+      'mark has already passed',
+      (tester) async {
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+        final realPartyRepo = PartySessionRepository(db);
+
+        // Source: party-session.md §Ending a session — "12 hours after
+        // startedAt if no alcoholic drinks were logged"; endedAt is the
+        // mark, not "now". Truncated to whole-second precision — Drift's
+        // default DateTime column stores a unix-seconds INTEGER, so a raw
+        // DateTime.now() would never round-trip byte-for-byte.
+        final nowSeconds =
+            DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000 * 1000;
+        final startedAt = DateTime.fromMillisecondsSinceEpoch(
+          nowSeconds,
+          isUtc: true,
+        ).subtract(const Duration(hours: 20));
+        final session = await realPartyRepo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        final mark = startedAt.add(const Duration(hours: 12));
+
+        final repo = _FakeRepo();
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              drinksRepositoryProvider.overrideWithValue(repo),
+              partySessionRepositoryProvider.overrideWithValue(
+                realPartyRepo,
+              ),
+              userPreferencesProvider.overrideWith(
+                (_) => Stream.value(_makePrefs()),
+              ),
+              formatServiceProvider.overrideWithValue(null),
+              historySessionsInRangeProvider.overrideWith(
+                (ref, key) => Stream.value(const <PartySession>[]),
+              ),
+              historyAlcoholicDrinksPerDayProvider.overrideWith(
+                (ref, key) => Stream.value(const <DailyBucket>[]),
+              ),
+              historyMaxBacPerDayProvider.overrideWith(
+                (ref, key) => Future.value(const <BacDailyBucket>[]),
+              ),
+              historyDayEntriesProvider.overrideWith(
+                (ref, key) => Stream.value(const []),
+              ),
+              historyDaySessionSummariesProvider.overrideWith(
+                (ref, key) => Future.value(const []),
+              ),
+              // SettingsScreen (pushed after the gear tap) watches this
+              // directly.
+              visibleNonAlcoholicPresetsProvider.overrideWith(
+                (_) => Stream.value(const <DrinkPreset>[]),
+              ),
+              userProfileProvider.overrideWith((_) => Stream.value(null)),
+              appInfoServiceProvider.overrideWithValue(
+                const FakeAppInfoService(),
+              ),
+            ],
+            child: const MaterialApp(home: HistoryScreen()),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect((await db.getPartySessionById(session.id))!.endedAt, isNull);
+
+        await tester.tap(find.byTooltip('Settings'));
+        await tester.pumpAndSettle();
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt, isNotNull);
+        expect(row.endedAt!.isAtSameMomentAs(mark), isTrue);
+        expect(row.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(await db.getActiveSession(), isNull);
+      },
+    );
+  });
 }

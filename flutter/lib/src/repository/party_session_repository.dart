@@ -367,6 +367,11 @@ class PartySessionRepository {
         updatedAt: nowUtc,
       ),
     );
+    // Auto-end trigger point: "a drink is logged" (party-session.md §Auto-end
+    // is computed lazily). Runs after the insert so a backdated consumedAt
+    // more than 12h in the past can retroactively close the session it was
+    // just logged into, same as any other lazy check.
+    await checkAndApplyAutoEnd(now: nowUtc);
     return DrinkEntry(
       id: entryId,
       name: resolvedName,
@@ -657,10 +662,7 @@ class PartySessionRepository {
       final session = await _db.getPartySessionById(sessionId);
       if (session != null) {
         for (final p in prices) {
-          final resolved = await _resolveSweptPrice(
-            session: session,
-            input: p,
-          );
+          final resolved = await _resolveSweptPrice(session: session, input: p);
           if (resolved == null) continue;
           await _db.sweepSessionEntryPrices(
             sessionId: sessionId,

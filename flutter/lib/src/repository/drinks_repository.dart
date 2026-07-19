@@ -9,6 +9,7 @@ import '../models/drink_entry.dart';
 import '../models/drink_icons.dart';
 import '../models/drink_preset.dart';
 import '../models/optional.dart';
+import 'party_session_repository.dart';
 
 /// Repository seam — the only way widgets touch persisted drink data (D2).
 ///
@@ -16,9 +17,11 @@ import '../models/optional.dart';
 /// domain models ([DrinkPreset], [DrinkEntry]) before returning. Drift types
 /// never escape this class.
 class DrinksRepository {
-  DrinksRepository(this._db);
+  DrinksRepository(this._db, {PartySessionRepository? partySessionRepository})
+      : _partySessionRepository = partySessionRepository;
 
   final AppDatabase _db;
+  final PartySessionRepository? _partySessionRepository;
   static const _uuid = Uuid();
 
   // ---------------------------------------------------------------------------
@@ -376,6 +379,11 @@ class DrinksRepository {
       updatedAt: now,
     );
     await _db.insertDrinkEntry(companion);
+    // Auto-end trigger point: "a drink is logged" (party-session.md
+    // §Auto-end is computed lazily) — a non-alcoholic drink logged well
+    // after the active session's last alcoholic entry must still surface
+    // the retroactive end.
+    await _partySessionRepository?.checkAndApplyAutoEnd(now: now);
     return entryId;
   }
 
