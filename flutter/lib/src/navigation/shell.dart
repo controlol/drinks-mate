@@ -25,6 +25,13 @@ import '../screens/today_screen.dart';
 /// [NavigationBar.onDestinationSelected] plus once in [initState] for the
 /// initial Today tab. The other three trigger points (drink logged, Settings
 /// opened) are handled at their own call sites.
+///
+/// Also the single [WidgetsBindingObserver] in the app: on
+/// [AppLifecycleState.resumed] it invalidates the day-boundary providers
+/// (issue #95) so a stale "today"/7-day window is corrected immediately on
+/// resume, rather than relying solely on each provider's own boundary
+/// [Timer] — which may not fire promptly if the OS suspended the app across
+/// the boundary.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
@@ -77,11 +84,23 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_checkAutoEnd());
+      _invalidateDayWindowProviders();
     }
   }
 
   Future<void> _checkAutoEnd() =>
       ref.read(partySessionRepositoryProvider).checkAndApplyAutoEnd();
+
+  /// Forces every day-boundary provider to recompute "now" and resubscribe
+  /// on resume (issue #95), rather than relying solely on each provider's
+  /// own boundary [Timer] to have fired while backgrounded.
+  void _invalidateDayWindowProviders() {
+    ref.invalidate(todayTotalMlProvider);
+    ref.invalidate(todayEntriesProvider);
+    ref.invalidate(sevenDayAverageMlProvider);
+    ref.invalidate(sevenDayDaysOnGoalProvider);
+    ref.invalidate(presetUsageStatsProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
