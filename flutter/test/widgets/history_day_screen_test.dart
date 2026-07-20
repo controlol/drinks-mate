@@ -16,6 +16,20 @@
 //     deleteDrinkEntry with the entry id, and a Party-Session-attached
 //     alcoholic entry (partySessionId set) has neither — mirroring S6's
 //     read-only rule (design/user-experience.md §S3/§S6).
+//  8. Expand-on-tap (issue #105, design/user-experience.md §S3 "The day's
+//     Party Session summary is tappable, and expands in place"): the History
+//     day drill-down passes `expandable: true`, so tapping a card reveals
+//     Started/Ended time, "Total consumed alcohol in grams", the full meals
+//     list (Semantics-labelled, present iff non-empty), and a
+//     SessionLifetimeBacChart, IN THAT VERTICAL ORDER (asserted via
+//     getTopLeft().dy, not just presence — a reorder should fail this);
+//     tapping again collapses back to exactly the original field set. The
+//     expand/collapse icon (expand_more/expand_less) flips with state.
+//  9. The multi-day acceptance criterion at the widget level: two
+//     SessionDaySummary fixtures for the "same" session (identical id/
+//     startedAt/endedAt/lifetimeBacChart) but different day-clipped
+//     grams/meals — expanding either card shows its own day-specific
+//     grams/meals but identical Started/Ended text and a chart on both.
 //
 // Provider override pattern mirrors history_screen_test.dart: the two #26
 // day-drilldown family providers (historyDayEntriesProvider,
@@ -24,10 +38,13 @@
 // drinksRepositoryProvider with a _FakeRepo (pattern mirrors
 // today_drinks_screen_test.dart's _FakeRepo) — no real DB needed.
 
+import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/bac_chart_series.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
+import 'package:drinks_mate/src/models/meal.dart';
 import 'package:drinks_mate/src/models/optional.dart';
 import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/session_day_summary.dart';
@@ -36,6 +53,7 @@ import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/history_day_screen.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
+import 'package:drinks_mate/src/widgets/session_lifetime_bac_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -148,6 +166,40 @@ PartySession _session({String id = 's1', DateTime? endedAt}) {
     useSessionPrices: false,
     createdAt: _epoch,
     updatedAt: _epoch,
+  );
+}
+
+Meal _meal({
+  required String id,
+  required String partySessionId,
+  required DateTime eatenAt,
+  MealSize size = MealSize.medium,
+}) {
+  return Meal(
+    id: id,
+    partySessionId: partySessionId,
+    size: size,
+    eatenAt: eatenAt,
+    createdAt: _epoch,
+    updatedAt: _epoch,
+  );
+}
+
+/// A minimal, deterministic [BacChartSeries] fixture — issue #105's expand
+/// card only needs to assert a [SessionLifetimeBacChart] renders, not poke
+/// inside fl_chart internals (per this task's brief).
+BacChartSeries _chartSeries({DateTime? axisStart, DateTime? axisEnd}) {
+  final start = axisStart ?? _dayStart;
+  final end = axisEnd ?? _dayStart.add(const Duration(hours: 1));
+  return BacChartSeries(
+    axisStart: start,
+    axisEnd: end,
+    actual: [
+      BacChartPoint(time: start, gPerL: 0.2),
+      BacChartPoint(time: end, gPerL: 0.05),
+    ],
+    projected: const [],
+    tickInterval: const Duration(minutes: 30),
   );
 }
 
@@ -885,6 +937,310 @@ void main() {
       // (which would be rejected by the sheet's own "Name is required"
       // validation — the bug this test guards against).
       expect(call.name, isNull);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 8. Expand-on-tap (issue #105, design/user-experience.md §S3 "The day's
+  //    Party Session summary is tappable, and expands in place").
+  //    HistoryDayScreen passes `expandable: true` to SessionSummaryCard.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'tapping the card reveals Started/Ended time, total consumed alcohol in '
+    'grams, the meals list, and a BAC chart; tapping again collapses back '
+    'to exactly the original fields',
+    (tester) async {
+      // find.bySemanticsLabel requires an active SemanticsHandle — see
+      // party_screen_test.dart's identical note. Disposed explicitly at the
+      // end of the test body (not via addTearDown): WidgetTester's
+      // "handles disposed" check runs before package:test's own queued
+      // addTearDown callbacks, so an addTearDown-only dispose fails it.
+      final semantics = tester.ensureSemantics();
+
+      // asOf 2h after the meal, so relativeTimeAgo deterministically reads
+      // "2 h ago" rather than depending on DateTime.now().
+      final asOf = _dayStart.add(const Duration(hours: 5));
+      final summary = SessionDaySummary(
+        session: _session(
+          id: 's1',
+          endedAt: _dayStart.add(const Duration(hours: 3, minutes: 15)),
+        ),
+        duration: const Duration(hours: 3, minutes: 15),
+        totalAlcoholicDrinks: 3,
+        mealsLoggedCount: 1,
+        peakBacGPerL: 0.234,
+        totalAlcoholGrams: 42.7,
+        meals: [
+          _meal(
+            id: 'm1',
+            partySessionId: 's1',
+            eatenAt: asOf.subtract(const Duration(hours: 2)),
+            size: MealSize.medium,
+          ),
+        ],
+        lifetimeBacChart: _chartSeries(),
+        asOf: asOf,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      // Collapsed: only the fields already covered by section 3 above.
+      expect(find.text('Duration: 3h 15m'), findsOneWidget);
+      expect(find.textContaining('Started:'), findsNothing);
+      expect(find.textContaining('Ended:'), findsNothing);
+      expect(find.textContaining('Total consumed alcohol'), findsNothing);
+      expect(find.textContaining('Medium meal'), findsNothing);
+      expect(find.byType(SessionLifetimeBacChart), findsNothing);
+      expect(find.byIcon(Icons.expand_more), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pump();
+
+      // Expanded: the four new fields, in the order the diff specifies —
+      // Started/Ended after Duration, grams after peak BAC, then meals,
+      // then the chart.
+      expect(find.text('Started: 5:00 AM'), findsOneWidget);
+      expect(find.text('Ended: 8:15 AM'), findsOneWidget);
+      expect(find.text('Total consumed alcohol: 43 g'), findsOneWidget);
+      expect(find.text('Medium meal · 2 h ago'), findsOneWidget);
+      expect(find.byType(SessionLifetimeBacChart), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsOneWidget);
+      expect(find.byIcon(Icons.expand_more), findsNothing);
+      // Meals list is wrapped in its own labelled Semantics container when
+      // non-empty (the mirror of the "no meals" test's absence assertion).
+      // Matched as a RegExp: Semantics merges the container's own label with
+      // its descendants' text into one combined node label ("Meals logged
+      // this session\nMedium meal · 2 h ago"), not an exact string.
+      expect(
+        find.bySemanticsLabel(RegExp('Meals logged this session')),
+        findsOneWidget,
+      );
+
+      // Vertical order matters — the spec pins it explicitly ("IN THIS
+      // ORDER" per the issue brief / design/user-experience.md §S3). A
+      // presence-only check would pass even if a refactor silently
+      // reordered these fields, so assert relative Y position too.
+      double dy(Finder f) => tester.getTopLeft(f).dy;
+      expect(
+        dy(find.text('Started: 5:00 AM')),
+        lessThan(dy(find.text('Alcoholic drinks: 3'))),
+        reason: 'Started/Ended come right after Duration, before the '
+            'always-present drinks/meals-count lines',
+      );
+      expect(
+        dy(find.text('Started: 5:00 AM')),
+        lessThan(dy(find.text('Ended: 8:15 AM'))),
+      );
+      expect(
+        dy(find.textContaining('Peak estimated BAC')),
+        lessThan(dy(find.text('Total consumed alcohol: 43 g'))),
+        reason: 'grams line comes after the peak-BAC line',
+      );
+      expect(
+        dy(find.text('Total consumed alcohol: 43 g')),
+        lessThan(dy(find.text('Medium meal · 2 h ago'))),
+        reason: 'the meals list comes after the grams line',
+      );
+      expect(
+        dy(find.text('Medium meal · 2 h ago')),
+        lessThan(dy(find.byType(SessionLifetimeBacChart))),
+        reason: 'the chart is rendered last, at the bottom',
+      );
+
+      await tester.tap(find.byIcon(Icons.expand_less));
+      await tester.pump();
+
+      // Collapses back to exactly the original (pre-expand) field set.
+      expect(find.text('Duration: 3h 15m'), findsOneWidget);
+      expect(find.textContaining('Started:'), findsNothing);
+      expect(find.textContaining('Ended:'), findsNothing);
+      expect(find.textContaining('Total consumed alcohol'), findsNothing);
+      expect(find.textContaining('Medium meal'), findsNothing);
+      expect(find.byType(SessionLifetimeBacChart), findsNothing);
+      expect(find.byIcon(Icons.expand_more), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsNothing);
+
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'a still-active session (endedAt == null) shows "Ended: Ongoing" when '
+    'expanded',
+    (tester) async {
+      final summary = SessionDaySummary(
+        session: _session(id: 's1'), // endedAt: null
+        duration: const Duration(hours: 1),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.1,
+        lifetimeBacChart: _chartSeries(),
+        asOf: _dayStart,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pump();
+
+      expect(find.text('Started: 5:00 AM'), findsOneWidget);
+      expect(find.text('Ended: Ongoing'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'no meals logged that day -> the meals Semantics container is absent '
+    'when expanded, but grams/chart still show',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+
+      final summary = SessionDaySummary(
+        session: _session(
+          id: 's1',
+          endedAt: _dayStart.add(const Duration(hours: 1)),
+        ),
+        duration: const Duration(hours: 1),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.1,
+        totalAlcoholGrams: 12,
+        meals: const [],
+        lifetimeBacChart: _chartSeries(),
+        asOf: _dayStart,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pump();
+
+      expect(find.text('Total consumed alcohol: 12 g'), findsOneWidget);
+      expect(find.byType(SessionLifetimeBacChart), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('Meals logged this session')),
+        findsNothing,
+      );
+
+      semantics.dispose();
+    },
+  );
+
+  testWidgets(
+    'peakBacGPerL null (incomplete profile) -> lifetimeBacChart is also '
+    'absent when expanded, no chart widget rendered',
+    (tester) async {
+      final summary = SessionDaySummary(
+        session: _session(
+          id: 's1',
+          endedAt: _dayStart.add(const Duration(hours: 1)),
+        ),
+        duration: const Duration(hours: 1),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        // peakBacGPerL, lifetimeBacChart both left null/default.
+        totalAlcoholGrams: 12,
+        asOf: _dayStart,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pump();
+
+      expect(find.text('Total consumed alcohol: 12 g'), findsOneWidget);
+      expect(find.byType(SessionLifetimeBacChart), findsNothing);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 9. Multi-day acceptance criterion (design/user-experience.md §S3: "For a
+  //    multi-day session these are identical on every day card it touches").
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'two SessionDaySummary cards for the same multi-day session show '
+    'day-specific grams/meals but identical Started/Ended text and a chart '
+    'on both, once both are expanded',
+    (tester) async {
+      final session = _session(
+        id: 's1',
+        endedAt: _dayStart.add(const Duration(hours: 10)),
+      );
+      final sharedChart = _chartSeries(
+        axisStart: _dayStart,
+        axisEnd: _dayStart.add(const Duration(hours: 10)),
+      );
+      final asOf = _dayStart.add(const Duration(hours: 12));
+
+      final day1Summary = SessionDaySummary(
+        session: session,
+        duration: const Duration(hours: 2),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 1,
+        peakBacGPerL: 0.1,
+        totalAlcoholGrams: 10,
+        meals: [
+          _meal(
+            id: 'm-day1',
+            partySessionId: 's1',
+            eatenAt: asOf.subtract(const Duration(hours: 3)),
+            size: MealSize.small,
+          ),
+        ],
+        lifetimeBacChart: sharedChart,
+        asOf: asOf,
+      );
+      final day2Summary = SessionDaySummary(
+        session: session,
+        duration: const Duration(hours: 8),
+        totalAlcoholicDrinks: 2,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.05,
+        totalAlcoholGrams: 25,
+        meals: const [],
+        lifetimeBacChart: sharedChart,
+        asOf: asOf,
+      );
+
+      await tester.pumpWidget(
+        _buildScreen(summaries: [day1Summary, day2Summary]),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Party session'), findsNWidgets(2));
+      expect(find.byIcon(Icons.expand_more), findsNWidgets(2));
+
+      // Expand both cards.
+      await tester.tap(find.byIcon(Icons.expand_more).at(0));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.expand_more).at(0));
+      await tester.pump();
+
+      // Started/Ended are facts about the whole session, not day-clipped —
+      // identical text on both expanded cards.
+      expect(find.text('Started: 5:00 AM'), findsNWidgets(2));
+      expect(find.text('Ended: 3:00 PM'), findsNWidgets(2));
+
+      // Both cards render a chart (the shared, non-day-clipped series).
+      expect(find.byType(SessionLifetimeBacChart), findsNWidgets(2));
+
+      // Grams differ per day.
+      expect(find.text('Total consumed alcohol: 10 g'), findsOneWidget);
+      expect(find.text('Total consumed alcohol: 25 g'), findsOneWidget);
+
+      // Meals differ per day: only day 1 has one.
+      expect(find.textContaining('Small meal'), findsOneWidget);
     },
   );
 }

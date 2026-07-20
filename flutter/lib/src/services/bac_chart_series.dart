@@ -1,51 +1,12 @@
 import 'package:core/core.dart';
 
+import '../models/bac_chart_series.dart';
 import '../models/drink_entry.dart';
 import '../models/meal.dart';
 import '../models/user_profile.dart';
 import 'bac_estimator.dart';
 
-/// One sampled point on the Party tab's BAC line chart.
-class BacChartPoint {
-  const BacChartPoint({required this.time, required this.gPerL});
-
-  /// Local wall-clock time — chart tick labels are "24-hour digital local
-  /// time" (party-session.md §BAC line chart), so every point here is
-  /// already local.
-  final DateTime time;
-  final double gPerL;
-}
-
-/// The Party tab's BAC line chart data (party-session.md §BAC line chart),
-/// built once per rebuild from the session's live entries/meals.
-class BacChartSeries {
-  const BacChartSeries({
-    required this.axisStart,
-    required this.axisEnd,
-    required this.actual,
-    required this.projected,
-    required this.tickInterval,
-  });
-
-  /// X-axis start — the session's `startedAt`, local.
-  final DateTime axisStart;
-
-  /// X-axis end — the projected return-to-zero time, rounded up to the next
-  /// 30 minutes ([roundUpToNextHalfHour]).
-  final DateTime axisEnd;
-
-  /// Solid segment: `startedAt` → `min(now, axisEnd)`, actual/already-elapsed
-  /// BAC. Always has at least one point.
-  final List<BacChartPoint> actual;
-
-  /// Dashed segment: `min(now, axisEnd)` → `axisEnd`, the projection. Empty
-  /// once the session has already reached (or passed) `axisEnd` (e.g. an
-  /// ended session viewed later).
-  final List<BacChartPoint> projected;
-
-  /// Tick spacing for the X axis ([bacChartTickInterval]).
-  final Duration tickInterval;
-}
+export '../models/bac_chart_series.dart';
 
 /// Default X-axis window shown before the first alcoholic drink is logged
 /// (party-session.md §BAC line chart → Empty state; Parity Rulebook "BAC

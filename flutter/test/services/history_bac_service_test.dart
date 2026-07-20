@@ -26,6 +26,31 @@
 // The final group is a regression test for a fixed bug where sampling an
 // early grid point counted not-yet-consumed drinks at their full undecayed
 // peak (see `_sampleAt` in history_bac_service.dart and that group's comment).
+//
+// Added for issue #105 (History day drill-down expand-on-tap):
+//   8. `buildSessionDaySummary`'s new `totalAlcoholGrams`/`meals` fields are
+//      day-clipped (same scope as `totalAlcoholicDrinks`/`mealsLoggedCount`)
+//      — cross-checked against `alcoholGrams` summed over the day-clipped
+//      entries, not a hand-derived number (design/user-experience.md §S3:
+//      "Total consumed alcohol in grams ... day-clipped").
+//   9. `buildSessionLifetimeBacSeries` — the History expand card's static
+//      whole-session chart (issue #105): axis spans the session's own
+//      `startedAt`/`endedAt` (or `now` while active), `projected` is always
+//      empty, the zero/negative-duration edge case still yields exactly one
+//      point, and multi-sample points are cross-checked against
+//      `estimateSessionBac` directly (replicating `_sampleAt`'s
+//      `consumedAt <= t` filter, not the full entry list — see that
+//      function's own doc comment on why that filter matters).
+//  10. The multi-day acceptance criterion itself (design/user-experience.md
+//      §S3: "For a multi-day session these are identical on every day card
+//      it touches"): `buildSessionDaySummary` called for two different days
+//      of the same midnight-spanning session yields different day-clipped
+//      grams/meals but byte-identical `lifetimeBacChart`s and identical
+//      `session.startedAt`/`endedAt`.
+//  11. `buildSessionSummary` (the S9/S7 whole-session builder) is
+//      deliberately left unchanged by #105 — a guard that its result still
+//      has the four new fields at their untouched defaults, so that scope
+//      limit stays a deliberate choice rather than an accidental drift.
 import 'package:core/core.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
@@ -772,6 +797,420 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Group 8: buildSessionDaySummary — new day-clipped totalAlcoholGrams/meals
+  // fields (issue #105).
+  // ---------------------------------------------------------------------------
+
+  group(
+    'buildSessionDaySummary — totalAlcoholGrams/meals are day-clipped '
+    '(issue #105)',
+    () {
+      final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
+      final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
+
+      test(
+          'totalAlcoholGrams sums only that day\'s entries (cross-checked '
+          "against core's alcoholGrams, not a hand-derived number), and "
+          'meals.length == mealsLoggedCount', () {
+        final session = _session(
+          id: 's1',
+          startedAt: day2Start,
+          endedAt: DateTime.utc(2026, 7, 21, 7, 0),
+        );
+        final entries = [
+          // Within day 2 — counted.
+          _entry(
+            id: 'e1',
+            consumedAt: DateTime.utc(2026, 7, 21, 6, 0),
+            volumeMl: 250,
+            abvPercent: 5.0,
+            partySessionId: 's1',
+          ),
+          _entry(
+            id: 'e2',
+            consumedAt: DateTime.utc(2026, 7, 21, 6, 30),
+            volumeMl: 330,
+            abvPercent: 4.5,
+            partySessionId: 's1',
+          ),
+          // The previous day — excluded from day 2's grams total, same
+          // day-window filter buildSessionDaySummary already applies to
+          // totalAlcoholicDrinks (Group 6 above).
+          _entry(
+            id: 'e3',
+            consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
+            volumeMl: 500,
+            abvPercent: 5.0,
+            partySessionId: 's1',
+          ),
+        ];
+        final meals = [
+          _meal(
+            id: 'm1',
+            eatenAt: DateTime.utc(2026, 7, 21, 6, 15),
+            partySessionId: 's1',
+            size: MealSize.large,
+          ),
+          // Previous day — excluded.
+          _meal(
+            id: 'm2',
+            eatenAt: DateTime.utc(2026, 7, 20, 23, 0),
+            partySessionId: 's1',
+          ),
+        ];
+
+        final summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day2Start,
+          dayEnd: day3Start,
+          entries: entries,
+          meals: meals,
+          profile: _profile(),
+          now: day3Start,
+        );
+
+        // Source: alcoholGrams (package:core) — Parity Rulebook's own
+        // grams-of-alcohol formula, summed over only the day-clipped
+        // entries (e1 + e2, excluding e3).
+        final expectedGrams = alcoholGrams(volumeMl: 250, abvPercent: 5.0) +
+            alcoholGrams(volumeMl: 330, abvPercent: 4.5);
+        expect(summary.totalAlcoholGrams, closeTo(expectedGrams, 1e-9));
+
+        expect(summary.meals, hasLength(1));
+        expect(summary.meals.single.id, 'm1');
+        expect(summary.meals.length, summary.mealsLoggedCount);
+      });
+
+      test('no entries that day -> totalAlcoholGrams is 0, meals is empty', () {
+        final session = _session(
+          id: 's1',
+          startedAt: day2Start,
+          endedAt: day2Start.add(const Duration(hours: 1)),
+        );
+
+        final summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day2Start,
+          dayEnd: day3Start,
+          entries: const [],
+          meals: const [],
+          profile: _profile(),
+          now: day3Start,
+        );
+
+        expect(summary.totalAlcoholGrams, 0);
+        expect(summary.meals, isEmpty);
+      });
+
+      test('asOf is set to the `now` the summary was built with', () {
+        final session = _session(
+          id: 's1',
+          startedAt: day2Start,
+          endedAt: day2Start.add(const Duration(hours: 1)),
+        );
+        final now = day2Start.add(const Duration(hours: 4));
+
+        final summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day2Start,
+          dayEnd: day3Start,
+          entries: const [],
+          meals: const [],
+          profile: _profile(),
+          now: now,
+        );
+
+        expect(summary.asOf, now);
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Group 9: buildSessionLifetimeBacSeries — the History expand card's
+  // static whole-session BAC chart (issue #105).
+  // ---------------------------------------------------------------------------
+
+  group('buildSessionLifetimeBacSeries', () {
+    test(
+        'axis spans the session\'s own startedAt/endedAt (local), and '
+        '`projected` is always empty — a static, already-elapsed view, '
+        'unlike the Party tab\'s live projection chart', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      final endedAt = DateTime.utc(2026, 7, 21, 18, 20);
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+      final entries = [
+        _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+      ];
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: _profile(),
+        now: endedAt,
+      );
+
+      expect(series.axisStart, startedAt.toLocal());
+      expect(series.axisEnd, endedAt.toLocal());
+      expect(series.projected, isEmpty);
+    });
+
+    test(
+        'a still-active session (endedAt == null) uses `now` as axisEnd, not '
+        'a projected sober time', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      final now = startedAt.add(const Duration(minutes: 20));
+      final session = _session(id: 's1', startedAt: startedAt);
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: now,
+      );
+
+      expect(series.axisEnd, now.toLocal());
+      expect(series.projected, isEmpty);
+    });
+
+    test(
+        'zero/negative-duration edge case (endedAt not after startedAt): '
+        'axisEnd clamps to axisStart, and `actual` still has exactly one '
+        'point (history_bac_service.dart doc comment: "if endedAt/now is '
+        'not after startedAt ... axisEnd is clamped to axisStart")', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      // endedAt EXACTLY equal to startedAt — the boundary of the "not after"
+      // clamp condition.
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: startedAt);
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: startedAt,
+      );
+
+      expect(series.axisEnd.isAtSameMomentAs(series.axisStart), isTrue);
+      expect(series.actual, hasLength(1));
+      expect(series.actual.single.time, series.axisStart);
+    });
+
+    test(
+        'a genuinely negative window (endedAt before startedAt — a '
+        'degenerate/clock-skew-style input, never produced by normal '
+        'session flow) still clamps axisEnd to axisStart rather than '
+        'producing a negative-length axis', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      final endedAt = startedAt.subtract(const Duration(minutes: 5));
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: startedAt,
+      );
+
+      expect(series.axisEnd.isAtSameMomentAs(series.axisStart), isTrue);
+      expect(series.actual, hasLength(1));
+    });
+
+    test(
+        'multi-sample points are cross-checked against estimateSessionBac '
+        'directly, replicating the consumedAt <= t filter _sampleAt applies '
+        '(a single dose consumed exactly at startedAt keeps the filter a '
+        'no-op at every sampled instant)', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      final endedAt = startedAt.add(const Duration(minutes: 20));
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+      final entries = [
+        _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+      ];
+      final profile = _profile();
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: entries,
+        meals: const [],
+        profile: profile,
+        now: endedAt,
+        sampleInterval: const Duration(minutes: 5),
+      );
+
+      // 20-minute span / 5-minute interval = 5 points (0,5,10,15,20).
+      expect(series.actual, hasLength(5));
+      for (final point in series.actual) {
+        final consumedByPoint =
+            entries.where((e) => !e.consumedAt.isAfter(point.time)).toList();
+        final expected = estimateSessionBac(
+          profile: profile,
+          alcoholicEntries: consumedByPoint,
+          meals: const [],
+          at: point.time,
+        ).gPerL;
+        expect(point.gPerL, closeTo(expected, 0.001));
+      }
+      // The first point captures the undecayed peak exactly (sampled at
+      // startedAt itself).
+      expect(series.actual.first.gPerL, closeTo(oneBeerInitial, 0.001));
+    });
+
+    test('tickInterval matches bacChartTickInterval(axisEnd - axisStart)', () {
+      final startedAt = DateTime.utc(2026, 7, 21, 18, 0);
+      final endedAt = startedAt.add(const Duration(hours: 3));
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+
+      final series = buildSessionLifetimeBacSeries(
+        session: session,
+        alcoholicEntries: const [],
+        meals: const [],
+        profile: _profile(),
+        now: endedAt,
+      );
+
+      expect(
+        series.tickInterval,
+        bacChartTickInterval(series.axisEnd.difference(series.axisStart)),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Group 10: the multi-day invariant (design/user-experience.md §S3: "For a
+  // multi-day session these are identical on every day card it touches") —
+  // the core acceptance criterion of issue #105.
+  // ---------------------------------------------------------------------------
+
+  group(
+    'buildSessionDaySummary — multi-day session: lifetimeBacChart and '
+    'session start/end are identical across every day card, while '
+    'grams/meals differ per day',
+    () {
+      test(
+          'a session spanning midnight yields different day-clipped grams/'
+          'meals for day 1 vs day 2, but byte-identical lifetimeBacChart '
+          'axis/points and identical session.startedAt/endedAt', () {
+        final day1Start = DateTime.utc(2026, 7, 20, 5, 0);
+        final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
+        final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
+        final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+        final endedAt = DateTime.utc(2026, 7, 21, 8, 0);
+        final session =
+            _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+        final entries = [
+          // Day 1 (before midnight).
+          _entry(
+            id: 'e1',
+            consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
+            volumeMl: 250,
+            abvPercent: 5.0,
+            partySessionId: 's1',
+          ),
+          // Day 2 (after midnight).
+          _entry(
+            id: 'e2',
+            consumedAt: DateTime.utc(2026, 7, 21, 6, 0),
+            volumeMl: 330,
+            abvPercent: 4.5,
+            partySessionId: 's1',
+          ),
+        ];
+        final meals = [
+          _meal(
+            id: 'm1',
+            eatenAt: DateTime.utc(2026, 7, 20, 23, 30),
+            partySessionId: 's1',
+          ),
+        ];
+        final now = day3Start;
+
+        final day1Summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day1Start,
+          dayEnd: day2Start,
+          entries: entries,
+          meals: meals,
+          profile: _profile(),
+          now: now,
+        );
+        final day2Summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day2Start,
+          dayEnd: day3Start,
+          entries: entries,
+          meals: meals,
+          profile: _profile(),
+          now: now,
+        );
+
+        // Day-clipped fields genuinely differ per day.
+        expect(day1Summary.totalAlcoholicDrinks, 1);
+        expect(day2Summary.totalAlcoholicDrinks, 1);
+        expect(day1Summary.meals, hasLength(1));
+        expect(day2Summary.meals, isEmpty);
+        expect(
+          day1Summary.totalAlcoholGrams,
+          isNot(closeTo(day2Summary.totalAlcoholGrams, 1e-9)),
+          reason: 'e1 (250ml/5%) and e2 (330ml/4.5%) have different grams',
+        );
+
+        // Session-level facts (not day-clipped) are identical on both cards.
+        expect(
+          day1Summary.session.startedAt,
+          day2Summary.session.startedAt,
+        );
+        expect(day1Summary.session.endedAt, day2Summary.session.endedAt);
+
+        // lifetimeBacChart is built from the session's whole (unclipped)
+        // lifetime on both cards — identical axis and every sampled point,
+        // even though the two day windows themselves differ.
+        final chart1 = day1Summary.lifetimeBacChart!;
+        final chart2 = day2Summary.lifetimeBacChart!;
+        expect(chart1.axisStart, chart2.axisStart);
+        expect(chart1.axisEnd, chart2.axisEnd);
+        expect(chart1.actual, hasLength(chart2.actual.length));
+        for (var i = 0; i < chart1.actual.length; i++) {
+          expect(chart1.actual[i].time, chart2.actual[i].time);
+          expect(chart1.actual[i].gPerL, chart2.actual[i].gPerL);
+        }
+      });
+
+      test(
+          'lifetimeBacChart is null exactly when peakBacGPerL is null '
+          '(incomplete profile)', () {
+        final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
+        final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
+        final session = _session(
+          id: 's1',
+          startedAt: day2Start,
+          endedAt: day2Start.add(const Duration(hours: 1)),
+        );
+
+        final summary = buildSessionDaySummary(
+          session: session,
+          dayStart: day2Start,
+          dayEnd: day3Start,
+          entries: const [],
+          meals: const [],
+          profile: _profile(birthDate: null),
+          now: day3Start,
+        );
+
+        expect(summary.peakBacGPerL, isNull);
+        expect(summary.lifetimeBacChart, isNull);
+      });
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // buildSessionSummary — whole-session (unclipped) sibling of
   // buildSessionDaySummary (history_bac_service.dart doc comment: "every
   // metric spans [startedAt, endedAt) ... rather than a single calendar
@@ -975,6 +1414,37 @@ void main() {
         );
 
         expect(summary.peakBacGPerL, isNull);
+      });
+
+      test(
+          'issue #105 scope guard: buildSessionSummary does NOT populate '
+          'totalAlcoholGrams/meals/lifetimeBacChart/asOf — it is deliberately '
+          'left unchanged (history_bac_service.dart doc comment: '
+          '"buildSessionSummary ... was deliberately left UNCHANGED"), so '
+          'they stay at SessionDaySummary\'s own defaults', () {
+        final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
+        final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
+        final session =
+            _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+        final entries = [
+          _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+        ];
+        final meals = [
+          _meal(id: 'm1', eatenAt: startedAt, partySessionId: 's1'),
+        ];
+
+        final summary = buildSessionSummary(
+          session: session,
+          entries: entries,
+          meals: meals,
+          profile: _profile(),
+          now: endedAt,
+        );
+
+        expect(summary.totalAlcoholGrams, 0);
+        expect(summary.meals, isEmpty);
+        expect(summary.lifetimeBacChart, isNull);
+        expect(summary.asOf, isNull);
       });
     },
   );
