@@ -72,7 +72,7 @@ class HistoryDayScreen extends ConsumerWidget {
               ),
               for (final summary in summaries) ...[
                 const SizedBox(height: 12),
-                SessionSummaryCard(summary: summary),
+                SessionSummaryCard(summary: summary, expandable: true),
               ],
               const SizedBox(height: 20),
               Text('Drinks', style: Theme.of(context).textTheme.titleMedium),

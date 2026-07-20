@@ -102,6 +102,11 @@ abstract final class SemanticsLabels {
   static const String historyMaxBacChartPrefix =
       'Maximum estimated BAC per day chart — this is an estimate only. ';
   static const String historySessionSummaryCard = 'Party session summary';
+  static const String historySessionSummaryCardMeals =
+      'Meals logged this session';
+  static const String historySessionSummaryCardChart =
+      'Estimated blood alcohol concentration over the session\'s full '
+      'lifetime — this is an estimate only';
   static const String historyDayEntryList = 'Drinks logged this day';
   static const String historyDayEmptyState = 'No drinks logged this day';
 

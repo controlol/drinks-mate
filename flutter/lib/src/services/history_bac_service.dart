@@ -1,3 +1,6 @@
+import 'package:core/core.dart';
+
+import '../models/bac_chart_series.dart';
 import '../models/bac_daily_bucket.dart';
 import '../models/drink_entry.dart';
 import '../models/meal.dart';
@@ -146,12 +149,90 @@ SessionDaySummary buildSessionDaySummary({
     sampleInterval: const Duration(minutes: 15),
   );
 
+  final dayGrams = dayEntries.fold<double>(
+    0,
+    (sum, e) =>
+        sum +
+        alcoholGrams(
+          volumeMl: e.volumeMl.toDouble(),
+          abvPercent: e.abvPercent ?? 0,
+        ),
+  );
+
+  // The chart is the session's whole lifetime, not day-clipped (§S3 expand)
+  // — built from sessionEntries/sessionMeals (unclipped), not dayEntries/
+  // dayMeals, and gated on the same profile-completeness precondition as
+  // peakBac so it's null exactly when peakBac is.
+  final lifetimeChart = profile != null && profile.birthDate != null
+      ? buildSessionLifetimeBacSeries(
+          session: session,
+          alcoholicEntries: sessionEntries,
+          meals: sessionMeals,
+          profile: profile,
+          now: now,
+        )
+      : null;
+
   return SessionDaySummary(
     session: session,
     duration: duration,
     totalAlcoholicDrinks: dayEntries.length,
     mealsLoggedCount: dayMeals.length,
     peakBacGPerL: peakBac,
+    totalAlcoholGrams: dayGrams,
+    meals: dayMeals,
+    lifetimeBacChart: lifetimeChart,
+    asOf: now,
+  );
+}
+
+/// Builds the History day drill-down's expanded session-summary card static
+/// BAC chart (user-experience.md §S3 expand, issue #105): solid across the
+/// session's own lifetime — `startedAt` to `endedAt`, or `now` while still
+/// active — never day-clipped, so a multi-day session renders the identical
+/// chart on every day card it touches. [BacChartSeries.projected] is always
+/// empty (no dashed projection, no "now" marker — a static, already-elapsed
+/// view, unlike the Party tab's live projection chart built by
+/// [buildBacChartSeries] in `bac_chart_series.dart`).
+///
+/// [alcoholicEntries]/[meals] should already be scoped to [session] (mirrors
+/// [buildSessionSummary]'s precondition).
+BacChartSeries buildSessionLifetimeBacSeries({
+  required PartySession session,
+  required List<DrinkEntry> alcoholicEntries,
+  required List<Meal> meals,
+  required UserProfile profile,
+  required DateTime now,
+  Duration sampleInterval = const Duration(minutes: 5),
+}) {
+  final axisStart = session.startedAt.toLocal();
+  final rawEnd = (session.endedAt ?? now).toLocal();
+  final axisEnd = rawEnd.isAfter(axisStart) ? rawEnd : axisStart;
+
+  final points = <BacChartPoint>[];
+  var t = axisStart;
+  while (t.isBefore(axisEnd)) {
+    points.add(
+      BacChartPoint(
+        time: t,
+        gPerL: _sampleAt(t, profile, alcoholicEntries, meals),
+      ),
+    );
+    t = t.add(sampleInterval);
+  }
+  points.add(
+    BacChartPoint(
+      time: axisEnd,
+      gPerL: _sampleAt(axisEnd, profile, alcoholicEntries, meals),
+    ),
+  );
+
+  return BacChartSeries(
+    axisStart: axisStart,
+    axisEnd: axisEnd,
+    actual: points,
+    projected: const [],
+    tickInterval: bacChartTickInterval(axisEnd.difference(axisStart)),
   );
 }
 

@@ -19,6 +19,7 @@ import '../repository/providers.dart';
 import '../services/bac_chart_series.dart';
 import '../services/bac_estimator.dart';
 import '../services/format_service.dart';
+import '../services/meal_format.dart';
 import '../services/session_pricing_totals.dart';
 import '../theme/app_theme.dart';
 import '../utils/color_utils.dart';
@@ -1153,7 +1154,7 @@ class _MealIndicator extends ConsumerWidget {
     final last = _lastMeal;
     final label = last == null
         ? 'Add meal'
-        : '${_sizeLabel(last.size)} meal · ${_relativeTime(last.eatenAt, now)}';
+        : '${mealSizeLabel(last.size)} meal · ${relativeTimeAgo(last.eatenAt, now)}';
 
     return Semantics(
       label: SemanticsLabels.mealIndicator,
@@ -1249,7 +1250,7 @@ class _MealIndicator extends ConsumerWidget {
               const SizedBox(height: 12),
               for (final size in MealSize.values)
                 ListTile(
-                  title: Text(_sizeLabel(size)),
+                  title: Text(mealSizeLabel(size)),
                   trailing: size == initial ? const Icon(Icons.check) : null,
                   onTap: () => Navigator.of(context).pop(size),
                 ),
@@ -1258,22 +1259,6 @@ class _MealIndicator extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  static String _sizeLabel(MealSize size) => switch (size) {
-        MealSize.small => 'Small',
-        MealSize.medium => 'Medium',
-        MealSize.large => 'Large',
-      };
-
-  static String _relativeTime(DateTime eatenAt, DateTime now) {
-    final d = now.difference(eatenAt);
-    if (d.inMinutes < 60) {
-      return '${d.inMinutes < 1 ? 1 : d.inMinutes} min ago';
-    }
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    return minutes == 0 ? '$hours h ago' : '$hours h ${minutes}m ago';
   }
 }
 
