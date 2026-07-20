@@ -1,4 +1,4 @@
-// Widget tests for the Today "Log a drink" grid (issue #78).
+// Widget tests for the Today "Quick Log" grid (issue #78).
 //
 // Coverage:
 //  1. Grid shows at most kLogADrinkGridSize (8) preset tiles even when more
@@ -12,6 +12,8 @@
 //     surface, both below kTabletBreakpointWidth (840dp) so the Log-a-drink
 //     section's own available width — not the full screen width — drives
 //     the column count (today_screen.dart _gridColumnsForWidth doc comment).
+//  6. The "Quick Log" header title is left-aligned, matching every other
+//     section heading on this screen (user-experience.md §S1, issue #99).
 //
 // Harness mirrors goal_celebration_test.dart's _buildTodayScreen, plus a
 // recording DrinksRepository/PreferencesRepository fake (same pattern as
@@ -828,6 +830,35 @@ void main() {
           .widget<GridView>(find.byType(GridView))
           .gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
       expect(wideDelegate.crossAxisCount, 3);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 6. Header title is left-aligned
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the "Quick Log" header title is left-aligned, matching every other '
+    'section heading on this screen (user-experience.md §S1, issue #99)',
+    (tester) async {
+      final preset = _preset('p1', 'Still Water', sortOrder: 1);
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: _FakeDrinksRepo(),
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // today_screen.dart's _LogADrinkSection wraps the header Row in
+      // `Padding(EdgeInsets.fromLTRB(16, 16, 16, 8))` with no textAlign
+      // override on the "Quick Log" Text, so its rendered left edge must sit
+      // at that 16dp inset — the same left edge as the progress card's
+      // margin and the grid's own tile padding, not centered or indented.
+      final titleX = tester.getTopLeft(find.text('Quick Log')).dx;
+      expect(titleX, 16.0);
     },
   );
 
