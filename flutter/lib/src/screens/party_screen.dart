@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:core/core.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -684,6 +685,22 @@ class _BacLineChartCardState extends State<_BacLineChartCard> {
   // value is exactly what's plotted rather than a value recomputed
   // independently.
   FlSpot? _tappedSpot;
+
+  @override
+  void didUpdateWidget(covariant _BacLineChartCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The tapped spot's coordinates are only meaningful against the series
+    // that was plotted when it was tapped. Entries/meals changes can rescale
+    // the axis (e.g. the empty state -> first-drink transition) or change
+    // the sampled values at the same x, so drop a stale marker rather than
+    // let it render at a position/value nothing on the new series matches.
+    // `now` ticking alone doesn't move axisStart/axisEnd for an unchanged
+    // series, so the marker is deliberately left alone in that case.
+    if (!listEquals(oldWidget.alcoholicEntries, widget.alcoholicEntries) ||
+        !listEquals(oldWidget.meals, widget.meals)) {
+      _tappedSpot = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
