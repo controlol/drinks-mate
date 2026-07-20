@@ -818,6 +818,11 @@ void _showLoggedSnackBar(
     SnackBar(
       content: Text('Logged $name'),
       duration: const Duration(seconds: 4),
+      // SnackBar.persist defaults to (action != null) when omitted, which
+      // makes ScaffoldMessenger's auto-hide timer no-op for every call site
+      // here since they all attach an action. Force it false so the 4s
+      // auto-dismiss (user-experience.md §S1) always applies.
+      persist: false,
       action: offerStartSession
           ? SnackBarAction(
               label: 'Start session',
