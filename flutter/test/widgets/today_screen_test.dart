@@ -263,9 +263,7 @@ Widget _buildTodayScreen({
         (_) => Stream.value(activeSession),
       ),
       userProfileProvider.overrideWith((_) => Stream.value(profile)),
-      visiblePresetsProvider.overrideWith(
-        (_) => Stream.value(visiblePresets),
-      ),
+      visiblePresetsProvider.overrideWith((_) => Stream.value(visiblePresets)),
       presetUsageStatsProvider.overrideWith((_) => Stream.value(usage)),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
       sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
@@ -313,9 +311,7 @@ Future<ProviderContainer> _buildWarmContainer({
         (_) => Stream.value(activeSession),
       ),
       userProfileProvider.overrideWith((_) => Stream.value(profile)),
-      visiblePresetsProvider.overrideWith(
-        (_) => Stream.value(visiblePresets),
-      ),
+      visiblePresetsProvider.overrideWith((_) => Stream.value(visiblePresets)),
       presetUsageStatsProvider.overrideWith(
         (_) => Stream.value(const <String, PresetUsageStats>{}),
       ),
@@ -437,6 +433,84 @@ void main() {
   );
 
   // -------------------------------------------------------------------------
+  // 2a. Logged toast timing (issue #96: SnackBar.persist defaults to
+  // `action != null`, which made ScaffoldMessenger's auto-hide timer no-op
+  // for every call site here since they all attach an action — fixed by
+  // passing `persist: false` explicitly).
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the Logged toast and its Undo action stay live and tappable before '
+    'the 4-second auto-dismiss window elapses (user-experience.md §S1: '
+    '"for 4 seconds with an inline Undo affordance")',
+    (tester) async {
+      final preset = _preset('p1', 'Still Water', sortOrder: 1);
+      final drinksRepo = _FakeDrinksRepo();
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Still Water'));
+      await tester.pumpAndSettle();
+
+      // Well inside the 4s window (user-experience.md §S1) — the toast and
+      // its action must still be present and interactive, not ripped out
+      // early by the persist-defaulting bug this test guards against.
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Logged Still Water'), findsOneWidget);
+      expect(find.widgetWithText(SnackBarAction, 'Undo'), findsOneWidget);
+
+      // Tapping mid-window proves the action is actually interactive (not
+      // just present) before the auto-dismiss timer fires; this also
+      // cancels that pending timer via hideCurrentSnackBar, so no Timer is
+      // left pending when the test tree is torn down.
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+      await tester.pumpAndSettle();
+
+      expect(drinksRepo.deleteDrinkEntryCalls, ['fake-entry-id']);
+    },
+  );
+
+  testWidgets(
+    'the Logged toast auto-dismisses after 4 seconds when its action is '
+    'Undo (user-experience.md §S1: "The Logged toast appears ... for 4 '
+    'seconds"; issue #96 regression — SnackBar.persist previously defaulted '
+    'to true whenever an action was attached, so the timer never fired)',
+    (tester) async {
+      final preset = _preset('p1', 'Still Water', sortOrder: 1);
+      final drinksRepo = _FakeDrinksRepo();
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: drinksRepo,
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Still Water'));
+      await tester.pumpAndSettle();
+      expect(find.text('Logged Still Water'), findsOneWidget);
+
+      // Past the 4s mark: fires the pending auto-hide Timer, which starts
+      // the exit animation; a trailing pumpAndSettle runs that animation to
+      // completion (pumpAndSettle alone won't advance the Timer itself,
+      // since it isn't tied to a scheduled frame until the Timer fires).
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Logged Still Water'), findsNothing);
+    },
+  );
+
+  // -------------------------------------------------------------------------
   // 2b. Alcoholic quick-log — Party Session attach/orphan branching (issue
   // #85: today_screen.dart's _quickLog checks activePartySessionProvider
   // before logging an alcoholic preset).
@@ -487,8 +561,10 @@ void main() {
     );
 
     testWidgets(
-      'tapping "Start session" on the orphan toast invokes '
-      'startPartySessionFlow, which starts a new Party Session',
+      'the Logged toast auto-dismisses after 4 seconds when its action is '
+      '"Start session" too (user-experience.md §S1: "for 4 seconds"; issue '
+      '#96 regression applied to every _showLoggedSnackBar call site, not '
+      'just the Undo branch)',
       (tester) async {
         final preset = _preset(
           'p1',
@@ -505,28 +581,72 @@ void main() {
           preferencesRepo: _FakePreferencesRepo(),
           partyRepo: partyRepo,
           activeSession: null,
-          // 18+ with a birthDate already set — startPartySessionFlow skips
-          // straight to repo.startSession() (party_session_flows.dart).
-          profile: _makeAdultProfile(),
         );
         addTearDown(container.dispose);
         await _pumpTodayScreen(tester, container);
 
         await tester.tap(find.text('Beer'));
         await tester.pumpAndSettle();
+        expect(
+          find.widgetWithText(SnackBarAction, 'Start session'),
+          findsOneWidget,
+        );
 
-        await tester.tap(find.widgetWithText(SnackBarAction, 'Start session'));
+        // Same Timer-then-exit-animation sequencing as the Undo-branch
+        // auto-dismiss test above — pumpAndSettle alone won't advance the
+        // pending 4s Timer.
+        await tester.pump(const Duration(seconds: 5));
         await tester.pumpAndSettle();
 
-        // Post-start pricing prompt (party-session.md §Starting a session);
-        // skip it to complete the flow.
-        expect(find.text('Set up party prices?'), findsOneWidget);
-        await tester.tap(find.text('Skip — use regular prices'));
-        await tester.pumpAndSettle();
-
-        expect(partyRepo.startSessionCalls, hasLength(1));
+        expect(find.text('Logged Beer'), findsNothing);
+        expect(
+          find.widgetWithText(SnackBarAction, 'Start session'),
+          findsNothing,
+        );
       },
     );
+
+    testWidgets(
+        'tapping "Start session" on the orphan toast invokes '
+        'startPartySessionFlow, which starts a new Party Session', (
+      tester,
+    ) async {
+      final preset = _preset(
+        'p1',
+        'Beer',
+        sortOrder: 1,
+        beverageType: BeverageType.beer,
+      );
+      final drinksRepo = _FakeDrinksRepo();
+      final partyRepo = _FakePartySessionRepo();
+      final container = await _buildWarmContainer(
+        visiblePresets: [preset],
+        prefs: _makePrefs(),
+        drinksRepo: drinksRepo,
+        preferencesRepo: _FakePreferencesRepo(),
+        partyRepo: partyRepo,
+        activeSession: null,
+        // 18+ with a birthDate already set — startPartySessionFlow skips
+        // straight to repo.startSession() (party_session_flows.dart).
+        profile: _makeAdultProfile(),
+      );
+      addTearDown(container.dispose);
+      await _pumpTodayScreen(tester, container);
+
+      await tester.tap(find.text('Beer'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Start session'));
+      await tester.pumpAndSettle();
+
+      // Post-start pricing prompt (party-session.md §Starting a session);
+      // skip it to complete the flow.
+      expect(find.text('Set up party prices?'), findsOneWidget);
+      await tester.tap(find.text('Skip — use regular prices'));
+      await tester.pumpAndSettle();
+
+      expect(partyRepo.startSessionCalls, hasLength(1));
+    });
 
     testWidgets(
       'active session: attaches via PartySessionRepository.logAlcoholicDrink '
@@ -750,15 +870,11 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              drinksRepositoryProvider.overrideWithValue(
-                _FakeDrinksRepo(),
-              ),
+              drinksRepositoryProvider.overrideWithValue(_FakeDrinksRepo()),
               preferencesRepositoryProvider.overrideWithValue(
                 _FakePreferencesRepo(),
               ),
-              partySessionRepositoryProvider.overrideWithValue(
-                realPartyRepo,
-              ),
+              partySessionRepositoryProvider.overrideWithValue(realPartyRepo),
               activePartySessionProvider.overrideWith(
                 (_) => Stream.value(null),
               ),
@@ -777,12 +893,8 @@ void main() {
                 (_) => Stream.value(const <String, PresetUsageStats>{}),
               ),
               todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
-              sevenDayAverageMlProvider.overrideWith(
-                (_) => Stream.value(0.0),
-              ),
-              sevenDayDaysOnGoalProvider.overrideWith(
-                (_) => Stream.value(0),
-              ),
+              sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
+              sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),
               userPreferencesProvider.overrideWith(
                 (_) => Stream.value(_makePrefs()),
               ),
