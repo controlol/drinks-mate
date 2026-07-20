@@ -228,6 +228,18 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   return FlutterNotificationService();
 });
 
+/// Side-effect provider: initializes the underlying `flutter_local_notifications`
+/// plugin (timezones, platform init, Android channels) exactly once.
+///
+/// [FlutterNotificationService.initialize] is itself idempotent (cached
+/// future), but nothing schedules a notification until it has run — see
+/// issue #97. Must be `watch`ed somewhere always-mounted (see `_AppGate` in
+/// `app.dart`), mirroring [reminderReschedulerProvider], and before that
+/// provider so scheduling never races the plugin's init.
+final notificationInitializerProvider = Provider<void>((ref) {
+  unawaited(ref.watch(notificationServiceProvider).initialize());
+});
+
 // ---------------------------------------------------------------------------
 // Reminder scheduling (issue #20)
 // ---------------------------------------------------------------------------
