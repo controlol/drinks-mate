@@ -4,9 +4,13 @@
 //
 // Contract points covered (bac_chart_series.dart's own doc comments plus
 // party-session.md §BAC line chart):
-//   1. No alcoholic entries -> null (party-session.md §BAC line chart
-//      "Empty state": "the chart only appears once the first alcoholic
-//      drink ... has been logged").
+//   1. No alcoholic entries -> a synthetic empty-state series, not null
+//      (party-session.md §BAC line chart "Empty state": "The chart area is
+//      reserved and rendered from the moment the session starts, even
+//      before any drink is logged ... it shows a flat line at 0.00 g/L
+//      across a default three-hour window (startedAt to startedAt + 3h),
+//      with no dashed projection segment"; Parity Rulebook "BAC chart
+//      empty-state window").
 //   2. axisEnd == roundUpToNextHalfHour(projectedSoberTime(...).toLocal())
 //      — same wiring the implementation itself does, cross-checked against
 //      a real half-hour-boundary assertion independent of the
@@ -89,18 +93,70 @@ void main() {
 
   group(
     'buildBacChartSeries — empty state (party-session.md §BAC line chart '
-    '"Empty state")',
+    '"Empty state"; Parity Rulebook "BAC chart empty-state window")',
     () {
-      test('alcoholicEntries.isEmpty -> null', () {
-        final series = buildBacChartSeries(
-          profile: _profile(),
-          sessionStartedAt: _workedConsumedAt,
-          alcoholicEntries: const [],
-          meals: const [],
-          now: _workedConsumedAt,
-        );
-        expect(series, isNull);
-      });
+      // Expected values below are literal spec numbers (3h window, flat
+      // 0.00 g/L, no dashed projection, 30-min ticks), not the
+      // implementation's own `bacChartEmptyStateWindow`/`bacChartTickInterval`
+      // constants/calls — asserting against the impl's own constant would
+      // pass even if that constant silently drifted from the doc.
+      test(
+        'alcoholicEntries.isEmpty -> non-null synthetic series: axisStart is '
+        'sessionStartedAt (local), axisEnd is exactly 3h later, a flat '
+        '2-point 0.00 g/L "actual" line, an empty "projected" list, and a '
+        '30-minute tick interval',
+        () {
+          final startedAt = _workedConsumedAt;
+          final series = buildBacChartSeries(
+            profile: _profile(),
+            sessionStartedAt: startedAt,
+            alcoholicEntries: const [],
+            meals: const [],
+            now: startedAt,
+          );
+
+          expect(series, isNotNull);
+          expect(series!.axisStart, startedAt.toLocal());
+          expect(
+            series.axisEnd.difference(series.axisStart),
+            const Duration(hours: 3),
+          );
+
+          expect(series.actual, hasLength(2));
+          expect(series.actual.first.time, series.axisStart);
+          expect(series.actual.first.gPerL, 0);
+          expect(series.actual.last.time, series.axisEnd);
+          expect(series.actual.last.gPerL, 0);
+
+          expect(series.projected, isEmpty);
+
+          expect(series.tickInterval, const Duration(minutes: 30));
+        },
+      );
+
+      test(
+        'empty state ignores "now" entirely — the window is always exactly '
+        '3h from sessionStartedAt regardless of how much time has elapsed',
+        () {
+          final startedAt = _workedConsumedAt;
+          final series = buildBacChartSeries(
+            profile: _profile(),
+            sessionStartedAt: startedAt,
+            alcoholicEntries: const [],
+            meals: const [],
+            now: startedAt.add(const Duration(hours: 5)),
+          );
+
+          expect(series, isNotNull);
+          expect(
+            series!.axisEnd.difference(series.axisStart),
+            const Duration(hours: 3),
+          );
+          expect(series.actual, hasLength(2));
+          expect(series.actual.every((p) => p.gPerL == 0), isTrue);
+          expect(series.projected, isEmpty);
+        },
+      );
     },
   );
 

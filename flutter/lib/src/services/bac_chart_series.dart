@@ -47,11 +47,18 @@ class BacChartSeries {
   final Duration tickInterval;
 }
 
+/// Default X-axis window shown before the first alcoholic drink is logged
+/// (party-session.md §BAC line chart → Empty state; Parity Rulebook "BAC
+/// chart empty-state window").
+const Duration bacChartEmptyStateWindow = Duration(hours: 3);
+
 /// Builds [BacChartSeries] for the Party tab's active-session view.
 ///
-/// Returns `null` before the first alcoholic drink is logged — the spec's
-/// own empty state ("chart only appears once the first alcoholic drink is
-/// logged") is the caller's responsibility, not this function's.
+/// Before the first alcoholic drink is logged, returns a flat `0.00 g/L`
+/// line across `sessionStartedAt` to `sessionStartedAt + 3h` with no
+/// projected segment (party-session.md §BAC line chart → Empty state) —
+/// this reserves the chart's footprint from the moment the session starts
+/// so logging the first drink doesn't cause a layout jump.
 ///
 /// [alcoholicEntries] and [meals] must be [profile]'s live session data,
 /// same inputs as [estimateSessionBac]/[projectedSoberTime].
@@ -63,7 +70,20 @@ BacChartSeries? buildBacChartSeries({
   required DateTime now,
   Duration sampleInterval = const Duration(minutes: 5),
 }) {
-  if (alcoholicEntries.isEmpty) return null;
+  if (alcoholicEntries.isEmpty) {
+    final axisStart = sessionStartedAt.toLocal();
+    final axisEnd = axisStart.add(bacChartEmptyStateWindow);
+    return BacChartSeries(
+      axisStart: axisStart,
+      axisEnd: axisEnd,
+      actual: [
+        BacChartPoint(time: axisStart, gPerL: 0),
+        BacChartPoint(time: axisEnd, gPerL: 0),
+      ],
+      projected: const [],
+      tickInterval: bacChartTickInterval(bacChartEmptyStateWindow),
+    );
+  }
 
   final soberTime = projectedSoberTime(
     profile: profile,
@@ -118,11 +138,13 @@ List<BacChartPoint> _samplePoints({
   var t = from;
   while (t.isBefore(to)) {
     points.add(
-        BacChartPoint(time: t, gPerL: _gPerLAt(t, profile, entries, meals)));
+      BacChartPoint(time: t, gPerL: _gPerLAt(t, profile, entries, meals)),
+    );
     t = t.add(interval);
   }
   points.add(
-      BacChartPoint(time: to, gPerL: _gPerLAt(to, profile, entries, meals)));
+    BacChartPoint(time: to, gPerL: _gPerLAt(to, profile, entries, meals)),
+  );
   return points;
 }
 

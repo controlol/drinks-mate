@@ -59,6 +59,7 @@ import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/party_screen.dart';
 import 'package:drinks_mate/src/services/app_info_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -503,6 +504,21 @@ Future<String> _timeButtonLabel(WidgetTester tester) async {
   return text.data!;
 }
 
+/// Scrolls the active-session `ListView` until the "Log alcohol" button is
+/// on-screen. Needed since issue #103 made `_BacLineChartCard` render
+/// unconditionally — including its ~200px-tall empty-state flat line before
+/// any drink is logged (party-session.md §BAC line chart -> Empty state) —
+/// which now pushes this button below the fold at the default 800x600 test
+/// surface for a freshly-started, drink-free active session. Mirrors
+/// `_timeButtonLabel`'s `scrollUntilVisible` pattern above.
+Future<void> _scrollToLogAlcohol(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.text('Log alcohol'),
+    300.0,
+    scrollable: find.byType(Scrollable).first,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Shared worked-example fixture (party-session.md §Worked example): 75 kg,
 // 180 cm, 30-year-old male; total alcohol dose of two 250 ml 5% ABV beers
@@ -754,6 +770,211 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // 1.5 BAC line chart presence/rendering + summary-card vs. chart tap
+  // targets (issue #103; party-session.md §BAC line chart, incl. "Empty
+  // state" and "Tap to inspect a value").
+  // -------------------------------------------------------------------------
+
+  group(
+    'BAC line chart card (party-session.md §BAC line chart)',
+    () {
+      testWidgets(
+        'before any alcoholic drink is logged, the chart still renders: a '
+        'flat 0.00 g/L line across the 3h empty-state window, no dashed '
+        'projection segment (party-session.md §BAC line chart -> Empty '
+        'state)',
+        (tester) async {
+          final repo = _FakePartySessionRepo();
+          final session = _makeSession(startedAt: _workedConsumedAt);
+          final profile = _makeProfile(birthDate: _workedBirthDate);
+
+          await tester.pumpWidget(
+            _buildScreen(
+              session: session,
+              entries: const [],
+              profile: profile,
+              partyRepo: repo,
+              now: _workedConsumedAt,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LineChart), findsOneWidget);
+          final chart = tester.widget<LineChart>(find.byType(LineChart));
+
+          // No dashed projection bar — there is nothing to project yet.
+          expect(chart.data.lineBarsData, hasLength(1));
+          final spots = chart.data.lineBarsData.single.spots;
+          // 3h empty-state window == 180 minutes (Parity Rulebook "BAC
+          // chart empty-state window"), flat 0.00 g/L at both ends.
+          expect(spots, hasLength(2));
+          expect(spots.first.x, 0);
+          expect(spots.first.y, 0);
+          expect(spots.last.x, 180);
+          expect(spots.last.y, 0);
+        },
+      );
+
+      testWidgets(
+        'the moment the first drink is logged, the chart switches to the '
+        'normal solid+dashed rendering (non-zero actual value, a projected '
+        'segment appears)',
+        (tester) async {
+          final repo = _FakePartySessionRepo();
+          final session = _makeSession(startedAt: _workedConsumedAt);
+          final profile = _makeProfile(birthDate: _workedBirthDate);
+          final entries = [
+            _alcoholicEntry(
+              volumeMl: 500,
+              abvPercent: 5.0,
+              consumedAt: _workedConsumedAt,
+            ),
+          ];
+
+          await tester.pumpWidget(
+            _buildScreen(
+              session: session,
+              entries: entries,
+              profile: profile,
+              partyRepo: repo,
+              now: _workedConsumedAt, // elapsed = 0
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LineChart), findsOneWidget);
+          final chart = tester.widget<LineChart>(find.byType(LineChart));
+
+          // Solid ("actual") + dashed ("projected") bars now both present —
+          // unlike the empty state's single flat bar above.
+          expect(chart.data.lineBarsData, hasLength(2));
+          final actualSpots = chart.data.lineBarsData.first.spots;
+          expect(actualSpots, isNotEmpty);
+          // At elapsed = 0 the only actual point is the worked example's
+          // initial BAC (party-session.md §Worked example: 0.362 g/L,
+          // cross-checked via core's own bacInitialWatson above).
+          expect(actualSpots.first.y, closeTo(_workedBacInitial, 0.001));
+          expect(actualSpots.first.y, greaterThan(0));
+        },
+      );
+
+      testWidgets(
+        'tapping the BAC summary card (outside the session-name row) opens '
+        'PartySessionLogScreen — same destination as the drinks-count line '
+        '(party-session.md §Party tab during a session: "the entire card is '
+        'tappable")',
+        (tester) async {
+          final repo = _FakePartySessionRepo();
+          final session = _makeSession(startedAt: _workedConsumedAt);
+          final profile = _makeProfile(birthDate: _workedBirthDate);
+          final entries = [
+            _alcoholicEntry(
+              volumeMl: 500,
+              abvPercent: 5.0,
+              consumedAt: _workedConsumedAt,
+            ),
+          ];
+
+          await tester.pumpWidget(
+            _buildScreen(
+              session: session,
+              entries: entries,
+              profile: profile,
+              partyRepo: repo,
+              now: _workedConsumedAt,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Party Session Log'), findsNothing);
+          // "Elapsed:" sits inside the summary card's InkWell, well clear of
+          // the session-name row's own nested InkWell above it.
+          await tester.tap(find.textContaining('Elapsed:'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Party Session Log'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping the chart itself never opens PartySessionLogScreen — the '
+        'tap-to-inspect affordance is chart-local (party-session.md §BAC '
+        'line chart -> Tap to inspect a value: "never navigates away from '
+        'the Party tab")',
+        (tester) async {
+          final repo = _FakePartySessionRepo();
+          final session = _makeSession(startedAt: _workedConsumedAt);
+          final profile = _makeProfile(birthDate: _workedBirthDate);
+          final entries = [
+            _alcoholicEntry(
+              volumeMl: 500,
+              abvPercent: 5.0,
+              consumedAt: _workedConsumedAt,
+            ),
+          ];
+
+          await tester.pumpWidget(
+            _buildScreen(
+              session: session,
+              entries: entries,
+              profile: profile,
+              partyRepo: repo,
+              now: _workedConsumedAt,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byType(LineChart));
+          await tester.pumpAndSettle();
+
+          // Still on PartyScreen — a real navigation would have removed
+          // this button (part of PartyScreen's own active-session body) and
+          // shown PartySessionLogScreen's AppBar title instead. Scroll first:
+          // the always-rendered chart card (issue #103) pushes this button
+          // below the fold at the default test surface size.
+          await _scrollToLogAlcohol(tester);
+          expect(find.text('Log alcohol'), findsOneWidget);
+          expect(find.text('Party Session Log'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'tapping the drinks-count line still opens PartySessionLogScreen '
+        '(party-session.md §Party tab during a session)',
+        (tester) async {
+          final repo = _FakePartySessionRepo();
+          final session = _makeSession(startedAt: _workedConsumedAt);
+          final profile = _makeProfile(birthDate: _workedBirthDate);
+          final entries = [
+            _alcoholicEntry(
+              volumeMl: 500,
+              abvPercent: 5.0,
+              consumedAt: _workedConsumedAt,
+            ),
+          ];
+
+          await tester.pumpWidget(
+            _buildScreen(
+              session: session,
+              entries: entries,
+              profile: profile,
+              partyRepo: repo,
+              now: _workedConsumedAt,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Party Session Log'), findsNothing);
+          await tester.tap(find.textContaining('alcoholic drink'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Party Session Log'), findsOneWidget);
+        },
+      );
+    },
+  );
+
+  // -------------------------------------------------------------------------
   // 2. Approaching-cap threshold
   // -------------------------------------------------------------------------
 
@@ -980,6 +1201,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // First drink.
+        await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
         expect(find.text('Test Beer'), findsOneWidget);
@@ -993,6 +1215,7 @@ void main() {
         expect(repo.logAlcoholicDrinkCalls, hasLength(1));
 
         // Second drink into the same active session — still no prompt.
+        await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Test Beer'));
@@ -1132,6 +1355,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await _scrollToLogAlcohol(tester);
       await tester.tap(find.text('Log alcohol'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Test Beer'));
@@ -1164,6 +1388,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Test Beer'));
@@ -1489,6 +1714,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Test Beer'));
