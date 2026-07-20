@@ -267,112 +267,131 @@ class _EntryEditSheetState extends State<EntryEditSheet> {
         ? '${_formatDate(local)} $timeOfDayLabel'
         : timeOfDayLabel;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _SheetHandle(),
-            const SizedBox(height: 8),
-            Text('Edit drink', style: Theme.of(context).textTheme.titleLarge),
-            if (widget.showName) ...[
+    // Source: design/user-experience.md §S3/§S6/§S9 — "The edit sheet opens
+    // already expanded to near-full height ... every editable field is
+    // visible immediately without an extra gesture." initialChildSize
+    // matches maxChildSize so it opens at that height rather than a short
+    // partial sheet the user has to drag up — same maxChildSize convention
+    // as the app's other DraggableScrollableSheet-based sheets (see
+    // log_drink_sheet.dart, party_log_drink_sheet.dart,
+    // party_pricing_sheet.dart).
+    return DraggableScrollableSheet(
+      initialChildSize: 0.95,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: SingleChildScrollView(
+          controller: scrollController,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SheetHandle(),
+              const SizedBox(height: 8),
+              Text('Edit drink', style: Theme.of(context).textTheme.titleLarge),
+              if (widget.showName) ...[
+                const SizedBox(height: 16),
+                Text('Name', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _nameCtrl,
+                  onChanged: _onNameChanged,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    errorText: _nameError,
+                  ),
+                ),
+              ] else if (widget.entry.name != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  widget.entry.name!,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
               const SizedBox(height: 16),
-              Text('Name', style: Theme.of(context).textTheme.labelLarge),
+              Text(
+                'Volume (ml)',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
               const SizedBox(height: 8),
               TextField(
-                controller: _nameCtrl,
-                onChanged: _onNameChanged,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  errorText: _nameError,
+                controller: _volumeCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  suffixText: 'ml',
                 ),
               ),
-            ] else if (widget.entry.name != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                widget.entry.name!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Text('Volume (ml)', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _volumeCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                suffixText: 'ml',
-              ),
-            ),
-            if (_isAlcoholic) ...[
+              if (_isAlcoholic) ...[
+                const SizedBox(height: 16),
+                Text('ABV (%)', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _abvCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
+                  ],
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    suffixText: '%',
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
-              Text('ABV (%)', style: Theme.of(context).textTheme.labelLarge),
+              Text(
+                'Price (optional, this entry only)',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
               const SizedBox(height: 8),
               TextField(
-                controller: _abvCtrl,
+                controller: _priceCtrl,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$')),
-                ],
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  suffixText: '%',
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  // This field is money-only, so a token-priced entry can't
+                  // be shown here directly — leaving it blank keeps the
+                  // existing token price untouched (see _initialPriceText's
+                  // doc).
+                  helperText: widget.entry.priceTokens != null
+                      ? 'Currently priced in tokens — enter an amount to '
+                          'switch this entry to a one-off money price'
+                      : null,
                 ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text('Time', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.schedule),
+                    label: Text(timeLabel),
+                    onPressed: _pickTime,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _submitting ? null : _save,
+                child: const Text('Save'),
               ),
             ],
-            const SizedBox(height: 16),
-            Text(
-              'Price (optional, this entry only)',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _priceCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                // This field is money-only, so a token-priced entry can't be
-                // shown here directly — leaving it blank keeps the existing
-                // token price untouched (see _initialPriceText's doc).
-                helperText: widget.entry.priceTokens != null
-                    ? 'Currently priced in tokens — enter an amount to '
-                        'switch this entry to a one-off money price'
-                    : null,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Text('Time', style: Theme.of(context).textTheme.labelLarge),
-                const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.schedule),
-                  label: Text(timeLabel),
-                  onPressed: _pickTime,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _submitting ? null : _save,
-              child: const Text('Save'),
-            ),
-          ],
+          ),
         ),
       ),
     );
