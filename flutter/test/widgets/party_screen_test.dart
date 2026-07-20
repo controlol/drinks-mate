@@ -59,6 +59,7 @@ import 'package:drinks_mate/src/models/user_profile.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
+import 'package:drinks_mate/src/screens/party_log_drink_sheet.dart';
 import 'package:drinks_mate/src/screens/party_screen.dart';
 import 'package:drinks_mate/src/services/app_info_service.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -278,6 +279,18 @@ class _FakeDrinksRepo extends DrinksRepository {
     ));
     return id ?? 'fake-entry-id';
   }
+
+  // Mirrors today_screen_test.dart's `_FakeDrinksRepo.deleteDrinkEntry`
+  // override — needed for the quick-log widget's "Undo" affordance
+  // (party_screen.dart `_AlcoholQuickLogTile._quickLog`), which calls
+  // `drinksRepositoryProvider`'s `deleteDrinkEntry`, not
+  // `PartySessionRepository`.
+  final List<String> deleteDrinkEntryCalls = [];
+
+  @override
+  Future<void> deleteDrinkEntry(String id) async {
+    deleteDrinkEntryCalls.add(id);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +299,10 @@ class _FakeDrinksRepo extends DrinksRepository {
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
-UserPreferences _makePrefs({double? bacCapGramsPerL}) {
+UserPreferences _makePrefs({
+  double? bacCapGramsPerL,
+  PresetSortMode drinkSortMode = PresetSortMode.recentlyUsed,
+}) {
   return UserPreferences(
     id: kUserPreferencesId,
     username: 'tester',
@@ -305,6 +321,7 @@ UserPreferences _makePrefs({double? bacCapGramsPerL}) {
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
     alcoholicPresetsAlwaysVisible: true,
+    drinkSortMode: drinkSortMode,
     installedAt: _epoch,
     createdAt: _epoch,
     updatedAt: _epoch,
@@ -373,6 +390,35 @@ const _beerPreset = DrinkPreset(
   sortOrder: 1,
 );
 
+// Second/third alcoholic presets — needed for the quick-log widget's
+// top-2/ranking tests (issue #104), which require more than one alcoholic
+// preset to distinguish "shown" from "sunk below the top 2".
+const _winePreset = DrinkPreset(
+  id: 'preset-wine',
+  name: 'Test Wine',
+  beverageType: BeverageType.wine,
+  volumeMl: 150,
+  abvPercent: 12.0,
+  iconKey: 'wine_glass',
+  iconColor: '#be185d',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 2,
+);
+
+const _spiritPreset = DrinkPreset(
+  id: 'preset-spirit',
+  name: 'Test Spirit',
+  beverageType: BeverageType.spirit,
+  volumeMl: 40,
+  abvPercent: 40.0,
+  iconKey: 'spirit_glass',
+  iconColor: '#312e81',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 3,
+);
+
 /// ISO-8601 'yyyy-MM-dd' matching UserProfile.birthDate's stored format.
 String _isoDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
     '${d.month.toString().padLeft(2, '0')}-'
@@ -413,6 +459,15 @@ Widget _buildScreen({
   _FakeDrinksRepo? drinksRepo,
   DateTime? now,
   List<DrinkPreset> alcoholicPresets = const [],
+  // Feeds rankedAlcoholicPresetsProvider (issue #104's quick-log widget),
+  // which watches presetUsageStatsProvider unconditionally — without this
+  // override every active-session test would otherwise hit the real
+  // drinksRepositoryProvider.watchPresetUsageStats() chain (and its
+  // day-boundary Timer). Defaults to an empty map, same as the provider's
+  // own `.valueOrNull ?? const {}` fallback while the stream has no value
+  // yet, so pre-existing callers that don't care about ranking are
+  // unaffected (rankPresetIds falls back to sortOrder for unknown ids).
+  Stream<Map<String, PresetUsageStats>>? presetUsageStatsStream,
   List<SessionDaySummary> endedSessionSummaries = const [],
   // Drives `MediaQuery.alwaysUse24HourFormat`, which is what
   // `TimeOfDay.format(context)` actually keys off (not `Locale`) — see the
@@ -451,6 +506,11 @@ Widget _buildScreen({
       ),
       visibleAlcoholicPresetsProvider.overrideWith(
         (_) => Stream.value(alcoholicPresets),
+      ),
+      presetUsageStatsProvider.overrideWith(
+        (_) =>
+            presetUsageStatsStream ??
+            Stream.value(const <String, PresetUsageStats>{}),
       ),
       // S7 past-sessions list (issue #86) — overridden with a single-value
       // stream/future so the underlying Drift `.watch()` query on
@@ -528,6 +588,19 @@ Future<void> _scrollToLogAlcohol(WidgetTester tester) async {
     scrollable: find.byType(Scrollable).first,
   );
 }
+
+/// Scopes a preset-name text finder to the currently open
+/// [PartyLogDrinkSheet]. Needed since issue #104: a preset's name can now
+/// also appear as an active-session quick-log tile
+/// (`_AlcoholQuickLogWidget`), rendered simultaneously with the sheet once
+/// it's opened — an unscoped `find.text(preset.name)` would then be
+/// ambiguous (`findsNWidgets(2)`) for any test that both supplies
+/// `alcoholicPresets` to an active session AND opens the "Log alcohol"
+/// picker sheet.
+Finder _inLogDrinkSheet(String presetName) => find.descendant(
+      of: find.byType(PartyLogDrinkSheet),
+      matching: find.text(presetName),
+    );
 
 // ---------------------------------------------------------------------------
 // Shared worked-example fixture (party-session.md §Worked example): 75 kg,
@@ -1368,8 +1441,8 @@ void main() {
         await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        expect(find.text('Test Beer'), findsOneWidget);
-        await tester.tap(find.text('Test Beer'));
+        expect(_inLogDrinkSheet('Test Beer'), findsOneWidget);
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
@@ -1382,7 +1455,7 @@ void main() {
         await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
@@ -1520,7 +1593,7 @@ void main() {
       await _scrollToLogAlcohol(tester);
       await tester.tap(find.text('Log alcohol'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Test Beer'));
+      await tester.tap(_inLogDrinkSheet('Test Beer'));
       await tester.pumpAndSettle();
 
       final label = await _timeButtonLabel(tester);
@@ -1553,7 +1626,7 @@ void main() {
         await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
 
         final label = await _timeButtonLabel(tester);
@@ -1599,7 +1672,7 @@ void main() {
         // (flutter/lib/src/screens/party_screen.dart _NoSessionView).
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
@@ -1673,7 +1746,7 @@ void main() {
 
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
@@ -1728,7 +1801,7 @@ void main() {
         // "Under-18 gate" group below).
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
@@ -1818,7 +1891,7 @@ void main() {
 
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
 
         await tester.enterText(
@@ -1879,7 +1952,7 @@ void main() {
         await _scrollToLogAlcohol(tester);
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
         // Price field left blank — only the (required) name stays at its
         // pre-filled default.
@@ -1926,7 +1999,7 @@ void main() {
 
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
+        await tester.tap(_inLogDrinkSheet('Test Beer'));
         await tester.pumpAndSettle();
 
         await tester.enterText(
@@ -1976,7 +2049,7 @@ void main() {
 
       await tester.tap(find.text('Log alcohol'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Test Beer'));
+      await tester.tap(_inLogDrinkSheet('Test Beer'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
       await tester.pumpAndSettle();
@@ -1991,6 +2064,416 @@ void main() {
       expect(call.priceMinor, const Optional<int?>.absent());
       expect(call.currency, const Optional<String?>.absent());
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3d. Alcohol quick-log widget + sticky "Log alcohol" button (issue #104).
+  // party-session.md §Party tab during a session: "A quick-log widget for
+  // alcohol, directly below the BAC line chart card: the same two-tap-to-log
+  // pattern as S1's 'Quick Log' grid, scoped to alcoholic presets only.
+  // Shows the top 2 alcoholic presets, always sorted by most-recently-used
+  // (automatic — no manual reordering), no scrolling. Tapping a tile logs
+  // that preset directly into the active session, same as the 'Log alcohol'
+  // action." / "A full-width 'Log alcohol' action, persistent at the bottom
+  // of the screen ... same sticky treatment as S1's 'Log drink' button. End
+  // session stays as an ordinary in-flow action above it, not sticky."
+  // -------------------------------------------------------------------------
+
+  group(
+      'Alcohol quick-log widget (party-session.md §Party tab during a '
+      'session, issue #104)', () {
+    testWidgets(
+      'shows only the top 2 alcoholic presets by most-recently-used, sinks '
+      'a never-used preset below used ones, and re-sorts once recency '
+      'changes (e.g. after logging via a tile) — provider wiring, not a '
+      're-test of rankPresetIds itself (already unit-tested in '
+      'preset_ranking_test.dart)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        // Confirm-phase-sized surface not needed here (no sheet is opened),
+        // but the quick-log widget still sits below the always-rendered BAC
+        // + chart cards (issue #103) — widen so it's on-screen without a
+        // scroll, same rationale as the "used verbatim" test above.
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final usageController =
+            StreamController<Map<String, PresetUsageStats>>();
+        addTearDown(usageController.close);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset, _winePreset, _spiritPreset],
+            presetUsageStatsStream: usageController.stream,
+          ),
+        );
+        // Wine most recently used, beer older, spirit never used (absent
+        // from the map) — rankPresetIds's recentlyUsed mode
+        // (preset_ranking.dart, already unit tested) sinks never-used
+        // presets to the bottom, so the top 2 are wine then beer; spirit is
+        // excluded.
+        usageController.add({
+          _beerPreset.id: PresetUsageStats(
+            lastUsedAt: _workedConsumedAt.subtract(const Duration(hours: 3)),
+          ),
+          _winePreset.id: PresetUsageStats(
+            lastUsedAt: _workedConsumedAt.subtract(const Duration(hours: 1)),
+          ),
+        });
+        await tester.pumpAndSettle();
+
+        expect(find.text('Test Wine'), findsOneWidget);
+        expect(find.text('Test Beer'), findsOneWidget);
+        expect(
+          find.text('Test Spirit'),
+          findsNothing,
+          reason: 'Only the top 2 render — no scrolling, fixed 2 items '
+              '(party-session.md §Party tab during a session).',
+        );
+        // Wine (most recently used) ranks first -> leftmost tile in the Row.
+        expect(
+          tester.getTopLeft(find.text('Test Wine')).dx,
+          lessThan(tester.getTopLeft(find.text('Test Beer')).dx),
+        );
+
+        // Recency changes: spirit becomes the most-recently-used preset —
+        // beer must sink out of the top 2 in favour of it.
+        usageController.add({
+          _beerPreset.id: PresetUsageStats(
+            lastUsedAt: _workedConsumedAt.subtract(const Duration(hours: 3)),
+          ),
+          _winePreset.id: PresetUsageStats(
+            lastUsedAt: _workedConsumedAt.subtract(const Duration(hours: 1)),
+          ),
+          _spiritPreset.id: PresetUsageStats(lastUsedAt: _workedConsumedAt),
+        });
+        await tester.pumpAndSettle();
+
+        expect(find.text('Test Spirit'), findsOneWidget);
+        expect(find.text('Test Wine'), findsOneWidget);
+        expect(
+          find.text('Test Beer'),
+          findsNothing,
+          reason: 'Beer sank to 3rd place once spirit and wine both rank '
+              'ahead of it by recency.',
+        );
+        expect(
+          tester.getTopLeft(find.text('Test Spirit')).dx,
+          lessThan(tester.getTopLeft(find.text('Test Wine')).dx),
+        );
+      },
+    );
+
+    testWidgets(
+      'always ranks by most-recently-used regardless of the user\'s own '
+      'UserPreferences.drinkSortMode (party-session.md §Party tab during a '
+      'session: "always sorted by most-recently-used" — '
+      'rankedAlcoholicPresetsProvider hardcodes PresetSortMode.recentlyUsed, '
+      'independent of the preference that governs S1\'s own grid)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset, _winePreset],
+            // Deliberately mostUsed, not the recentlyUsed default — if the
+            // widget were (incorrectly) wired to honour this preference
+            // instead of hardcoding recentlyUsed, beer (higher count30d)
+            // would rank first below.
+            prefs: _makePrefs(drinkSortMode: PresetSortMode.mostUsed),
+            presetUsageStatsStream: Stream.value({
+              // Beer: used far more often in the trailing 30 days, but
+              // longer ago — wins under mostUsed, loses under recentlyUsed.
+              _beerPreset.id: PresetUsageStats(
+                lastUsedAt: _workedConsumedAt.subtract(
+                  const Duration(days: 10),
+                ),
+                count30d: 20,
+              ),
+              // Wine: used only once, but far more recently — loses under
+              // mostUsed, wins under recentlyUsed.
+              _winePreset.id: PresetUsageStats(
+                lastUsedAt: _workedConsumedAt.subtract(
+                  const Duration(hours: 1),
+                ),
+                count30d: 1,
+              ),
+            }),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Wine (more recent) must rank first despite drinkSortMode ==
+        // mostUsed (under which beer, with the higher count30d, would rank
+        // first) — proving the widget ignores the user's own sort-mode
+        // preference and always uses recency.
+        expect(find.text('Test Wine'), findsOneWidget);
+        expect(find.text('Test Beer'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Test Wine')).dx,
+          lessThan(tester.getTopLeft(find.text('Test Beer')).dx),
+        );
+      },
+    );
+
+    testWidgets(
+      'zero alcoholic presets renders nothing for the widget (no crash, no '
+      'quick-log tiles)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.local_bar_outlined), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'exactly one alcoholic preset renders just that one tile, no crash',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Test Beer'), findsOneWidget);
+        expect(find.byIcon(Icons.local_bar_outlined), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'never shows more than 2 tiles even with many alcoholic presets '
+      'available (fixed 2 items, no scrolling)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        const cocktailPreset = DrinkPreset(
+          id: 'preset-cocktail',
+          name: 'Test Cocktail',
+          beverageType: BeverageType.cocktail,
+          volumeMl: 200,
+          abvPercent: 10.0,
+          iconKey: 'cocktail_glass',
+          iconColor: '#0d9488',
+          isUserCreated: false,
+          isHidden: false,
+          sortOrder: 4,
+        );
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [
+              _beerPreset,
+              _winePreset,
+              _spiritPreset,
+              cocktailPreset,
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.local_bar_outlined), findsNWidgets(2));
+      },
+    );
+
+    testWidgets(
+      'tapping a quick-log tile logs the tapped preset directly into the '
+      'active session via resolvePrice + logAlcoholicDrink, shows a '
+      '"Logged <name>" toast with Undo, and Undo deletes the logged entry '
+      'via DrinksRepository.deleteDrinkEntry',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final drinksRepo = _FakeDrinksRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            drinksRepo: drinksRepo,
+            now: _workedConsumedAt,
+            alcoholicPresets: const [_beerPreset],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // No PartyLogDrinkSheet involved on this path — the quick-log tile
+        // logs directly (party_screen.dart `_AlcoholQuickLogTile._quickLog`
+        // doc comment: "minus the picker sheet"), so the bare preset-name
+        // finder is unambiguous here.
+        await tester.tap(find.text('Test Beer'));
+        await tester.pumpAndSettle();
+
+        expect(repo.logAlcoholicDrinkCalls, hasLength(1));
+        final call = repo.logAlcoholicDrinkCalls.single;
+        expect(call.sessionId, session.id);
+        expect(call.presetId, _beerPreset.id);
+        // priceMinor/currency come from resolvePrice()'s sentinel — proves
+        // this path went through PartySessionRepository.resolvePrice()
+        // (there is no picker sheet / one-off entered price on this path).
+        expect(
+          call.priceMinor,
+          _FakePartySessionRepo.sentinelResolvedPrice.priceMinor,
+        );
+        expect(
+          call.currency,
+          _FakePartySessionRepo.sentinelResolvedPrice.currency,
+        );
+
+        expect(find.text('Logged Test Beer'), findsOneWidget);
+        expect(find.widgetWithText(SnackBarAction, 'Undo'), findsOneWidget);
+
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+        await tester.pumpAndSettle();
+
+        // _FakePartySessionRepo.logAlcoholicDrink defaults id to
+        // 'fake-logged-entry' when no explicit id is passed — this widget's
+        // _quickLog call site never passes one.
+        expect(drinksRepo.deleteDrinkEntryCalls, ['fake-logged-entry']);
+      },
+    );
+
+    testWidgets(
+      'the sticky "Log alcohol" button is visible with no scrolling and '
+      'stays fixed in place while the active-session content scrolls '
+      'beneath it; "End session" (in-flow, not sticky) is off-screen by '
+      'default and only becomes visible by scrolling',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        final entries = [
+          _alcoholicEntry(
+            volumeMl: 500,
+            abvPercent: 5.0,
+            consumedAt: _workedConsumedAt,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            entries: entries,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Structural proof, mirroring today_screen.dart's
+        // Column([Expanded(ListView), _LogDrinkButton]) pattern: "Log
+        // alcohol" sits OUTSIDE the scrolling ListView.
+        expect(
+          find.ancestor(
+            of: find.text('Log alcohol'),
+            matching: find.byType(ListView),
+          ),
+          findsNothing,
+        );
+
+        // A genuinely sticky footer is visible with zero scrolling —
+        // deliberately no _scrollToLogAlcohol call here.
+        expect(find.text('Log alcohol'), findsOneWidget);
+        final stickyPositionBefore = tester.getTopLeft(
+          find.text('Log alcohol'),
+        );
+
+        // "End session" sits near the end of the scrolling content, below
+        // the always-rendered BAC + chart cards (issue #103) and the
+        // quick-log widget — it isn't even built yet (ListView's Sliver
+        // lazily mounts children within its extent), let alone visible, at
+        // the standard 800x600 test surface, unlike the sticky button.
+        expect(find.text('End session'), findsNothing);
+
+        await tester.scrollUntilVisible(
+          find.text('End session'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('End session'), findsOneWidget);
+
+        // Only now that it's mounted can its ancestry be inspected: "End
+        // session" is an ordinary descendant of the scrolling ListView,
+        // unlike "Log alcohol" above.
+        expect(
+          find.ancestor(
+            of: find.text('End session'),
+            matching: find.byType(ListView),
+          ),
+          findsOneWidget,
+        );
+
+        // The sticky button never moved, despite the content scroll needed
+        // to reveal "End session".
+        expect(
+          tester.getTopLeft(find.text('Log alcohol')),
+          stickyPositionBefore,
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------

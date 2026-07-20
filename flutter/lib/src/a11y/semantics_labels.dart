@@ -71,6 +71,7 @@ abstract final class SemanticsLabels {
   static const String bacSummaryCard =
       'Session summary — tap to open the session log';
   static const String mealIndicator = 'Meal logged this session';
+  static const String alcoholQuickLogWidget = 'Quick log alcohol';
   static const String pastSessionsList = 'Past party sessions';
   static const String deleteSessionButton = 'Delete party session';
   static const String editSessionNameButton = 'Edit session name';
