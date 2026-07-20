@@ -243,6 +243,41 @@ Future<MealSize?> showMealPrompt(BuildContext context) {
   );
 }
 
+/// Shared "delete this ended session" confirmation (party-session.md
+/// §Deleting a session), used by both the S7 past-sessions list row and S9's
+/// ended-mode header delete action. Shows a confirmation prompt, then
+/// soft-deletes the session and detaches its drinks. Returns `true` if the
+/// session was deleted, `false` if the user cancelled.
+Future<bool> confirmDeleteSession(
+  BuildContext context,
+  WidgetRef ref,
+  PartySession session,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Delete session?'),
+      content: const Text(
+        'This deletes the session. Its drinks are kept and remain visible '
+        "in today's log and history. This cannot be undone.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return false;
+  await ref.read(partySessionRepositoryProvider).deleteSession(session.id);
+  return true;
+}
+
 enum _PricingPromptChoice { skip, copyFromLast, configure }
 
 class _PricingPromptSheet extends StatelessWidget {

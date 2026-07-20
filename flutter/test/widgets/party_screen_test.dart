@@ -84,6 +84,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
         String? currency,
       })> logAlcoholicDrinkCalls = [];
   final List<DateTime?> startSessionCalls = [];
+  final List<String> deleteSessionCalls = [];
 
   /// Deterministic id so tests can assert on it without reading it back off
   /// a returned value threaded through several awaits.
@@ -180,6 +181,11 @@ class _FakePartySessionRepo extends PartySessionRepository {
       createdAt: at,
       updatedAt: at,
     );
+  }
+
+  @override
+  Future<void> deleteSession(String id, {DateTime? now}) async {
+    deleteSessionCalls.add(id);
   }
 
   @override
@@ -1587,6 +1593,105 @@ void main() {
         expect(find.text('Party Session Log'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'tapping the row\'s delete button then confirming calls '
+      'PartySessionRepository.deleteSession with the session id '
+      '(party-session.md §Deleting a session)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile();
+
+        final session = PartySession(
+          id: 'delete-me',
+          startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 1, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 1, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
+        );
+        final summaries = [
+          SessionDaySummary(
+            session: session,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+            peakBacGPerL: 0.1,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            endedSessionSummaries: summaries,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(repo.deleteSessionCalls, ['delete-me']);
+      },
+    );
+
+    testWidgets(
+      'cancelling the delete confirmation calls deleteSession zero times',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile();
+
+        final session = PartySession(
+          id: 'keep-me',
+          startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 1, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 1, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
+        );
+        final summaries = [
+          SessionDaySummary(
+            session: session,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+            peakBacGPerL: 0.1,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            endedSessionSummaries: summaries,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+        await tester.pumpAndSettle();
+
+        expect(repo.deleteSessionCalls, isEmpty);
+        // The row itself is still present — cancelling never navigated away.
+        expect(
+          find.text(_expectedPastSessionTitle(session)),
+          findsOneWidget,
+        );
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -1627,6 +1732,18 @@ void main() {
         final session = await realPartyRepo.startSession(
           now: startedAt,
           startedAt: startedAt,
+        );
+        // A drink must be logged (at startedAt, so the auto-end mark below
+        // still matches) so the session actually auto-ends instead of being
+        // discarded as zero-drink (party-session.md §Zero-drink sessions are
+        // never saved) — unrelated to what this test checks (the settings
+        // gear trigger point), but required for endedAt/endReason to be set
+        // at all.
+        await realPartyRepo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt,
+          now: startedAt,
         );
         final mark = startedAt.add(const Duration(hours: 12));
 

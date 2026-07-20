@@ -1071,18 +1071,21 @@ void main() {
     );
 
     test(
-      'no alcoholic drinks logged, now >= startedAt + 12h — auto-ends at '
-      'startedAt + 12h (not "now")',
+      'no alcoholic drinks logged, now >= startedAt + 12h — discarded '
+      '(soft-deleted) at the auto-end mark instead of auto-ended '
+      '(party-session.md §Zero-drink sessions are never saved)',
       () async {
-        // Source: data-model.md §PartySession → Auto-end semantics: "endedAt
-        // is set to the correct 12-hour mark, not to the time the app
-        // happened to notice."
+        // Source: party-session.md §Zero-drink sessions are never saved —
+        // a session with no alcoholic drinks logged in-session and none
+        // absorbed as orphans is discarded rather than getting an
+        // endedAt/endReason, even at the lazy 12h auto-end check.
         final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
         await repo.startSession(now: startedAt, startedAt: startedAt);
         final mark = startedAt.add(const Duration(hours: 12));
 
-        // "now" is deliberately far past the mark to prove endedAt tracks
-        // the mark, not the discovery time.
+        // "now" is deliberately far past the mark — irrelevant to the
+        // discard path, since a zero-drink session never gets an endedAt
+        // tied to "now" or the mark either.
         await repo.checkAndApplyAutoEnd(
           now: mark.add(const Duration(days: 3)),
         );
@@ -1090,22 +1093,23 @@ void main() {
         final session = await db.getPartySessionById(
           (await db.select(db.partySessions).get()).single.id,
         );
-        // Drift may return endedAt without the `isUtc` flag set even though
-        // it represents the same instant — DateTime.== treats those as
-        // unequal, so compare instants explicitly (same convention as
-        // drinks_repository_test.dart's `isAtSameMomentAs`).
-        expect(session!.endedAt!.isAtSameMomentAs(mark), isTrue);
-        expect(session.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(session!.deletedAt, isNotNull);
+        expect(session.endedAt, isNull);
+        expect(session.endReason, isNull);
+        expect(await db.getActiveSession(), isNull);
       },
     );
 
     test(
-      'now == startedAt + 12h exactly — still auto-ends (boundary is >=, '
-      'not strictly >)',
+      'now == startedAt + 12h exactly — still triggers discard (boundary is '
+      '>=, not strictly >)',
       () async {
         // Source: PartySessionRepository.checkAndApplyAutoEnd() —
-        // `if (!nowUtc.isBefore(autoEndAt))`, i.e. `now >= autoEndAt` ends
-        // the session, including the exact instant.
+        // `if (!nowUtc.isBefore(autoEndAt))`, i.e. `now >= autoEndAt` reaches
+        // the auto-end mark, including the exact instant. With zero
+        // alcoholic drinks logged, reaching the mark discards the session
+        // (party-session.md §Zero-drink sessions are never saved) instead of
+        // auto-ending it.
         final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
         await repo.startSession(now: startedAt, startedAt: startedAt);
         final mark = startedAt.add(const Duration(hours: 12));
@@ -1115,8 +1119,9 @@ void main() {
         final session = await db.getPartySessionById(
           (await db.select(db.partySessions).get()).single.id,
         );
-        expect(session!.endedAt, isNotNull);
-        expect(session.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(session!.deletedAt, isNotNull);
+        expect(session.endedAt, isNull);
+        expect(session.endReason, isNull);
       },
     );
 
@@ -1157,8 +1162,8 @@ void main() {
     );
 
     test(
-      'startSession() lazily auto-ends a stale previous session, then '
-      'starts the new one without StateError',
+      'startSession() lazily discards a stale, zero-drink previous session, '
+      'then starts the new one without StateError',
       () async {
         final firstStart = DateTime.utc(2026, 7, 10, 8, 0);
         final firstSession = await repo.startSession(
@@ -1166,7 +1171,10 @@ void main() {
           startedAt: firstStart,
         );
 
-        // 13h later — the first session should have auto-ended 1h ago.
+        // 13h later — the first session should have reached its auto-end
+        // mark 1h ago. It never had a drink logged, so it is discarded
+        // rather than auto-ended (party-session.md §Zero-drink sessions are
+        // never saved).
         final secondStart = firstStart.add(const Duration(hours: 13));
         final secondSession = await repo.startSession(
           now: secondStart,
@@ -1175,13 +1183,9 @@ void main() {
 
         expect(secondSession.id, isNot(firstSession.id));
         final firstRow = await db.getPartySessionById(firstSession.id);
-        expect(
-          firstRow!.endedAt!.isAtSameMomentAs(
-            firstStart.add(const Duration(hours: 12)),
-          ),
-          isTrue,
-        );
-        expect(firstRow.endReason, PartySessionEndReason.autoTimeout.stored);
+        expect(firstRow!.deletedAt, isNotNull);
+        expect(firstRow.endedAt, isNull);
+        expect(firstRow.endReason, isNull);
 
         final active = await db.getActiveSession();
         expect(active!.id, secondSession.id);
@@ -2727,24 +2731,36 @@ void main() {
 
     tearDown(() => db.close());
 
-    test('manual end sets endedAt/endReason correctly', () async {
-      final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
-      final session = await repo.startSession(
-        now: startedAt,
-        startedAt: startedAt,
-      );
-      final endAt = startedAt.add(const Duration(hours: 2));
+    test(
+      'manual end with >=1 alcoholic drink logged sets endedAt/endReason '
+      'correctly and never discards (the zero-drink discard path is '
+      'exercised separately below)',
+      () async {
+        final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt.add(const Duration(minutes: 5)),
+          now: startedAt.add(const Duration(minutes: 5)),
+        );
+        final endAt = startedAt.add(const Duration(hours: 2));
 
-      await repo.endSession(
-        session.id,
-        PartySessionEndReason.manual,
-        now: endAt,
-      );
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: endAt,
+        );
 
-      final row = await db.getPartySessionById(session.id);
-      expect(row!.endedAt!.isAtSameMomentAs(endAt), isTrue);
-      expect(row.endReason, PartySessionEndReason.manual.stored);
-    });
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.endedAt!.isAtSameMomentAs(endAt), isTrue);
+        expect(row.endReason, PartySessionEndReason.manual.stored);
+        expect(row.deletedAt, isNull);
+      },
+    );
 
     test('unknown session id throws StateError', () async {
       expect(
@@ -2752,7 +2768,265 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test(
+      'a session whose only alcoholic drink is an absorbed orphan (no '
+      'in-session-logged drink) is NOT discarded — an absorbed orphan '
+      'counts toward the zero-drink check the same as an in-session drink '
+      '(party-session.md §Zero-drink sessions are never saved: "none logged '
+      'in-session and none absorbed as orphans")',
+      () async {
+        await _seedProfile(db, birthDate: '1996-07-01');
+        // 5 minutes before startedAt — well inside the ~2.4h t_zero window
+        // from the worked example (design/party-session.md §Worked example),
+        // so the orphan is absorbed rather than staying decayed.
+        final consumedAt = DateTime.utc(2026, 7, 10, 19, 55);
+        await _insertOrphanDrink(db, consumedAt: consumedAt);
+
+        final startedAt = consumedAt.add(const Duration(minutes: 5));
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+
+        // Confirm absorption actually happened before exercising endSession.
+        final absorbed = await _getEntry(db, 'orphan-1');
+        expect(absorbed.partySessionId, session.id);
+
+        final endAt = startedAt.add(const Duration(hours: 1));
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: endAt,
+        );
+
+        final row = await db.getPartySessionById(session.id);
+        expect(row!.deletedAt, isNull);
+        expect(row.endedAt!.isAtSameMomentAs(endAt), isTrue);
+        expect(row.endReason, PartySessionEndReason.manual.stored);
+      },
+    );
   });
+
+  group(
+    'PartySessionRepository.endSession — zero-drink discard '
+    '(party-session.md §Zero-drink sessions are never saved)',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        'manual end of a session with zero alcoholic drinks ever logged is '
+        'discarded (soft-deleted) instead of ended, with no confirmation '
+        'prompt',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: startedAt.add(const Duration(hours: 1)),
+          );
+
+          final row = await db.getPartySessionById(session.id);
+          expect(row!.deletedAt, isNotNull);
+          expect(row.endedAt, isNull);
+          expect(row.endReason, isNull);
+          expect(await db.getActiveSession(), isNull);
+        },
+      );
+
+      test(
+        'a session with a meal logged but zero alcoholic drinks is still '
+        'discarded — meals do not exempt a session from discard (Deliberate '
+        'rule, party-session.md §Zero-drink sessions are never saved: the '
+        'check is drink-count-only)',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+          await repo.addMeal(
+            sessionId: session.id,
+            size: MealSize.medium,
+            eatenAt: startedAt.add(const Duration(minutes: 10)),
+            now: startedAt.add(const Duration(minutes: 10)),
+          );
+
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: startedAt.add(const Duration(hours: 1)),
+          );
+
+          final row = await db.getPartySessionById(session.id);
+          expect(row!.deletedAt, isNotNull);
+          expect(row.endedAt, isNull);
+          expect(row.endReason, isNull);
+        },
+      );
+    },
+  );
+
+  group(
+    'PartySessionRepository.deleteSession (party-session.md §Deleting a '
+    'session)',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        'soft-deletes the session and detaches every drink, which remain '
+        'live orphans rather than being soft-deleted themselves',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+          final entry1 = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: startedAt.add(const Duration(minutes: 5)),
+            now: startedAt.add(const Duration(minutes: 5)),
+          );
+          final entry2 = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: startedAt.add(const Duration(minutes: 15)),
+            now: startedAt.add(const Duration(minutes: 15)),
+          );
+          final endAt = startedAt.add(const Duration(hours: 1));
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: endAt,
+          );
+
+          final deleteAt = endAt.add(const Duration(minutes: 30));
+          await repo.deleteSession(session.id, now: deleteAt);
+
+          final row = await db.getPartySessionById(session.id);
+          expect(row!.deletedAt, isNotNull);
+
+          final row1 = await _getEntry(db, entry1.id);
+          final row2 = await _getEntry(db, entry2.id);
+          expect(row1.partySessionId, isNull);
+          expect(row2.partySessionId, isNull);
+          expect(row1.deletedAt, isNull);
+          expect(row2.deletedAt, isNull);
+
+          final alcoholicTypes = BeverageType.values
+              .where((t) => t.isAlcoholic)
+              .map((t) => t.stored)
+              .toList();
+          final orphans = await db.getOrphanAlcoholicEntries(alcoholicTypes);
+          expect(
+            orphans.map((e) => e.id).toSet(),
+            {entry1.id, entry2.id},
+            reason: 'detached drinks must be queryable as ordinary orphans',
+          );
+        },
+      );
+
+      test(
+        'detaches every entry regardless of the entry\'s own soft-delete '
+        'state, and never touches that entry\'s own deletedAt',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+          final liveEntry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: startedAt.add(const Duration(minutes: 5)),
+            now: startedAt.add(const Duration(minutes: 5)),
+          );
+          final deletedEntry = await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: startedAt.add(const Duration(minutes: 10)),
+            now: startedAt.add(const Duration(minutes: 10)),
+          );
+          final softDeleteAt = startedAt.add(const Duration(minutes: 20));
+          await db.softDeleteDrinkEntry(deletedEntry.id, softDeleteAt);
+
+          final endAt = startedAt.add(const Duration(hours: 1));
+          await repo.endSession(
+            session.id,
+            PartySessionEndReason.manual,
+            now: endAt,
+          );
+          final deleteAt = endAt.add(const Duration(minutes: 30));
+          await repo.deleteSession(session.id, now: deleteAt);
+
+          final liveRow = await _getEntry(db, liveEntry.id);
+          final deletedRow = await _getEntry(db, deletedEntry.id);
+          expect(liveRow.partySessionId, isNull);
+          expect(
+            deletedRow.partySessionId,
+            isNull,
+            reason: 'detach touches every entry, including already-'
+                'soft-deleted ones',
+          );
+          expect(
+            deletedRow.deletedAt!.isAtSameMomentAs(softDeleteAt),
+            isTrue,
+            reason: "detach must never touch the entry's own deletedAt",
+          );
+        },
+      );
+
+      test(
+        'throws StateError when the session is still active (no delete '
+        'affordance on the active session — end it first)',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+
+          expect(
+            () => repo.deleteSession(session.id),
+            throwsA(isA<StateError>()),
+          );
+
+          final row = await db.getPartySessionById(session.id);
+          expect(row!.deletedAt, isNull);
+          expect(row.endedAt, isNull);
+        },
+      );
+
+      test('throws StateError for a nonexistent session id', () async {
+        expect(
+          () => repo.deleteSession('does-not-exist'),
+          throwsA(isA<StateError>()),
+        );
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // 9. resolvePrice
@@ -2929,6 +3203,17 @@ void main() {
           now: startedAt,
           startedAt: startedAt,
         );
+        // A drink must be logged so the session actually ends instead of
+        // being discarded as zero-drink (party-session.md §Zero-drink
+        // sessions are never saved) — unrelated to what this test checks
+        // (pricing/token config), but required for the session to even
+        // reach getMostRecentEndedSession().
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt.add(const Duration(minutes: 5)),
+          now: startedAt.add(const Duration(minutes: 5)),
+        );
         await repo.endSession(
           session.id,
           PartySessionEndReason.manual,
@@ -2949,6 +3234,14 @@ void main() {
         final session = await repo.startSession(
           now: startedAt,
           startedAt: startedAt,
+        );
+        // Needed so the session actually ends rather than being discarded
+        // as zero-drink (see the previous test's comment).
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt.add(const Duration(minutes: 5)),
+          now: startedAt.add(const Duration(minutes: 5)),
         );
         await repo.updateTokenConfig(
           sessionId: session.id,
@@ -2978,6 +3271,14 @@ void main() {
         final session = await repo.startSession(
           now: startedAt,
           startedAt: startedAt,
+        );
+        // Needed so the session actually ends rather than being discarded
+        // as zero-drink.
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt.add(const Duration(minutes: 5)),
+          now: startedAt.add(const Duration(minutes: 5)),
         );
         await repo.setSessionPrices(
           sessionId: session.id,
@@ -3032,6 +3333,14 @@ void main() {
           now: aStart,
           startedAt: aStart,
         );
+        // Both sessions need a logged drink so they actually end rather
+        // than being discarded as zero-drink.
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionA.id,
+          consumedAt: aStart.add(const Duration(minutes: 5)),
+          now: aStart.add(const Duration(minutes: 5)),
+        );
         await repo.setSessionPrices(
           sessionId: sessionA.id,
           prices: const [
@@ -3051,6 +3360,12 @@ void main() {
         final sessionB = await repo.startSession(
           now: bStart,
           startedAt: bStart,
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: sessionB.id,
+          consumedAt: bStart.add(const Duration(minutes: 5)),
+          now: bStart.add(const Duration(minutes: 5)),
         );
         await repo.updateTokenConfig(
           sessionId: sessionB.id,
@@ -3296,6 +3611,15 @@ void main() {
           startedAt: DateTime.utc(2026, 7, 10, 20, 0),
           now: DateTime.utc(2026, 7, 10, 20, 0),
         );
+        // A drink must be logged so the session actually ends instead of
+        // being discarded as zero-drink (party-session.md §Zero-drink
+        // sessions are never saved).
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+          now: DateTime.utc(2026, 7, 10, 20, 5),
+        );
         await repo.endSession(
           session.id,
           PartySessionEndReason.manual,
@@ -3311,6 +3635,12 @@ void main() {
           startedAt: DateTime.utc(2026, 7, 10, 20, 0),
           now: DateTime.utc(2026, 7, 10, 20, 0),
         );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: first.id,
+          consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+          now: DateTime.utc(2026, 7, 10, 20, 5),
+        );
         await repo.endSession(
           first.id,
           PartySessionEndReason.manual,
@@ -3320,6 +3650,12 @@ void main() {
         final second = await repo.startSession(
           startedAt: DateTime.utc(2026, 7, 11, 20, 0),
           now: DateTime.utc(2026, 7, 11, 20, 0),
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: second.id,
+          consumedAt: DateTime.utc(2026, 7, 11, 20, 5),
+          now: DateTime.utc(2026, 7, 11, 20, 5),
         );
         await repo.endSession(
           second.id,
@@ -3337,6 +3673,12 @@ void main() {
           final session = await repo.startSession(
             startedAt: DateTime.utc(2026, 7, 10, 20, 0),
             now: DateTime.utc(2026, 7, 10, 20, 0),
+          );
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+            now: DateTime.utc(2026, 7, 10, 20, 5),
           );
           await repo.endSession(
             session.id,
@@ -3380,6 +3722,14 @@ void main() {
             startedAt: DateTime.utc(2026, 7, 10, 20, 0),
             now: DateTime.utc(2026, 7, 10, 20, 0),
           );
+          // A drink must be logged so the session actually ends instead of
+          // being discarded as zero-drink.
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: earlier.id,
+            consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+            now: DateTime.utc(2026, 7, 10, 20, 5),
+          );
           await repo.endSession(
             earlier.id,
             PartySessionEndReason.manual,
@@ -3404,6 +3754,12 @@ void main() {
           final session = await repo.startSession(
             startedAt: DateTime.utc(2026, 7, 10, 2, 0), // before the range
             now: DateTime.utc(2026, 7, 10, 2, 0),
+          );
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: session.id,
+            consumedAt: DateTime.utc(2026, 7, 10, 2, 5),
+            now: DateTime.utc(2026, 7, 10, 2, 5),
           );
           await repo.endSession(
             session.id,
@@ -3451,6 +3807,14 @@ void main() {
             startedAt: DateTime.utc(2026, 6, 1, 20, 0),
             now: DateTime.utc(2026, 6, 1, 20, 0),
           );
+          // A drink must be logged so the session actually ends instead of
+          // being discarded as zero-drink.
+          await repo.logAlcoholicDrink(
+            preset: _beerPreset,
+            sessionId: past.id,
+            consumedAt: DateTime.utc(2026, 6, 1, 20, 5),
+            now: DateTime.utc(2026, 6, 1, 20, 5),
+          );
           await repo.endSession(
             past.id,
             PartySessionEndReason.manual,
@@ -3493,6 +3857,14 @@ void main() {
           startedAt: DateTime.utc(2026, 7, 10, 20, 0),
           now: DateTime.utc(2026, 7, 10, 20, 0),
         );
+        // Both sessions need a logged drink so they actually end rather
+        // than being discarded as zero-drink.
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: later.id,
+          consumedAt: DateTime.utc(2026, 7, 10, 20, 5),
+          now: DateTime.utc(2026, 7, 10, 20, 5),
+        );
         await repo.endSession(
           later.id,
           PartySessionEndReason.manual,
@@ -3503,6 +3875,12 @@ void main() {
         final earlier = await repo.startSession(
           startedAt: DateTime.utc(2026, 7, 10, 8, 0),
           now: DateTime.utc(2026, 7, 10, 22, 0),
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: earlier.id,
+          consumedAt: DateTime.utc(2026, 7, 10, 22, 5),
+          now: DateTime.utc(2026, 7, 10, 22, 5),
         );
         await repo.endSession(
           earlier.id,
