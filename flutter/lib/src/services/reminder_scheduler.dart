@@ -49,6 +49,10 @@ class ReminderScheduler {
     DrinkPreset? defaultDrinkPreset,
     DateTime? now,
   }) async {
+    // Scheduling calls depend on the plugin/channels being set up first
+    // (issue #97) — initialize() is idempotent, so this is a no-op once
+    // startup's own call (see `notificationInitializerProvider`) completes.
+    await _notifications.initialize();
     final nowLocal = (now ?? DateTime.now()).toLocal();
     final latestDrinkAtUtc = await _drinks.getLatestDrinkConsumedAt();
     final latestDrinkAtLocal = latestDrinkAtUtc?.toLocal();

@@ -57,6 +57,10 @@ class PartyNotificationService {
     DateTime? projectedSoberTime,
     DateTime? now,
   }) async {
+    // Scheduling calls depend on the plugin/channels being set up first
+    // (issue #97) — initialize() is idempotent, so this is a no-op once
+    // startup's own call (see `notificationInitializerProvider`) completes.
+    await _notifications.initialize();
     // notifications.md §Configuration: "Reminders enabled — master on/off
     // toggle. When off, no notifications of any type fire." — applies here
     // too, not just the hydration-family types.
