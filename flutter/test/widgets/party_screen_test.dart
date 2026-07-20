@@ -85,6 +85,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
       })> logAlcoholicDrinkCalls = [];
   final List<DateTime?> startSessionCalls = [];
   final List<String> deleteSessionCalls = [];
+  final List<({String sessionId, String? name})> updateSessionNameCalls = [];
 
   /// Deterministic id so tests can assert on it without reading it back off
   /// a returned value threaded through several awaits.
@@ -113,6 +114,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
     String? tokenName,
     int? tokenValueMinor,
     String? tokenValueCurrency,
+    String? name,
     DateTime? now,
   }) async {
     startSessionCalls.add(startedAt);
@@ -124,6 +126,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
       tokenName: tokenName,
       tokenValueMinor: tokenValueMinor,
       tokenValueCurrency: tokenValueCurrency,
+      name: normalizePartySessionName(name),
       createdAt: at,
       updatedAt: at,
     );
@@ -136,6 +139,38 @@ class _FakePartySessionRepo extends PartySessionRepository {
     final session = _lastSession;
     if (session != null && session.id == id) return session;
     throw StateError('PartySession $id not found.');
+  }
+
+  @override
+  Future<void> updateSessionName(
+    String sessionId,
+    String? name, {
+    DateTime? now,
+  }) async {
+    updateSessionNameCalls.add((sessionId: sessionId, name: name));
+    // Only refreshes the tracked in-memory session (used by getSessionById)
+    // when it's the one being edited — tests that build a PartySession
+    // directly and pass it to _buildScreen (rather than obtaining it via
+    // startSession) never populate _lastSession, and updateSessionName must
+    // still record the call for those without throwing.
+    final session = _lastSession;
+    if (session == null || session.id != sessionId) {
+      return;
+    }
+    _lastSession = PartySession(
+      id: session.id,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      endReason: session.endReason,
+      useSessionPrices: session.useSessionPrices,
+      tokenName: session.tokenName,
+      tokenValueMinor: session.tokenValueMinor,
+      tokenValueCurrency: session.tokenValueCurrency,
+      name: normalizePartySessionName(name),
+      createdAt: session.createdAt,
+      updatedAt: now ?? DateTime.now(),
+      deletedAt: session.deletedAt,
+    );
   }
 
   @override
@@ -290,9 +325,14 @@ UserProfile _makeProfile({
   );
 }
 
-PartySession _makeSession({required DateTime startedAt, String id = 's1'}) {
+PartySession _makeSession({
+  required DateTime startedAt,
+  String id = 's1',
+  String? name,
+}) {
   return PartySession(
     id: id,
+    name: name,
     startedAt: startedAt,
     useSessionPrices: false,
     createdAt: startedAt,
@@ -627,6 +667,90 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets(
+      'shows the session name above the BAC value when set '
+      '(party-session.md §Party tab during a session)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(
+          startedAt: _workedConsumedAt,
+          name: "Sarah's birthday",
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        final entries = [
+          _alcoholicEntry(
+            volumeMl: 500,
+            abvPercent: 5.0,
+            consumedAt: _workedConsumedAt,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            entries: entries,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text("Sarah's birthday"), findsOneWidget);
+        expect(find.text('Add session name'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'shows the "Add session name" placeholder when unset, and tapping '
+      'the row + saving a name in the dialog calls updateSessionName '
+      '(party_screen.dart _BacCard -> showEditSessionNameDialog)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        final entries = [
+          _alcoholicEntry(
+            volumeMl: 500,
+            abvPercent: 5.0,
+            consumedAt: _workedConsumedAt,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            entries: entries,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add session name'), findsOneWidget);
+
+        // find.bySemanticsLabel requires an active SemanticsHandle
+        // (tester.ensureSemantics()), which most widget tests in this repo
+        // don't enable (see the Approaching-cap banner test's own note
+        // above) — tap the visible placeholder text instead, which sits
+        // inside the same InkWell that carries the
+        // SemanticsLabels.editSessionNameButton semantics.
+        await tester.tap(find.text('Add session name'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Session name'), findsOneWidget);
+        await tester.enterText(find.byType(TextField), 'Office party');
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        expect(
+          repo.updateSessionNameCalls,
+          contains((sessionId: session.id, name: 'Office party')),
+        );
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -778,6 +902,14 @@ void main() {
         expect(repo.addMealCalls.single.sessionId, repo.nextSessionId);
         expect(repo.addMealCalls.single.size, MealSize.medium);
 
+        // Name prompt (party_session_flows.dart showNamePrompt) fires
+        // between the meal prompt and the pricing prompt (party-session.md
+        // §Starting a session) — this test doesn't care about naming, so
+        // Skip is the no-op choice.
+        expect(find.text('Name this session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
         // Pricing prompt (party-session.md §Starting a session) follows the
         // meal prompt, not before it.
         expect(find.text('Set up party prices?'), findsOneWidget);
@@ -813,6 +945,13 @@ void main() {
           reason: 'Skip must not log a meal (party-session.md §Meals: '
               '"Skipping means we don\'t know — no food modifier")',
         );
+
+        // Name prompt fires next, between the meal prompt and the pricing
+        // prompt — this test doesn't care about naming, so Skip is the
+        // no-op choice.
+        expect(find.text('Name this session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
 
         expect(find.text('Set up party prices?'), findsOneWidget);
         await tester.tap(find.text('Skip — use regular prices'));
@@ -864,6 +1003,87 @@ void main() {
         expect(find.text('Did you eat recently?'), findsNothing);
         expect(repo.addMealCalls, isEmpty);
         expect(repo.logAlcoholicDrinkCalls, hasLength(2));
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 3c. Name prompt — data-model.md §PartySession → name / party-session.md
+  // §Starting a session: "an optional, skippable name field", sitting
+  // between the meal prompt and the pricing prompt (issue #102).
+  // -------------------------------------------------------------------------
+
+  group(
+      'Name prompt (data-model.md §PartySession → name, party-session.md '
+      '§Starting a session, issue #102)', () {
+    testWidgets(
+      'entering a name and tapping Save calls updateSessionName with that '
+      'name',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(session: null, profile: profile, partyRepo: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Start party session'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Name this session?'), findsOneWidget);
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Session name'),
+          "Sarah's birthday",
+        );
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        expect(
+          repo.updateSessionNameCalls,
+          contains(
+            (sessionId: repo.nextSessionId, name: "Sarah's birthday"),
+          ),
+        );
+
+        // Fall through the pricing prompt to complete the flow.
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'tapping Skip on the name prompt never calls updateSessionName',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(session: null, profile: profile, partyRepo: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Start party session'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Name this session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateSessionNameCalls, isEmpty);
+
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
+        await tester.pumpAndSettle();
       },
     );
   });
@@ -1013,6 +1233,13 @@ void main() {
         // as part of starting the session — before the drink itself is
         // logged and before the pricing prompt.
         expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
+        // Name prompt (party_session_flows.dart showNamePrompt) fires next,
+        // between the meal prompt and the pricing prompt; this test doesn't
+        // care about naming, so Skip is the no-op choice.
+        expect(find.text('Name this session?'), findsOneWidget);
         await tester.tap(find.widgetWithText(TextButton, 'Skip'));
         await tester.pumpAndSettle();
 
@@ -1539,6 +1766,73 @@ void main() {
         );
         expect(
           find.text('1 alcoholic drink · ended automatically'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a row for a session WITH a name shows "name · date" on one line, '
+      'ahead of the date (user-experience.md §S7); a row with no name just '
+      'shows the date',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile();
+
+        final namedSession = PartySession(
+          id: 'named-session',
+          name: "Sarah's birthday",
+          startedAt: DateTime.utc(2026, 7, 1, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 1, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 1, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
+        );
+        final unnamedSession = PartySession(
+          id: 'unnamed-session',
+          startedAt: DateTime.utc(2026, 7, 5, 20, 0),
+          endedAt: DateTime.utc(2026, 7, 5, 23, 0),
+          endReason: PartySessionEndReason.manual,
+          useSessionPrices: false,
+          createdAt: DateTime.utc(2026, 7, 5, 20, 0),
+          updatedAt: DateTime.utc(2026, 7, 5, 23, 0),
+        );
+        final summaries = [
+          SessionDaySummary(
+            session: namedSession,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+          ),
+          SessionDaySummary(
+            session: unnamedSession,
+            duration: const Duration(hours: 3),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: null,
+            profile: profile,
+            partyRepo: repo,
+            endedSessionSummaries: summaries,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Named row: "name · date" (party_screen.dart _PastSessionRow.build).
+        expect(
+          find.text(
+            "Sarah's birthday · ${_expectedPastSessionTitle(namedSession)}",
+          ),
+          findsOneWidget,
+        );
+        // Unnamed row: just the date, unchanged.
+        expect(
+          find.text(_expectedPastSessionTitle(unnamedSession)),
           findsOneWidget,
         );
       },

@@ -78,6 +78,16 @@ Future<PartySession?> startPartySessionFlow(
     }
   }
 
+  // Name prompt (party-session.md §Starting a session; lifecycle diagram:
+  // NamePrompt sits between the meal prompt and the pricing prompt) — a
+  // single, skippable step, same as the meal prompt.
+  if (context.mounted) {
+    final name = await showNamePrompt(context);
+    if (name != null) {
+      await repo.updateSessionName(session.id, name);
+    }
+  }
+
   if (context.mounted) {
     await _runPricingPrompt(context, ref, session);
   }
@@ -241,6 +251,141 @@ Future<MealSize?> showMealPrompt(BuildContext context) {
       ),
     ),
   );
+}
+
+/// Name prompt (party-session.md §Starting a session: "an optional,
+/// skippable name field"), shared by [startPartySessionFlow]'s once-per-
+/// session start step. Returns null on Skip/dismiss; otherwise the raw text
+/// entered (normalisation happens at the repository layer).
+Future<String?> showNamePrompt(BuildContext context) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => const _NamePromptSheet(),
+  );
+}
+
+class _NamePromptSheet extends StatefulWidget {
+  const _NamePromptSheet();
+
+  @override
+  State<_NamePromptSheet> createState() => _NamePromptSheetState();
+}
+
+class _NamePromptSheetState extends State<_NamePromptSheet> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Name this session?',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              const Text('Optional — e.g. "Sarah\'s birthday".'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                maxLength: partySessionNameMaxLength,
+                decoration: const InputDecoration(hintText: 'Session name'),
+                onSubmitted: (value) => Navigator.of(context).pop(value),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(_controller.text),
+                child: const Text('Save'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Skip'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared "edit session name" prompt (party-session.md §Starting a session:
+/// "editable at any later point too ... from the Party tab while active, or
+/// from S9's ended-mode header once it has ended"), used by both entry
+/// points. Pre-fills the current name (if any); saves via
+/// [PartySessionRepository.updateSessionName] on confirm, no-op on cancel.
+Future<void> showEditSessionNameDialog(
+  BuildContext context,
+  WidgetRef ref,
+  PartySession session,
+) async {
+  final result = await showDialog<String>(
+    context: context,
+    builder: (_) => _EditSessionNameDialog(initialName: session.name),
+  );
+  if (result == null) return;
+  await ref
+      .read(partySessionRepositoryProvider)
+      .updateSessionName(session.id, result);
+}
+
+class _EditSessionNameDialog extends StatefulWidget {
+  const _EditSessionNameDialog({this.initialName});
+
+  final String? initialName;
+
+  @override
+  State<_EditSessionNameDialog> createState() => _EditSessionNameDialogState();
+}
+
+class _EditSessionNameDialogState extends State<_EditSessionNameDialog> {
+  late final _controller = TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Session name'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: partySessionNameMaxLength,
+        decoration: const InputDecoration(hintText: "e.g. Sarah's birthday"),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Shared "delete this ended session" confirmation (party-session.md

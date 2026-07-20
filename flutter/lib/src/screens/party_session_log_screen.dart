@@ -298,7 +298,11 @@ class _EndedLog extends ConsumerWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            SessionSummaryCard(summary: summary),
+            SessionSummaryCard(
+              summary: summary,
+              onEditName: () =>
+                  showEditSessionNameDialog(context, ref, summary.session),
+            ),
             const SizedBox(height: 20),
             if (displayEntries.isEmpty)
               Padding(

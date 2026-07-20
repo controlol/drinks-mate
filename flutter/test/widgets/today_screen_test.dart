@@ -92,6 +92,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
 
   final List<({String sessionId, String presetId})> logAlcoholicDrinkCalls = [];
   final List<DateTime?> startSessionCalls = [];
+  final List<({String sessionId, String? name})> updateSessionNameCalls = [];
 
   /// Deterministic id so tests can assert on it without reading it back off
   /// a returned value threaded through several awaits.
@@ -109,6 +110,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
     String? tokenName,
     int? tokenValueMinor,
     String? tokenValueCurrency,
+    String? name,
     DateTime? now,
   }) async {
     startSessionCalls.add(startedAt);
@@ -120,6 +122,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
       tokenName: tokenName,
       tokenValueMinor: tokenValueMinor,
       tokenValueCurrency: tokenValueCurrency,
+      name: normalizePartySessionName(name),
       createdAt: at,
       updatedAt: at,
     );
@@ -132,6 +135,33 @@ class _FakePartySessionRepo extends PartySessionRepository {
     final session = _lastSession;
     if (session != null && session.id == id) return session;
     throw StateError('PartySession $id not found.');
+  }
+
+  @override
+  Future<void> updateSessionName(
+    String sessionId,
+    String? name, {
+    DateTime? now,
+  }) async {
+    updateSessionNameCalls.add((sessionId: sessionId, name: name));
+    final session = _lastSession;
+    if (session == null || session.id != sessionId) {
+      throw StateError('PartySession $sessionId not found.');
+    }
+    _lastSession = PartySession(
+      id: session.id,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      endReason: session.endReason,
+      useSessionPrices: session.useSessionPrices,
+      tokenName: session.tokenName,
+      tokenValueMinor: session.tokenValueMinor,
+      tokenValueCurrency: session.tokenValueCurrency,
+      name: normalizePartySessionName(name),
+      createdAt: session.createdAt,
+      updatedAt: now ?? DateTime.now(),
+      deletedAt: session.deletedAt,
+    );
   }
 
   @override
@@ -642,9 +672,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Post-start meal prompt (party-session.md §Starting a session /
-      // §Meals — issue #98: fires once at session start), then the pricing
-      // prompt; skip both to complete the flow.
+      // §Meals — issue #98: fires once at session start), then the name
+      // prompt (issue #102), then the pricing prompt; skip all three to
+      // complete the flow.
       expect(find.text('Did you eat recently?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Name this session?'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, 'Skip'));
       await tester.pumpAndSettle();
 

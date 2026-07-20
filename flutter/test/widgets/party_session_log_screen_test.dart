@@ -59,10 +59,20 @@ class _FakePartySessionRepo extends PartySessionRepository {
       })> updateAlcoholicEntryCalls = [];
 
   final List<String> deleteSessionCalls = [];
+  final List<({String sessionId, String? name})> updateSessionNameCalls = [];
 
   @override
   Future<void> deleteSession(String id, {DateTime? now}) async {
     deleteSessionCalls.add(id);
+  }
+
+  @override
+  Future<void> updateSessionName(
+    String sessionId,
+    String? name, {
+    DateTime? now,
+  }) async {
+    updateSessionNameCalls.add((sessionId: sessionId, name: name));
   }
 
   @override
@@ -141,9 +151,14 @@ UserPreferences _makePrefs({String currency = 'EUR'}) {
   );
 }
 
-PartySession _makeSession({required DateTime startedAt, String id = 's1'}) {
+PartySession _makeSession({
+  required DateTime startedAt,
+  String id = 's1',
+  String? name,
+}) {
   return PartySession(
     id: id,
+    name: name,
     startedAt: startedAt,
     useSessionPrices: false,
     createdAt: startedAt,
@@ -683,6 +698,89 @@ void main() {
           expect(find.text('Meals logged: 1'), findsOneWidget);
           expect(find.textContaining('Peak estimated BAC: 0.36 g/L'),
               findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'header shows the session name when set (user-experience.md §S9), '
+        'or the "Party session" fallback title when unset, and tapping the '
+        'edit icon then saving a new name calls updateSessionName '
+        '(session_summary_card.dart onEditName -> showEditSessionNameDialog)',
+        (tester) async {
+          final namedSession = _makeSession(
+            startedAt: startedAt,
+            name: "Sarah's birthday",
+          );
+          final summary = SessionDaySummary(
+            session: namedSession,
+            duration: const Duration(hours: 3, minutes: 15),
+            totalAlcoholicDrinks: 2,
+            mealsLoggedCount: 1,
+            peakBacGPerL: 0.36,
+          );
+          final partyRepo = _FakePartySessionRepo();
+
+          await tester.pumpWidget(
+            _buildScreen(
+              sessionId: namedSession.id,
+              activeSession: null,
+              entries: const [],
+              profile: _makeProfile(),
+              partyRepo: partyRepo,
+              drinksRepo: _FakeDrinksRepo(),
+              endedSummary: summary,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Named session — the name is the header title.
+          expect(find.text("Sarah's birthday"), findsOneWidget);
+          expect(find.text('Party session'), findsNothing);
+
+          // Tap the edit icon (SessionSummaryCard's onEditName affordance)
+          // and save a new name via the shared edit dialog.
+          await tester.tap(find.byIcon(Icons.edit_outlined));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Session name'), findsOneWidget);
+          await tester.enterText(find.byType(TextField), 'Rooftop party');
+          await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+          await tester.pumpAndSettle();
+
+          expect(
+            partyRepo.updateSessionNameCalls,
+            contains((sessionId: namedSession.id, name: 'Rooftop party')),
+          );
+        },
+      );
+
+      testWidgets(
+        'header shows the "Party session" fallback title when the session '
+        'has no name',
+        (tester) async {
+          final unnamedSession = _makeSession(startedAt: startedAt);
+          final summary = SessionDaySummary(
+            session: unnamedSession,
+            duration: const Duration(hours: 1),
+            totalAlcoholicDrinks: 1,
+            mealsLoggedCount: 0,
+            peakBacGPerL: 0.1,
+          );
+
+          await tester.pumpWidget(
+            _buildScreen(
+              sessionId: unnamedSession.id,
+              activeSession: null,
+              entries: const [],
+              profile: _makeProfile(),
+              partyRepo: _FakePartySessionRepo(),
+              drinksRepo: _FakeDrinksRepo(),
+              endedSummary: summary,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Party session'), findsOneWidget);
         },
       );
 

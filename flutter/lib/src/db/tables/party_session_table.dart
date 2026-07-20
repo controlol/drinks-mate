@@ -33,6 +33,11 @@ class PartySessions extends Table {
   /// 'EUR' | 'USD' | 'GBP'. Required when [tokenValueMinor] is set.
   TextColumn get tokenValueCurrency => text().nullable()();
 
+  /// Optional, user-set freeform label (e.g. "Sarah's birthday"). Normalised
+  /// via `normalizePartySessionName` (Parity Rulebook → "PartySession name")
+  /// before storage — never the raw user input.
+  TextColumn get name => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();

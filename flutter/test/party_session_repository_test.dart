@@ -273,16 +273,32 @@ class _LegacyDbV6 extends GeneratedDatabase {
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
 }
 
+/// Same purpose as [_LegacyDb]/[_LegacyDbV5]/[_LegacyDbV6], but for
+/// hand-writing a genuine v7 schema (issue #102's "if (from < 8)" upgrade
+/// test below) — the v7 shape already has `drink_entries.manual_price_override`,
+/// but `party_sessions` has no `name` column yet.
+class _LegacyDbV7 extends GeneratedDatabase {
+  _LegacyDbV7(super.executor);
+
+  @override
+  int get schemaVersion => 7;
+
+  @override
+  Iterable<TableInfo<Table, dynamic>> get allTables => const [];
+}
+
 void main() {
   // ---------------------------------------------------------------------------
   // 1. Schema migration
   // ---------------------------------------------------------------------------
 
   group('AppDatabase — schema v5 (fresh onCreate)', () {
-    test('schemaVersion is 7 (app_database.dart)', () async {
+    test('schemaVersion is 8 (app_database.dart)', () async {
+      // Source: app_database.dart schemaVersion getter — bumped to 8 for
+      // PartySessions.name (issue #102, data-model.md §PartySession).
       final db = _memDb();
       addTearDown(db.close);
-      expect(db.schemaVersion, 7);
+      expect(db.schemaVersion, 8);
     });
 
     test(
@@ -494,11 +510,11 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        // This test opens the *real* AppDatabase (currently schema v7), so a
+        // This test opens the *real* AppDatabase (currently schema v8), so a
         // hand-built v3 file cascades through the "if (from < 4)", "if (from
-        // < 5)", "if (from < 6)", and "if (from < 7)" onUpgrade blocks in one
-        // open — verified below.
-        expect(upgraded.schemaVersion, 7);
+        // < 5)", "if (from < 6)", "if (from < 7)", and "if (from < 8)"
+        // onUpgrade blocks in one open — verified below.
+        expect(upgraded.schemaVersion, 8);
 
         final entries = await upgraded.select(upgraded.drinkEntries).get();
         final legacyEntry = entries.singleWhere((e) => e.id == 'legacy-1');
@@ -707,11 +723,12 @@ void main() {
         addTearDown(upgraded.close);
 
         // The running AppDatabase is always at the current schema version
-        // (7) after upgrade — this v5→v6 test only exercises the "if (from
+        // (8) after upgrade — this v5→v6 test only exercises the "if (from
         // < 6)" block in isolation (see PRAGMA user_version = 5 above); the
-        // subsequent "if (from < 7)" block still runs since `from` is still
-        // < 7, adding manual_price_override too.
-        expect(upgraded.schemaVersion, 7);
+        // subsequent "if (from < 7)" and "if (from < 8)" blocks still run
+        // since `from` is still < 7/< 8, adding manual_price_override and
+        // name too.
+        expect(upgraded.schemaVersion, 8);
 
         // drink_entries.preset_id exists (ALTER TABLE ADD COLUMN) and is
         // null for the pre-existing row — its other snapshot fields survive
@@ -920,16 +937,17 @@ void main() {
             NULL, 'some-preset-id', $legacyEpoch, $legacyEpoch, $legacyEpoch,
             NULL);
         ''');
-        // Mark this file as schema v6 so reopening with schemaVersion 7
-        // triggers only the real onUpgrade(from: 6, to: 7) "if (from < 7)"
-        // block (the v2-v6 blocks are no-ops since `from` is already 6).
+        // Mark this file as schema v6 so reopening with the real AppDatabase
+        // (schema v8) triggers onUpgrade(from: 6, to: 8), cascading through
+        // the "if (from < 7)" and "if (from < 8)" blocks (the v2-v6 blocks
+        // are no-ops since `from` is already 6).
         await legacy.customStatement('PRAGMA user_version = 6;');
         await legacy.close();
 
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        expect(upgraded.schemaVersion, 7);
+        expect(upgraded.schemaVersion, 8);
 
         // drink_entries.manual_price_override exists (ALTER TABLE ADD
         // COLUMN ... DEFAULT) and is false for the pre-existing row — its
@@ -971,6 +989,201 @@ void main() {
         final newRow = (await upgraded.select(upgraded.drinkEntries).get())
             .singleWhere((e) => e.id == entry.id);
         expect(newRow.manualPriceOverride, isTrue);
+      },
+    );
+  });
+
+  group('AppDatabase — v7 → v8 upgrade (onUpgrade "if (from < 8)" block)', () {
+    test(
+      'upgrading a hand-built v7 schema adds party_sessions.name (nullable), '
+      'and preserves pre-existing rows with name == null',
+      () async {
+        // Source: app_database.dart schema v8 doc comment / onUpgrade "if
+        // (from < 8)" block — "PartySessions gains name (nullable text)"
+        // (issue #102, data-model.md §PartySession). Column shapes below are
+        // the v7 shape (v6 shape + drink_entries.manual_price_override),
+        // minus the one v8 addition under test — mirrors the v3→v4/v5→v6/
+        // v6→v7 upgrade tests' approach above.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'party_session_migration_v8_test',
+        );
+        addTearDown(() => tempDir.delete(recursive: true));
+        final dbFile = File(p.join(tempDir.path, 'legacy_v7.sqlite'));
+
+        final legacy = _LegacyDbV7(NativeDatabase(dbFile));
+        await legacy.customStatement('''
+          CREATE TABLE drink_presets (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            regular_price_minor INTEGER,
+            regular_currency TEXT,
+            icon_key TEXT NOT NULL,
+            icon_color TEXT NOT NULL,
+            is_user_created INTEGER NOT NULL,
+            is_hidden INTEGER NOT NULL,
+            sort_order INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE drink_entries (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT,
+            beverage_type TEXT NOT NULL,
+            volume_ml INTEGER NOT NULL,
+            abv_percent REAL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            icon_key TEXT,
+            icon_color TEXT,
+            party_session_id TEXT,
+            preset_id TEXT,
+            manual_price_override INTEGER NOT NULL DEFAULT 0,
+            consumed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE user_profiles (
+            id TEXT NOT NULL PRIMARY KEY,
+            gender TEXT,
+            weight_kg REAL,
+            height_cm REAL,
+            birth_date TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE user_preferences (
+            id TEXT NOT NULL PRIMARY KEY,
+            username TEXT,
+            daily_goal_ml INTEGER NOT NULL,
+            day_boundary_hour INTEGER NOT NULL,
+            units TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            reminder_enabled INTEGER NOT NULL,
+            reminder_start_hour INTEGER NOT NULL,
+            reminder_end_hour INTEGER NOT NULL,
+            reminder_interval_min INTEGER NOT NULL,
+            inactivity_reminder_enabled INTEGER NOT NULL,
+            weekly_summary_enabled INTEGER NOT NULL,
+            default_drink_preset_id TEXT,
+            bac_cap_grams_per_l REAL,
+            bac_on_lock_screen_enabled INTEGER NOT NULL,
+            approaching_cap_notif_enabled INTEGER NOT NULL,
+            sober_estimate_notif_enabled INTEGER NOT NULL,
+            alcoholic_presets_always_visible INTEGER NOT NULL,
+            drink_sort_mode TEXT NOT NULL DEFAULT 'recentlyUsed',
+            installed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+        ''');
+        // v7 shape: no `name` column yet — the v8 addition under test.
+        await legacy.customStatement('''
+          CREATE TABLE party_sessions (
+            id TEXT NOT NULL PRIMARY KEY,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            end_reason TEXT,
+            use_session_prices INTEGER NOT NULL,
+            token_name TEXT,
+            token_value_minor INTEGER,
+            token_value_currency TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE party_session_prices (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            drink_preset_id TEXT NOT NULL,
+            price_minor INTEGER,
+            currency TEXT,
+            price_tokens INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+        await legacy.customStatement('''
+          CREATE TABLE meals (
+            id TEXT NOT NULL PRIMARY KEY,
+            party_session_id TEXT NOT NULL,
+            size TEXT NOT NULL,
+            eaten_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+          );
+        ''');
+
+        final legacyEpoch =
+            DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch ~/ 1000;
+        await legacy.customStatement('''
+          INSERT INTO party_sessions (id, started_at, ended_at, end_reason,
+            use_session_prices, token_name, token_value_minor,
+            token_value_currency, created_at, updated_at, deleted_at)
+          VALUES ('legacy-session-v7', $legacyEpoch, NULL, NULL,
+            0, NULL, NULL, NULL, $legacyEpoch, $legacyEpoch, NULL);
+        ''');
+        // Mark this file as schema v7 so reopening with the real AppDatabase
+        // (schema v8) triggers only the real onUpgrade(from: 7, to: 8) "if
+        // (from < 8)" block (the v2-v7 blocks are no-ops since `from` is
+        // already 7).
+        await legacy.customStatement('PRAGMA user_version = 7;');
+        await legacy.close();
+
+        final upgraded = AppDatabase(NativeDatabase(dbFile));
+        addTearDown(upgraded.close);
+
+        expect(upgraded.schemaVersion, 8);
+
+        // party_sessions.name exists (ALTER TABLE ADD COLUMN, nullable) and
+        // is null for the pre-existing row — its other fields survive
+        // untouched.
+        final sessions = await upgraded.select(upgraded.partySessions).get();
+        final legacySession =
+            sessions.singleWhere((s) => s.id == 'legacy-session-v7');
+        expect(
+          legacySession.startedAt.isAtSameMomentAs(
+            DateTime.fromMillisecondsSinceEpoch(legacyEpoch * 1000,
+                isUtc: true),
+          ),
+          isTrue,
+          reason: 'pre-existing data must survive the upgrade',
+        );
+        expect(legacySession.name, isNull,
+            reason: 'pre-existing rows have no name until explicitly set — '
+                'ALTER TABLE ADD COLUMN with no DEFAULT leaves existing rows '
+                'null');
+
+        // The new column is live and usable via the repository. The legacy
+        // row above is still "active" (endedAt IS NULL) but its 12h
+        // auto-end mark has long passed, so startSession()'s own lazy
+        // auto-end check discards it first (party-session.md §Auto-end is
+        // computed lazily), then starts the new, named session.
+        await _seedProfile(upgraded);
+        final partyRepo = PartySessionRepository(upgraded);
+        final session = await partyRepo.startSession(
+          name: "Sarah's birthday",
+          now: DateTime.utc(2026, 7, 10),
+        );
+        expect(session.name, "Sarah's birthday");
       },
     );
   });
@@ -3570,6 +3783,135 @@ void main() {
           sessionId: 'does-not-exist',
           tokenName: 'Chip',
         ),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 13. startSession(name:) / updateSessionName (issue #102,
+  //     data-model.md §PartySession → name, party-session.md §Starting a
+  //     session)
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.startSession(name:)', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      'stores a freeform name unchanged, including spaces and apostrophes '
+      '(NOT the username/tokenName structural whitelist — data-model.md '
+      '§PartySession → name)',
+      () async {
+        final session = await repo.startSession(
+          name: "Sarah's birthday",
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+        expect(session.name, "Sarah's birthday");
+
+        final reloaded = await repo.getSessionById(session.id);
+        expect(reloaded.name, "Sarah's birthday");
+      },
+    );
+
+    test('omitting name leaves it null', () async {
+      final session = await repo.startSession(
+        now: DateTime.utc(2026, 7, 10, 20, 0),
+      );
+      expect(session.name, isNull);
+    });
+
+    test(
+      'sanitises a name needing normalisation before storing (control '
+      'chars stripped, trimmed, whitespace-only → null) — Parity Rulebook '
+      '→ "PartySession name"',
+      () async {
+        final session = await repo.startSession(
+          name: '  Pre-game\t drinks  ',
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+        expect(session.name, 'Pre-game drinks');
+
+        final whitespaceOnlySession = await repo.startSession(
+          name: '   \t  ',
+          now: DateTime.utc(2026, 7, 11, 20, 0),
+        );
+        expect(whitespaceOnlySession.name, isNull);
+      },
+    );
+  });
+
+  group('PartySessionRepository.updateSessionName', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+    late String sessionId;
+
+    setUp(() async {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+      final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+      final session = await repo.startSession(
+        now: startedAt,
+        startedAt: startedAt,
+      );
+      sessionId = session.id;
+    });
+
+    tearDown(() => db.close());
+
+    test('sets a name on a session that started with none', () async {
+      await repo.updateSessionName(sessionId, 'Office party');
+      final reloaded = await repo.getSessionById(sessionId);
+      expect(reloaded.name, 'Office party');
+    });
+
+    test('changes an existing name to a new one', () async {
+      await repo.updateSessionName(sessionId, 'Office party');
+      await repo.updateSessionName(sessionId, 'Rooftop party');
+      final reloaded = await repo.getSessionById(sessionId);
+      expect(reloaded.name, 'Rooftop party');
+    });
+
+    test('clears an existing name back to null when passed null', () async {
+      await repo.updateSessionName(sessionId, 'Office party');
+      await repo.updateSessionName(sessionId, null);
+      final reloaded = await repo.getSessionById(sessionId);
+      expect(reloaded.name, isNull);
+    });
+
+    test(
+      'sanitises its input the same way as startSession (control chars '
+      'stripped, trimmed, whitespace-only → null)',
+      () async {
+        await repo.updateSessionName(sessionId, '  Pre-game\n drinks  ');
+        var reloaded = await repo.getSessionById(sessionId);
+        expect(reloaded.name, 'Pre-game drinks');
+
+        await repo.updateSessionName(sessionId, '   ');
+        reloaded = await repo.getSessionById(sessionId);
+        expect(reloaded.name, isNull);
+      },
+    );
+
+    test('bumps updatedAt', () async {
+      final before = await repo.getSessionById(sessionId);
+      final now = DateTime.utc(2026, 7, 10, 21, 0);
+      await repo.updateSessionName(sessionId, 'Office party', now: now);
+      final after = await repo.getSessionById(sessionId);
+      expect(after.updatedAt.isAtSameMomentAs(now), isTrue);
+      expect(after.updatedAt.isAfter(before.updatedAt), isTrue);
+    });
+
+    test('throws StateError for an unknown sessionId', () async {
+      expect(
+        () => repo.updateSessionName('does-not-exist', 'Office party'),
         throwsA(isA<StateError>()),
       );
     });

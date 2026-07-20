@@ -11,13 +11,20 @@ import '../models/session_day_summary.dart';
 /// user-experience.md §S9: "the same fields already shown on the History day
 /// drill-down's session summary card."
 class SessionSummaryCard extends StatelessWidget {
-  const SessionSummaryCard({super.key, required this.summary});
+  const SessionSummaryCard({super.key, required this.summary, this.onEditName});
 
   final SessionDaySummary summary;
+
+  /// Tap target for the "edit name" affordance. Only S9's ended-mode header
+  /// passes this (user-experience.md §S9: "tappable to add/edit one in
+  /// either mode") — the History day drill-down usage of this same card
+  /// leaves it null, so no edit affordance appears there.
+  final VoidCallback? onEditName;
 
   @override
   Widget build(BuildContext context) {
     final peakBac = summary.peakBacGPerL;
+    final name = summary.session.name;
 
     return Semantics(
       label: SemanticsLabels.historySessionSummaryCard,
@@ -36,10 +43,27 @@ class SessionSummaryCard extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'Party session',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Expanded(
+                    child: Text(
+                      name ?? 'Party session',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                   ),
+                  if (onEditName != null)
+                    Semantics(
+                      label: SemanticsLabels.editSessionNameButton,
+                      button: true,
+                      excludeSemantics: true,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: onEditName,
+                        child: Icon(
+                          Icons.edit_outlined,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),

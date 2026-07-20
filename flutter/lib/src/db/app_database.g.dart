@@ -3352,6 +3352,11 @@ class $PartySessionsTable extends PartySessions
   late final GeneratedColumn<String> tokenValueCurrency =
       GeneratedColumn<String>('token_value_currency', aliasedName, true,
           type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -3380,6 +3385,7 @@ class $PartySessionsTable extends PartySessions
         tokenName,
         tokenValueMinor,
         tokenValueCurrency,
+        name,
         createdAt,
         updatedAt,
         deletedAt
@@ -3437,6 +3443,10 @@ class $PartySessionsTable extends PartySessions
           tokenValueCurrency.isAcceptableOrUnknown(
               data['token_value_currency']!, _tokenValueCurrencyMeta));
     }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    }
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
@@ -3478,6 +3488,8 @@ class $PartySessionsTable extends PartySessions
           .read(DriftSqlType.int, data['${effectivePrefix}token_value_minor']),
       tokenValueCurrency: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}token_value_currency']),
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name']),
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       updatedAt: attachedDatabase.typeMapping
@@ -3514,6 +3526,11 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
 
   /// 'EUR' | 'USD' | 'GBP'. Required when [tokenValueMinor] is set.
   final String? tokenValueCurrency;
+
+  /// Optional, user-set freeform label (e.g. "Sarah's birthday"). Normalised
+  /// via `normalizePartySessionName` (Parity Rulebook → "PartySession name")
+  /// before storage — never the raw user input.
+  final String? name;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -3526,6 +3543,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       this.tokenName,
       this.tokenValueMinor,
       this.tokenValueCurrency,
+      this.name,
       required this.createdAt,
       required this.updatedAt,
       this.deletedAt});
@@ -3549,6 +3567,9 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
     }
     if (!nullToAbsent || tokenValueCurrency != null) {
       map['token_value_currency'] = Variable<String>(tokenValueCurrency);
+    }
+    if (!nullToAbsent || name != null) {
+      map['name'] = Variable<String>(name);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -3578,6 +3599,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       tokenValueCurrency: tokenValueCurrency == null && nullToAbsent
           ? const Value.absent()
           : Value(tokenValueCurrency),
+      name: name == null && nullToAbsent ? const Value.absent() : Value(name),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -3599,6 +3621,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       tokenValueMinor: serializer.fromJson<int?>(json['tokenValueMinor']),
       tokenValueCurrency:
           serializer.fromJson<String?>(json['tokenValueCurrency']),
+      name: serializer.fromJson<String?>(json['name']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -3616,6 +3639,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       'tokenName': serializer.toJson<String?>(tokenName),
       'tokenValueMinor': serializer.toJson<int?>(tokenValueMinor),
       'tokenValueCurrency': serializer.toJson<String?>(tokenValueCurrency),
+      'name': serializer.toJson<String?>(name),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -3631,6 +3655,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
           Value<String?> tokenName = const Value.absent(),
           Value<int?> tokenValueMinor = const Value.absent(),
           Value<String?> tokenValueCurrency = const Value.absent(),
+          Value<String?> name = const Value.absent(),
           DateTime? createdAt,
           DateTime? updatedAt,
           Value<DateTime?> deletedAt = const Value.absent()}) =>
@@ -3647,6 +3672,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
         tokenValueCurrency: tokenValueCurrency.present
             ? tokenValueCurrency.value
             : this.tokenValueCurrency,
+        name: name.present ? name.value : this.name,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -3667,6 +3693,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       tokenValueCurrency: data.tokenValueCurrency.present
           ? data.tokenValueCurrency.value
           : this.tokenValueCurrency,
+      name: data.name.present ? data.name.value : this.name,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -3684,6 +3711,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
           ..write('tokenName: $tokenName, ')
           ..write('tokenValueMinor: $tokenValueMinor, ')
           ..write('tokenValueCurrency: $tokenValueCurrency, ')
+          ..write('name: $name, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt')
@@ -3701,6 +3729,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
       tokenName,
       tokenValueMinor,
       tokenValueCurrency,
+      name,
       createdAt,
       updatedAt,
       deletedAt);
@@ -3716,6 +3745,7 @@ class PartySessionRow extends DataClass implements Insertable<PartySessionRow> {
           other.tokenName == this.tokenName &&
           other.tokenValueMinor == this.tokenValueMinor &&
           other.tokenValueCurrency == this.tokenValueCurrency &&
+          other.name == this.name &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt);
@@ -3730,6 +3760,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
   final Value<String?> tokenName;
   final Value<int?> tokenValueMinor;
   final Value<String?> tokenValueCurrency;
+  final Value<String?> name;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -3743,6 +3774,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
     this.tokenName = const Value.absent(),
     this.tokenValueMinor = const Value.absent(),
     this.tokenValueCurrency = const Value.absent(),
+    this.name = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3757,6 +3789,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
     this.tokenName = const Value.absent(),
     this.tokenValueMinor = const Value.absent(),
     this.tokenValueCurrency = const Value.absent(),
+    this.name = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -3775,6 +3808,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
     Expression<String>? tokenName,
     Expression<int>? tokenValueMinor,
     Expression<String>? tokenValueCurrency,
+    Expression<String>? name,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
@@ -3790,6 +3824,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
       if (tokenValueMinor != null) 'token_value_minor': tokenValueMinor,
       if (tokenValueCurrency != null)
         'token_value_currency': tokenValueCurrency,
+      if (name != null) 'name': name,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -3806,6 +3841,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
       Value<String?>? tokenName,
       Value<int?>? tokenValueMinor,
       Value<String?>? tokenValueCurrency,
+      Value<String?>? name,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt,
       Value<DateTime?>? deletedAt,
@@ -3819,6 +3855,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
       tokenName: tokenName ?? this.tokenName,
       tokenValueMinor: tokenValueMinor ?? this.tokenValueMinor,
       tokenValueCurrency: tokenValueCurrency ?? this.tokenValueCurrency,
+      name: name ?? this.name,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -3853,6 +3890,9 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
     if (tokenValueCurrency.present) {
       map['token_value_currency'] = Variable<String>(tokenValueCurrency.value);
     }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3879,6 +3919,7 @@ class PartySessionsCompanion extends UpdateCompanion<PartySessionRow> {
           ..write('tokenName: $tokenName, ')
           ..write('tokenValueMinor: $tokenValueMinor, ')
           ..write('tokenValueCurrency: $tokenValueCurrency, ')
+          ..write('name: $name, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -6211,6 +6252,7 @@ typedef $$PartySessionsTableCreateCompanionBuilder = PartySessionsCompanion
   Value<String?> tokenName,
   Value<int?> tokenValueMinor,
   Value<String?> tokenValueCurrency,
+  Value<String?> name,
   required DateTime createdAt,
   required DateTime updatedAt,
   Value<DateTime?> deletedAt,
@@ -6226,6 +6268,7 @@ typedef $$PartySessionsTableUpdateCompanionBuilder = PartySessionsCompanion
   Value<String?> tokenName,
   Value<int?> tokenValueMinor,
   Value<String?> tokenValueCurrency,
+  Value<String?> name,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
   Value<DateTime?> deletedAt,
@@ -6267,6 +6310,9 @@ class $$PartySessionsTableFilterComposer
   ColumnFilters<String> get tokenValueCurrency => $composableBuilder(
       column: $table.tokenValueCurrency,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
@@ -6314,6 +6360,9 @@ class $$PartySessionsTableOrderingComposer
       column: $table.tokenValueCurrency,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -6356,6 +6405,9 @@ class $$PartySessionsTableAnnotationComposer
 
   GeneratedColumn<String> get tokenValueCurrency => $composableBuilder(
       column: $table.tokenValueCurrency, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -6401,6 +6453,7 @@ class $$PartySessionsTableTableManager extends RootTableManager<
             Value<String?> tokenName = const Value.absent(),
             Value<int?> tokenValueMinor = const Value.absent(),
             Value<String?> tokenValueCurrency = const Value.absent(),
+            Value<String?> name = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
             Value<DateTime?> deletedAt = const Value.absent(),
@@ -6415,6 +6468,7 @@ class $$PartySessionsTableTableManager extends RootTableManager<
             tokenName: tokenName,
             tokenValueMinor: tokenValueMinor,
             tokenValueCurrency: tokenValueCurrency,
+            name: name,
             createdAt: createdAt,
             updatedAt: updatedAt,
             deletedAt: deletedAt,
@@ -6429,6 +6483,7 @@ class $$PartySessionsTableTableManager extends RootTableManager<
             Value<String?> tokenName = const Value.absent(),
             Value<int?> tokenValueMinor = const Value.absent(),
             Value<String?> tokenValueCurrency = const Value.absent(),
+            Value<String?> name = const Value.absent(),
             required DateTime createdAt,
             required DateTime updatedAt,
             Value<DateTime?> deletedAt = const Value.absent(),
@@ -6443,6 +6498,7 @@ class $$PartySessionsTableTableManager extends RootTableManager<
             tokenName: tokenName,
             tokenValueMinor: tokenValueMinor,
             tokenValueCurrency: tokenValueCurrency,
+            name: name,
             createdAt: createdAt,
             updatedAt: updatedAt,
             deletedAt: deletedAt,

@@ -33,6 +33,7 @@ class PartySession {
     this.tokenName,
     this.tokenValueMinor,
     this.tokenValueCurrency,
+    this.name,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -59,6 +60,11 @@ class PartySession {
 
   /// 'EUR' | 'USD' | 'GBP'. Required when [tokenValueMinor] is set.
   final String? tokenValueCurrency;
+
+  /// Optional, user-set freeform label (e.g. "Sarah's birthday"). Already
+  /// normalised (control chars stripped, trimmed, ≤40 chars) — see
+  /// `normalizePartySessionName` (Parity Rulebook → "PartySession name").
+  final String? name;
 
   final DateTime createdAt;
   final DateTime updatedAt;
