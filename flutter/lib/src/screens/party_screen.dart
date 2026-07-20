@@ -690,14 +690,17 @@ class _BacLineChartCardState extends State<_BacLineChartCard> {
   void didUpdateWidget(covariant _BacLineChartCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     // The tapped spot's coordinates are only meaningful against the series
-    // that was plotted when it was tapped. Entries/meals changes can rescale
-    // the axis (e.g. the empty state -> first-drink transition) or change
-    // the sampled values at the same x, so drop a stale marker rather than
-    // let it render at a position/value nothing on the new series matches.
-    // `now` ticking alone doesn't move axisStart/axisEnd for an unchanged
-    // series, so the marker is deliberately left alone in that case.
+    // that was plotted when it was tapped. Entries/meals/profile changes can
+    // rescale the axis (e.g. the empty state -> first-drink transition, or
+    // editing weight/gender in Settings while Party stays alive under the
+    // IndexedStack shell) or change the sampled values at the same x, so
+    // drop a stale marker rather than let it render at a position/value
+    // nothing on the new series matches. `now` ticking alone doesn't move
+    // axisStart/axisEnd for an unchanged series, so the marker is
+    // deliberately left alone in that case.
     if (!listEquals(oldWidget.alcoholicEntries, widget.alcoholicEntries) ||
-        !listEquals(oldWidget.meals, widget.meals)) {
+        !listEquals(oldWidget.meals, widget.meals) ||
+        oldWidget.profile != widget.profile) {
       _tappedSpot = null;
     }
   }
