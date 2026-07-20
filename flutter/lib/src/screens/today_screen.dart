@@ -576,7 +576,7 @@ class _LogADrinkSection extends ConsumerWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Log a drink',
+                  'Quick Log',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
@@ -795,7 +795,7 @@ class _LogDrinkButton extends ConsumerWidget {
 
 /// Shared "Logged {name}" toast for both the grid-tile tap and the S2
 /// confirm path (user-experience.md §S1: "The `Logged` toast ... after any
-/// preset-tile tap in the 'Log a drink' grid or successful S2 confirm").
+/// preset-tile tap in the 'Quick Log' grid or successful S2 confirm").
 ///
 /// Non-alcoholic entries, and alcoholic entries attached to an already-active
 /// Party Session, get an inline Undo that soft-deletes the entry — after

@@ -132,7 +132,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_appWithFakeStreams());
     await tester.pump(); // let StreamProvider emit the first value
-    expect(find.text('Log a drink'), findsOneWidget);
+    expect(find.text('Quick Log'), findsOneWidget);
     expect(find.text('Log drink'), findsOneWidget);
   });
 
@@ -142,7 +142,7 @@ void main() {
         .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     // Today screen is initially visible.
-    expect(find.text('Log a drink'), findsOneWidget);
+    expect(find.text('Quick Log'), findsOneWidget);
 
     // Tap the History tab.
     final navBar = find.byType(NavigationBar);
@@ -154,7 +154,7 @@ void main() {
     // History screen visible (empty state — the overridden providers above
     // emit an empty bucket list); Today content gone.
     expect(find.text('No drinks logged in this period'), findsOneWidget);
-    expect(find.text('Log a drink'), findsNothing);
+    expect(find.text('Quick Log'), findsNothing);
   });
 
   testWidgets('tapping Party tab switches screen', (tester) async {
