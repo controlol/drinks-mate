@@ -7,8 +7,9 @@
 //     and the Widmark (null-height) fallback path.
 //  2. Approaching-cap threshold — party-session.md §BAC goal (cap) / Parity
 //     Rulebook `isApproachingCap`: banner shows at >=80% of cap, hidden below.
-//  3. Meal prompt — party-session.md §Meals: log-alcohol flow ends with a
-//     skippable Small/Medium/Large/Skip prompt; picking a size calls
+//  3. Meal prompt — party-session.md §Meals: a single skippable
+//     Small/Medium/Large/Skip prompt fires once, at session start (never
+//     per-drink, issue #98); picking a size calls
 //     PartySessionRepository.addMeal, Skip calls nothing.
 //  4. Under-18 gate — party-session.md §Starting a session: under-18 profile
 //     shows the gate instead of "Start party session"; 18+/no-birthdate show
@@ -410,9 +411,9 @@ Widget _buildScreen({
       builder: alwaysUse24HourFormat == null
           ? null
           : (context, child) => MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  alwaysUse24HourFormat: alwaysUse24HourFormat,
-                ),
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
                 child: child!,
               ),
       home: const PartyScreen(),
@@ -730,23 +731,93 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // 3. Meal prompt — issue #22's own Scope/Acceptance-criteria bullets state
-  // (verbatim, twice) that the prompt "appears after each alcoholic drink
-  // log". party-session.md §Meals separately describes a single start-of-
-  // session prompt plus an always-available "add meal" affordance during the
-  // session — but that affordance is explicitly out of this issue's Scope
-  // list, so a start-only prompt with no other way to log a meal would make
-  // meals effectively unloggable whenever the user skips it once. Per-drink
-  // is therefore the coherent choice for this issue's scope, matching what
-  // the issue's AC literally asks for and what _handleLogAlcohol implements.
+  // 3. Meal prompt — party-session.md §Meals: "A single, skippable prompt"
+  // that fires once, at session start, and "There is never a per-drink food
+  // prompt." Issue #98 fixed a regression where the prompt was (incorrectly)
+  // re-shown after every alcoholic drink logged into an already-active
+  // session; party_session_flows.dart's `startPartySessionFlow` now runs the
+  // prompt exactly once (between the birthday/under-18 gate and the pricing
+  // prompt), and `logAlcoholicDrinkIntoSession` (used for logging additional
+  // drinks into an active session) never shows it.
   // -------------------------------------------------------------------------
 
   group(
-      'Meal prompt (issue #22 AC: "Meal prompt appears after each alcoholic '
-      'drink log")', () {
+      'Meal prompt (party-session.md §Meals: single prompt at session start '
+      'only, issue #98)', () {
     testWidgets(
-      'Log alcohol into an active session -> meal prompt -> Medium calls '
+      'Starting a session shows the meal prompt exactly once, after the '
+      'birthday/under-18 gate and before the pricing prompt; Medium calls '
       'addMeal(sessionId, MealSize.medium)',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(session: null, profile: profile, partyRepo: repo),
+        );
+        await tester.pumpAndSettle();
+
+        // The no-session view's own "Start party session" button
+        // (party_screen.dart _NoSessionView) — the profile already has a
+        // birthdate and is 18+, so no birthdate dialog/gate interrupts.
+        await tester.tap(find.text('Start party session'));
+        await tester.pumpAndSettle();
+
+        // Meal prompt (party_session_flows.dart showMealPrompt) fires first.
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.text('Medium'));
+        await tester.pumpAndSettle();
+
+        expect(repo.addMealCalls, hasLength(1));
+        expect(repo.addMealCalls.single.sessionId, repo.nextSessionId);
+        expect(repo.addMealCalls.single.size, MealSize.medium);
+
+        // Pricing prompt (party-session.md §Starting a session) follows the
+        // meal prompt, not before it.
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
+        await tester.pumpAndSettle();
+
+        expect(repo.startSessionCalls, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'Skip on the session-start meal prompt calls addMeal zero times and '
+      'still continues to the pricing prompt',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(session: null, profile: profile, partyRepo: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Start party session'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
+        expect(
+          repo.addMealCalls,
+          isEmpty,
+          reason: 'Skip must not log a meal (party-session.md §Meals: '
+              '"Skipping means we don\'t know — no food modifier")',
+        );
+
+        expect(find.text('Set up party prices?'), findsOneWidget);
+        await tester.tap(find.text('Skip — use regular prices'));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'Logging drinks into an already-active session never shows the meal '
+      'prompt and never calls addMeal (issue #98 — "There is never a '
+      'per-drink food prompt")',
       (tester) async {
         final repo = _FakePartySessionRepo();
         final session = _makeSession(startedAt: _workedConsumedAt);
@@ -763,102 +834,20 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Tap "Log alcohol" on the active-session view.
+        // First drink.
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
-
-        // Preset-pick phase (PartyLogDrinkSheet / _AlcoholicPickPhase).
         expect(find.text('Test Beer'), findsOneWidget);
         await tester.tap(find.text('Test Beer'));
         await tester.pumpAndSettle();
-
-        // Confirm phase — volume/ABV pre-filled from the preset.
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
 
-        expect(
-          repo.logAlcoholicDrinkCalls,
-          contains((
-            sessionId: session.id,
-            presetId: _beerPreset.id,
-            // Name field left at its pre-filled default (the preset's own
-            // name) — party_log_drink_sheet.dart pre-fills `_nameCtrl` from
-            // the picked preset.
-            name: 'Test Beer',
-            // Price field left blank — falls through to
-            // PartySessionRepository.resolvePrice() (the fake's sentinel).
-            priceMinor: _FakePartySessionRepo.sentinelResolvedPrice.priceMinor,
-            currency: _FakePartySessionRepo.sentinelResolvedPrice.currency,
-          )),
-        );
+        expect(find.text('Did you eat recently?'), findsNothing);
+        expect(repo.addMealCalls, isEmpty);
+        expect(repo.logAlcoholicDrinkCalls, hasLength(1));
 
-        // Meal prompt (party_screen.dart _showMealPrompt).
-        expect(find.text('Did you eat recently?'), findsOneWidget);
-        await tester.tap(find.text('Medium'));
-        await tester.pumpAndSettle();
-
-        expect(repo.addMealCalls, hasLength(1));
-        expect(repo.addMealCalls.single.sessionId, session.id);
-        expect(repo.addMealCalls.single.size, MealSize.medium);
-      },
-    );
-
-    testWidgets('Skip on the meal prompt calls addMeal zero times', (
-      tester,
-    ) async {
-      final repo = _FakePartySessionRepo();
-      final session = _makeSession(startedAt: _workedConsumedAt);
-      final profile = _makeProfile(birthDate: _workedBirthDate);
-
-      await tester.pumpWidget(
-        _buildScreen(
-          session: session,
-          profile: profile,
-          partyRepo: repo,
-          now: _workedConsumedAt,
-          alcoholicPresets: const [_beerPreset],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Log alcohol'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Test Beer'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Did you eat recently?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Skip'));
-      await tester.pumpAndSettle();
-
-      expect(
-        repo.addMealCalls,
-        isEmpty,
-        reason: 'Skip must not log a meal (party-session.md §Meals: '
-            '"Skipping means we don\'t know — no food modifier")',
-      );
-    });
-
-    testWidgets(
-        'the prompt reappears on a second drink logged into the same '
-        'session — confirms "each" log, not a one-shot', (tester) async {
-      final repo = _FakePartySessionRepo();
-      final session = _makeSession(startedAt: _workedConsumedAt);
-      final profile = _makeProfile(birthDate: _workedBirthDate);
-
-      await tester.pumpWidget(
-        _buildScreen(
-          session: session,
-          profile: profile,
-          partyRepo: repo,
-          now: _workedConsumedAt,
-          alcoholicPresets: const [_beerPreset],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      for (var i = 0; i < 2; i++) {
+        // Second drink into the same active session — still no prompt.
         await tester.tap(find.text('Log alcohol'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Test Beer'));
@@ -866,13 +855,11 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Did you eat recently?'), findsOneWidget);
-        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
-        await tester.pumpAndSettle();
-      }
-
-      expect(repo.logAlcoholicDrinkCalls, hasLength(2));
-    });
+        expect(find.text('Did you eat recently?'), findsNothing);
+        expect(repo.addMealCalls, isEmpty);
+        expect(repo.logAlcoholicDrinkCalls, hasLength(2));
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -900,38 +887,37 @@ void main() {
     final twelveHourPattern = RegExp(r'^\d{1,2}:\d{2}\s?(AM|PM)$');
     final twentyFourHourPattern = RegExp(r'^\d{2}:\d{2}$');
 
-    testWidgets(
-      'renders 12h AM/PM format when alwaysUse24HourFormat=false',
-      (tester) async {
-        final repo = _FakePartySessionRepo();
-        final session = _makeSession(startedAt: _workedConsumedAt);
-        final profile = _makeProfile(birthDate: _workedBirthDate);
+    testWidgets('renders 12h AM/PM format when alwaysUse24HourFormat=false', (
+      tester,
+    ) async {
+      final repo = _FakePartySessionRepo();
+      final session = _makeSession(startedAt: _workedConsumedAt);
+      final profile = _makeProfile(birthDate: _workedBirthDate);
 
-        await tester.pumpWidget(
-          _buildScreen(
-            session: session,
-            profile: profile,
-            partyRepo: repo,
-            now: _workedConsumedAt,
-            alcoholicPresets: const [_beerPreset],
-            alwaysUse24HourFormat: false,
-          ),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _buildScreen(
+          session: session,
+          profile: profile,
+          partyRepo: repo,
+          now: _workedConsumedAt,
+          alcoholicPresets: const [_beerPreset],
+          alwaysUse24HourFormat: false,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Log alcohol'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
-        await tester.pumpAndSettle();
+      await tester.tap(find.text('Log alcohol'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Test Beer'));
+      await tester.pumpAndSettle();
 
-        final label = await _timeButtonLabel(tester);
-        expect(
-          twelveHourPattern.hasMatch(label),
-          isTrue,
-          reason: 'Expected a 12h AM/PM label like "9:30 AM", got "$label"',
-        );
-      },
-    );
+      final label = await _timeButtonLabel(tester);
+      expect(
+        twelveHourPattern.hasMatch(label),
+        isTrue,
+        reason: 'Expected a 12h AM/PM label like "9:30 AM", got "$label"',
+      );
+    });
 
     testWidgets(
       'renders 24h format (no AM/PM) when alwaysUse24HourFormat=true',
@@ -980,8 +966,8 @@ void main() {
       'Log alcohol with no active session (party-session.md §Logging alcohol '
       'when no session is active)', () {
     testWidgets(
-      'Accepting "Start party session" starts a session, logs the drink '
-      'into it, then shows the meal prompt',
+      'Accepting "Start party session" runs the meal and pricing prompts '
+      'as part of starting the session, then logs the drink into it',
       (tester) async {
         final repo = _FakePartySessionRepo()..nextSessionId = 'started-2';
         final profile = _makeProfile(birthDate: _workedBirthDate);
@@ -1017,9 +1003,16 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // The meal prompt (party-session.md §Meals, issue #98) fires first,
+        // as part of starting the session — before the drink itself is
+        // logged and before the pricing prompt.
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+        await tester.pumpAndSettle();
+
         // The pricing prompt (party-session.md §Starting a session —
-        // pricing prompt) fires right after the session is created; skip it
-        // to fall through to the regular-prices default for this flow.
+        // pricing prompt) follows the meal prompt; skip it to fall through
+        // to the regular-prices default for this flow.
         expect(find.text('Set up party prices?'), findsOneWidget);
         await tester.tap(find.text('Skip — use regular prices'));
         await tester.pumpAndSettle();
@@ -1035,12 +1028,6 @@ void main() {
             currency: _FakePartySessionRepo.sentinelResolvedPrice.currency,
           )),
         );
-
-        // The per-drink meal prompt fires after the drink is logged into
-        // the newly-started session.
-        expect(find.text('Did you eat recently?'), findsOneWidget);
-        await tester.tap(find.widgetWithText(TextButton, 'Skip'));
-        await tester.pumpAndSettle();
       },
     );
 
@@ -1348,43 +1335,41 @@ void main() {
     );
 
     testWidgets(
-      'orphan path: leaving name/price at defaults falls back to the '
-      'preset\'s own name and regular price (Optional.absent, not an '
-      'explicit clear)',
-      (tester) async {
-        final repo = _FakePartySessionRepo();
-        final drinksRepo = _FakeDrinksRepo();
-        final profile = _makeProfile(birthDate: _workedBirthDate);
+        'orphan path: leaving name/price at defaults falls back to the '
+        'preset\'s own name and regular price (Optional.absent, not an '
+        'explicit clear)', (tester) async {
+      final repo = _FakePartySessionRepo();
+      final drinksRepo = _FakeDrinksRepo();
+      final profile = _makeProfile(birthDate: _workedBirthDate);
 
-        await tester.pumpWidget(
-          _buildScreen(
-            session: null,
-            profile: profile,
-            partyRepo: repo,
-            drinksRepo: drinksRepo,
-            alcoholicPresets: const [_beerPreset],
-          ),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        _buildScreen(
+          session: null,
+          profile: profile,
+          partyRepo: repo,
+          drinksRepo: drinksRepo,
+          alcoholicPresets: const [_beerPreset],
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Log alcohol'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Test Beer'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
-        await tester.pumpAndSettle();
+      await tester.tap(find.text('Log alcohol'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Test Beer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.pumpAndSettle();
 
-        expect(find.text('Start a Party Session first?'), findsOneWidget);
-        await tester.tap(find.text("Don't start a session"));
-        await tester.pumpAndSettle();
+      expect(find.text('Start a Party Session first?'), findsOneWidget);
+      await tester.tap(find.text("Don't start a session"));
+      await tester.pumpAndSettle();
 
-        expect(drinksRepo.logDrinkCalls, hasLength(1));
-        final call = drinksRepo.logDrinkCalls.single;
-        expect(call.name, 'Test Beer');
-        expect(call.priceMinor, const Optional<int?>.absent());
-        expect(call.currency, const Optional<String?>.absent());
-      },
-    );
+      expect(drinksRepo.logDrinkCalls, hasLength(1));
+      final call = drinksRepo.logDrinkCalls.single;
+      expect(call.name, 'Test Beer');
+      expect(call.priceMinor, const Optional<int?>.absent());
+      expect(call.currency, const Optional<String?>.absent());
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1590,7 +1575,8 @@ void main() {
 
         expect(find.text('Party Session Log'), findsNothing);
         await tester.tap(
-            find.text('1 alcoholic drink · peak 0.10 g/L · ended manually'));
+          find.text('1 alcoholic drink · peak 0.10 g/L · ended manually'),
+        );
         await tester.pumpAndSettle();
 
         // PartySessionLogScreen's own AppBar title — confirms navigation
@@ -1647,9 +1633,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              partySessionRepositoryProvider.overrideWithValue(
-                realPartyRepo,
-              ),
+              partySessionRepositoryProvider.overrideWithValue(realPartyRepo),
               // The screen renders with no active session in view — this
               // test only exercises the settings gear, not the BAC card.
               activePartySessionProvider.overrideWith(
