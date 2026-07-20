@@ -77,12 +77,17 @@ class PartySessionRepository {
   /// [tokenValueCurrency], or if [tokenName] fails [validateUsername]
   /// (1–30 chars, same whitelist as username — Parity Rulebook §Username
   /// length).
+  ///
+  /// [name] is the optional, skippable session name (party-session.md
+  /// §Starting a session), normalised via [normalizePartySessionName] —
+  /// unlike [tokenName] this is never rejected, only sanitised.
   Future<PartySession> startSession({
     DateTime? startedAt,
     bool useSessionPrices = false,
     String? tokenName,
     int? tokenValueMinor,
     String? tokenValueCurrency,
+    String? name,
     DateTime? now,
   }) async {
     if (tokenValueMinor != null && tokenValueCurrency == null) {
@@ -101,6 +106,7 @@ class PartySessionRepository {
         throw ArgumentError.value(tokenName, 'tokenName', validation.error);
       }
     }
+    final normalizedName = normalizePartySessionName(name);
 
     final nowUtc = (now ?? DateTime.now()).toUtc();
     final startedAtUtc = (startedAt ?? nowUtc).toUtc();
@@ -127,6 +133,7 @@ class PartySessionRepository {
           tokenName: Value(normalizedTokenName),
           tokenValueMinor: Value(tokenValueMinor),
           tokenValueCurrency: Value(tokenValueCurrency),
+          name: Value(normalizedName),
           createdAt: nowUtc,
           updatedAt: nowUtc,
         ),
@@ -810,6 +817,32 @@ class PartySessionRepository {
     if (rows == 0) throw StateError('PartySession $sessionId not found.');
   }
 
+  /// Sets or clears the session's optional display name — settable at start
+  /// ([startSession]) and editable at any later point too (party-session.md
+  /// §Starting a session: "from the Party tab while active, or from S9's
+  /// ended-mode header once it has ended"). [name] is sanitised via
+  /// [normalizePartySessionName] (Parity Rulebook → "PartySession name") —
+  /// never rejected, only stripped/trimmed/capped; a null or
+  /// empty-after-trim [name] clears it.
+  ///
+  /// Throws [StateError] if [sessionId] does not exist.
+  Future<void> updateSessionName(
+    String sessionId,
+    String? name, {
+    DateTime? now,
+  }) async {
+    final normalizedName = normalizePartySessionName(name);
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    final rows = await _db.updatePartySessionFields(
+      sessionId,
+      PartySessionsCompanion(
+        name: Value(normalizedName),
+        updatedAt: Value(nowUtc),
+      ),
+    );
+    if (rows == 0) throw StateError('PartySession $sessionId not found.');
+  }
+
   /// Updates the token configuration on an existing session — usable at
   /// session start (the pricing prompt) or "any time during the session"
   /// (party-session.md §Money vs tokens). Pass `null` for a field to clear
@@ -975,6 +1008,7 @@ class PartySessionRepository {
         tokenName: row.tokenName,
         tokenValueMinor: row.tokenValueMinor,
         tokenValueCurrency: row.tokenValueCurrency,
+        name: row.name,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,

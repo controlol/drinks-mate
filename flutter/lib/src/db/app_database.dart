@@ -25,7 +25,7 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 6.
+/// Phase-1 Drift database — schema version 8.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
@@ -45,6 +45,8 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 /// v7 (issue #87): DrinkEntries gains manualPriceOverride (default false) —
 ///   marks a this-entry-only price edit so the retroactive party-price
 ///   sweep in `setSessionPrices` knows which entries to skip.
+/// v8 (issue #102): PartySessions gains name (nullable) — an optional,
+///   user-set freeform session label.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -68,7 +70,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -111,6 +113,14 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 7) {
             await m.addColumn(drinkEntries, drinkEntries.manualPriceOverride);
+          }
+          // Lower-bounded at 4 (not just `from < 8`): `createTable` above
+          // builds the table from today's Dart schema — which already
+          // includes `name` — so an upgrade starting below v4 already has
+          // the column by the time this runs; adding it again would throw
+          // "duplicate column name".
+          if (from >= 4 && from < 8) {
+            await m.addColumn(partySessions, partySessions.name);
           }
         },
         beforeOpen: (_) async {

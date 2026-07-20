@@ -188,6 +188,11 @@ class _PastSessionRow extends ConsumerWidget {
     final endLabel = session.endReason == PartySessionEndReason.autoTimeout
         ? 'ended automatically'
         : 'ended manually';
+    // Name before the date, on the same line (user-experience.md §S7 → No
+    // active session — subsequent visits); rows with no name just start
+    // with the date.
+    final name = session.name;
+    final titleText = name != null ? '$name · $dateRange' : dateRange;
 
     return Card(
       child: ListTile(
@@ -195,7 +200,7 @@ class _PastSessionRow extends ConsumerWidget {
           Icons.local_bar_outlined,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-        title: Text(dateRange),
+        title: Text(titleText),
         subtitle: Text(
           '${summary.totalAlcoholicDrinks} alcoholic '
           '${summary.totalAlcoholicDrinks == 1 ? 'drink' : 'drinks'}'
@@ -319,6 +324,7 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         _BacCard(
+          session: widget.session,
           estimate: estimate,
           elapsed: elapsed,
           capGPerL: cap,
@@ -399,21 +405,23 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
   }
 }
 
-class _BacCard extends StatelessWidget {
+class _BacCard extends ConsumerWidget {
   const _BacCard({
+    required this.session,
     required this.estimate,
     required this.elapsed,
     required this.capGPerL,
     required this.approachingCap,
   });
 
+  final PartySession session;
   final BacEstimate estimate;
   final Duration elapsed;
   final double? capGPerL;
   final bool approachingCap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // BAC display precision: 2 decimal places for both g/L and mmol/L,
     // matching party-session.md §Display units' own example
     // ("0.36 g/L (≈ 7.85 mmol/L)"). The Rulebook does not pin BAC display
@@ -427,6 +435,34 @@ class _BacCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Session name (party-session.md §Party tab during a session):
+            // shown above the BAC value when set; tappable to add/edit at
+            // any point during the active session.
+            Semantics(
+              label: SemanticsLabels.editSessionNameButton,
+              button: true,
+              excludeSemantics: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => showEditSessionNameDialog(context, ref, session),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        session.name ?? 'Add session name',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Semantics(
               label: '${SemanticsLabels.bacValue}: $gPerLText g/L, '
                   'approximately $mmolText mmol/L',
