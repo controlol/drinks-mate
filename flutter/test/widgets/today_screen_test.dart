@@ -639,8 +639,13 @@ void main() {
       await tester.tap(find.widgetWithText(SnackBarAction, 'Start session'));
       await tester.pumpAndSettle();
 
-      // Post-start pricing prompt (party-session.md §Starting a session);
-      // skip it to complete the flow.
+      // Post-start meal prompt (party-session.md §Starting a session /
+      // §Meals — issue #98: fires once at session start), then the pricing
+      // prompt; skip both to complete the flow.
+      expect(find.text('Did you eat recently?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+      await tester.pumpAndSettle();
+
       expect(find.text('Set up party prices?'), findsOneWidget);
       await tester.tap(find.text('Skip — use regular prices'));
       await tester.pumpAndSettle();

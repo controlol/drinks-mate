@@ -14,7 +14,7 @@ import 'party_pricing_sheet.dart';
 /// ([party_screen.dart]'s `_NoSessionView`) and Today's "Start session" toast
 /// action (party-session.md §Logging from Today, issue #85 item #4) — both
 /// entry points collect a missing birthday/height, gate on 18+, then run the
-/// same post-start pricing prompt.
+/// same post-start meal and pricing prompts.
 bool isUnder18(UserProfile? profile) {
   final birthDate = profile?.birthDate;
   if (birthDate == null) return false;
@@ -67,13 +67,24 @@ Future<PartySession?> startPartySessionFlow(
   final repo = ref.read(partySessionRepositoryProvider);
   final session = await repo.startSession(startedAt: startedAt);
 
+  // Meal prompt (party-session.md §Meals / §Starting a session; lifecycle
+  // diagram: MealPrompt sits between the birthday/under-18 gate and the
+  // pricing prompt) — fires exactly once, here, at session start. Never
+  // per-drink (issue #98).
+  if (context.mounted) {
+    final mealSize = await showMealPrompt(context);
+    if (mealSize != null) {
+      await repo.addMeal(sessionId: session.id, size: mealSize);
+    }
+  }
+
   if (context.mounted) {
     await _runPricingPrompt(context, ref, session);
   }
-  // Re-fetch: the pricing prompt may have written useSessionPrices/token
-  // config for this same session, and the caller (e.g. the very next
-  // logAlcoholicDrink call) must see those values rather than the
-  // now-stale defaults captured before the prompt ran.
+  // Re-fetch: the meal/pricing prompts may have written data for this same
+  // session (addMeal, useSessionPrices/token config), and the caller (e.g.
+  // the very next logAlcoholicDrink call) must see those values rather than
+  // the now-stale defaults captured before the prompts ran.
   return repo.getSessionById(session.id);
 }
 
@@ -145,11 +156,14 @@ Future<void> _runPricingPrompt(
   await repo.setUseSessionPrices(session.id, result.prices.isNotEmpty);
 }
 
-/// Logs [selection] into [session] and runs the post-log meal prompt — the
-/// tail of the "Log alcohol" flow shared by the Party tab's active-session
-/// view and S9's empty-state "Log alcohol" action (both always have an
-/// established [session], unlike [party_screen.dart]'s own `_handleLogAlcohol`
-/// which must first decide whether to start one).
+/// Logs [selection] into [session] — the tail of the "Log alcohol" flow
+/// shared by the Party tab's active-session view and S9's empty-state "Log
+/// alcohol" action (both always have an established [session], unlike
+/// [party_screen.dart]'s own `_handleLogAlcohol` which must first decide
+/// whether to start one). Never prompts for food — the meal prompt is a
+/// session-start-only step (see [showMealPrompt]'s use in
+/// [startPartySessionFlow]); party-session.md §Meals: "There is never a
+/// per-drink food prompt."
 Future<void> logAlcoholicDrinkIntoSession(
   BuildContext context,
   WidgetRef ref,
@@ -183,17 +197,12 @@ Future<void> logAlcoholicDrinkIntoSession(
     // edit's retroactive sweep untouched (issue #87).
     isManualPriceOverride: selection.priceMinor != null,
   );
-
-  if (!context.mounted) return;
-  final mealSize = await showMealPrompt(context);
-  if (mealSize != null) {
-    await repo.addMeal(sessionId: session.id, size: mealSize);
-  }
 }
 
 /// Meal prompt (party-session.md §Meals: "A single, skippable prompt"),
-/// shared by the post-log flow above and the Party tab's persistent meal
-/// indicator ("log a new meal" action). Returns null on Skip/dismiss.
+/// shared by [startPartySessionFlow]'s once-per-session start step and the
+/// Party tab's persistent meal indicator ("log a new meal" action). Returns
+/// null on Skip/dismiss.
 Future<MealSize?> showMealPrompt(BuildContext context) {
   return showModalBottomSheet<MealSize>(
     context: context,

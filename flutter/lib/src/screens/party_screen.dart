@@ -1228,7 +1228,8 @@ Future<void> _logOrphanDrink(
 
 /// Orchestrates the whole "Log alcohol" flow: pick a preset (via
 /// [PartyLogDrinkSheet]), then — if there's no active [session] — the
-/// start-or-orphan prompt, then the actual log call, then the meal prompt.
+/// start-or-orphan prompt (which, when a new session is started, runs its
+/// own once-per-session meal prompt), then the actual log call.
 Future<void> _handleLogAlcohol(
   BuildContext context,
   WidgetRef ref,
