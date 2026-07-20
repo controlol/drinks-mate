@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
+import '../models/drink_preset.dart';
 import '../models/meal.dart';
 import '../models/optional.dart';
 import '../models/party_session.dart';
@@ -20,6 +21,7 @@ import '../services/bac_estimator.dart';
 import '../services/format_service.dart';
 import '../services/session_pricing_totals.dart';
 import '../theme/app_theme.dart';
+import '../utils/color_utils.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_pricing_sheet.dart';
 import 'party_session_flows.dart';
@@ -321,86 +323,257 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
         isApproachingCap(bacGPerL: estimate.gPerL, capGPerL: cap);
     final elapsed = now.difference(widget.session.startedAt);
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+    // "Log alcohol" is sticky (party-session.md §Party tab during a session:
+    // "persistent at the bottom of the screen ... outside the scrolling
+    // content"), so it sits outside the ListView as the Column's last,
+    // non-Expanded child — same structure as today_screen.dart's
+    // `_LogDrinkButton`. "End session" stays an ordinary in-flow action
+    // inside the scrolling content.
+    return Column(
       children: [
-        _BacCard(
-          session: widget.session,
-          estimate: estimate,
-          elapsed: elapsed,
-          capGPerL: cap,
-          approachingCap: approachingCap,
-        ),
-        if (estimate.bmiWarning && !_bmiWarningDismissed) ...[
-          const SizedBox(height: 12),
-          _BmiWarningBanner(
-            onDismiss: () {
-              setState(() => _bmiWarningDismissed = true);
-            },
-          ),
-        ],
-        if (approachingCap) ...[
-          const SizedBox(height: 12),
-          const _ApproachingCapBanner(),
-        ],
-        const SizedBox(height: 12),
-        _BacLineChartCard(
-          profile: profile,
-          session: widget.session,
-          alcoholicEntries: alcoholicEntries,
-          meals: mealsAsync.requireValue,
-          now: now,
-          capGPerL: cap,
-        ),
-        const SizedBox(height: 12),
-        _DrinksCountLine(
-          session: widget.session,
-          alcoholicEntries: alcoholicEntries,
-        ),
-        const SizedBox(height: 12),
-        _MealIndicator(
-          sessionId: widget.session.id,
-          meals: mealsAsync.requireValue,
-          now: now,
-        ),
-        const SizedBox(height: 16),
-        _SessionPricesControl(session: widget.session),
-        const SizedBox(height: 12),
-        _SessionTotalsStrip(
-          entries: entriesAsync.requireValue,
-          tokenName: widget.session.tokenName,
-        ),
-        const SizedBox(height: 16),
-        Semantics(
-          label: SemanticsLabels.logAlcoholButton,
-          button: true,
-          excludeSemantics: true,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: _emerald(context),
-              minimumSize: const Size.fromHeight(48),
-            ),
-            onPressed: () => _handleLogAlcohol(context, ref, widget.session),
-            child: const Text('Log alcohol'),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Semantics(
-          label: SemanticsLabels.endPartySession,
-          button: true,
-          excludeSemantics: true,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-            onPressed: () => _confirmEndSession(context, ref, widget.session),
-            child: const Text('End session'),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              _BacCard(
+                session: widget.session,
+                estimate: estimate,
+                elapsed: elapsed,
+                capGPerL: cap,
+                approachingCap: approachingCap,
+              ),
+              if (estimate.bmiWarning && !_bmiWarningDismissed) ...[
+                const SizedBox(height: 12),
+                _BmiWarningBanner(
+                  onDismiss: () {
+                    setState(() => _bmiWarningDismissed = true);
+                  },
+                ),
+              ],
+              if (approachingCap) ...[
+                const SizedBox(height: 12),
+                const _ApproachingCapBanner(),
+              ],
+              const SizedBox(height: 12),
+              _BacLineChartCard(
+                profile: profile,
+                session: widget.session,
+                alcoholicEntries: alcoholicEntries,
+                meals: mealsAsync.requireValue,
+                now: now,
+                capGPerL: cap,
+              ),
+              const SizedBox(height: 12),
+              _AlcoholQuickLogWidget(session: widget.session),
+              const SizedBox(height: 12),
+              _DrinksCountLine(
+                session: widget.session,
+                alcoholicEntries: alcoholicEntries,
+              ),
+              const SizedBox(height: 12),
+              _MealIndicator(
+                sessionId: widget.session.id,
+                meals: mealsAsync.requireValue,
+                now: now,
+              ),
+              const SizedBox(height: 16),
+              _SessionPricesControl(session: widget.session),
+              const SizedBox(height: 12),
+              _SessionTotalsStrip(
+                entries: entriesAsync.requireValue,
+                tokenName: widget.session.tokenName,
+              ),
+              const SizedBox(height: 16),
+              Semantics(
+                label: SemanticsLabels.endPartySession,
+                button: true,
+                excludeSemantics: true,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  onPressed: () =>
+                      _confirmEndSession(context, ref, widget.session),
+                  child: const Text('End session'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const _DisclaimerBanner(),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-        const _DisclaimerBanner(),
+        _LogAlcoholStickyButton(session: widget.session),
       ],
     );
+  }
+}
+
+/// "Log alcohol" sticky button (party-session.md §Party tab during a
+/// session): full-width, persistent above the tab bar, same treatment as
+/// today_screen.dart's `_LogDrinkButton`.
+class _LogAlcoholStickyButton extends ConsumerWidget {
+  const _LogAlcoholStickyButton({required this.session});
+
+  final PartySession session;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.of(context).padding.bottom + 16,
+      ),
+      child: Semantics(
+        label: SemanticsLabels.logAlcoholButton,
+        button: true,
+        excludeSemantics: true,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: _emerald(context),
+            minimumSize: const Size.fromHeight(48),
+          ),
+          onPressed: () => _handleLogAlcohol(context, ref, session),
+          child: const Text('Log alcohol'),
+        ),
+      ),
+    );
+  }
+}
+
+/// Alcohol quick-log widget (party-session.md §Party tab during a session):
+/// top 2 alcoholic presets, always ranked by recency
+/// ([rankedAlcoholicPresetsProvider]) — same two-tap-to-log pattern as S1's
+/// "Quick Log" grid (today_screen.dart's `_LogADrinkTile`), scoped to
+/// alcoholic presets, with no manual reordering and no scrolling (fixed 2
+/// tiles, unlike S1's scrolling grid).
+class _AlcoholQuickLogWidget extends ConsumerWidget {
+  const _AlcoholQuickLogWidget({required this.session});
+
+  final PartySession session;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final presets = ref.watch(rankedAlcoholicPresetsProvider).take(2).toList();
+    if (presets.isEmpty) return const SizedBox.shrink();
+
+    return Semantics(
+      label: SemanticsLabels.alcoholQuickLogWidget,
+      container: true,
+      child: Row(
+        children: [
+          for (var i = 0; i < presets.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+              child: AspectRatio(
+                aspectRatio: 1.6,
+                child: _AlcoholQuickLogTile(
+                  session: session,
+                  preset: presets[i],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AlcoholQuickLogTile extends ConsumerWidget {
+  const _AlcoholQuickLogTile({required this.session, required this.preset});
+
+  final PartySession session;
+  final DrinkPreset preset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Semantics(
+      label: '${SemanticsLabels.quickLogPrefix}${preset.name}',
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _quickLog(context, ref),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.local_bar_outlined,
+                size: 28,
+                color: parseIconColor(preset.iconColor) ?? _emerald(context),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                preset.name,
+                style: Theme.of(context).textTheme.labelSmall,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Logs [preset] directly into [session] — same effect as the "Log
+  /// alcohol" action (party-session.md §Party tab during a session), minus
+  /// the picker sheet: preset defaults for volume/ABV, price resolved the
+  /// usual way via [PartySessionRepository.resolvePrice]. Mirrors
+  /// today_screen.dart's `_LogADrinkTile._quickLog` alcoholic/active-session
+  /// branch, including its "Logged {name}" + Undo toast — this widget only
+  /// ever renders with an active session, so there's no "Start session"
+  /// branch to offer here.
+  Future<void> _quickLog(BuildContext context, WidgetRef ref) async {
+    final partyRepo = ref.read(partySessionRepositoryProvider);
+    try {
+      final resolved = await partyRepo.resolvePrice(
+        session: session,
+        preset: preset,
+      );
+      final entry = await partyRepo.logAlcoholicDrink(
+        preset: preset,
+        sessionId: session.id,
+        priceMinor: resolved.priceMinor,
+        currency: resolved.currency,
+        priceTokens: resolved.priceTokens,
+        tokenValueMinor: resolved.tokenValueMinor,
+        tokenValueCurrency: resolved.tokenValueCurrency,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logged ${preset.name}'),
+            duration: const Duration(seconds: 4),
+            // See today_screen.dart's `_showLoggedSnackBar` — `persist`
+            // defaults to true whenever an `action` is set, which would
+            // otherwise make ScaffoldMessenger's auto-hide timer no-op.
+            persist: false,
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () =>
+                  ref.read(drinksRepositoryProvider).deleteDrinkEntry(entry.id),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to log drink')));
+      }
+    }
   }
 }
 

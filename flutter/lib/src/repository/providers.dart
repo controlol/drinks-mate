@@ -127,6 +127,27 @@ final visibleAlcoholicPresetsProvider = StreamProvider<List<DrinkPreset>>((
   return ref.watch(drinksRepositoryProvider).watchAlcoholicPresets();
 });
 
+/// [visibleAlcoholicPresetsProvider] ranked by recency of use — feeds the
+/// Party tab's alcohol quick-log widget (party-session.md §Party tab during
+/// a session: "always sorted by most-recently-used ... automatic — no
+/// manual reordering"). Always [PresetSortMode.recentlyUsed], independent of
+/// [UserPreferences.drinkSortMode] — that preference governs only S1's own
+/// "Log a drink" grid.
+final rankedAlcoholicPresetsProvider = Provider<List<DrinkPreset>>((ref) {
+  final presets =
+      ref.watch(visibleAlcoholicPresetsProvider).valueOrNull ?? const [];
+  final usage = ref.watch(presetUsageStatsProvider).valueOrNull ?? const {};
+
+  final rankedIds = rankPresetIds(
+    presetIds: [for (final p in presets) p.id],
+    sortOrders: {for (final p in presets) p.id: p.sortOrder},
+    usage: usage,
+    mode: PresetSortMode.recentlyUsed,
+  );
+  final byId = {for (final p in presets) p.id: p};
+  return [for (final id in rankedIds) byId[id]!];
+});
+
 /// Reactive stream of today's total intake in ml.
 /// Updates automatically whenever a drink is logged or deleted.
 ///
