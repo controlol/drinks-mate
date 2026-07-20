@@ -252,8 +252,64 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   );
 });
 
+/// The boundary-aligned start of "today" (Parity Rulebook → "Day
+/// boundary"), independent of drink data — exists purely so
+/// [_todayTotalMlValueProvider] can tell a genuine day-boundary rollover
+/// apart from a same-day resume-triggered resubscription of
+/// [todayTotalMlProvider] (see that provider's doc for why the distinction
+/// matters).
+///
+/// Re-subscribes at each day boundary, mirroring [todayTotalMlProvider],
+/// and is invalidated by `AppShell._invalidateDayWindowProviders` on every
+/// app resume (issue #95) so a boundary crossed while the app was
+/// backgrounded is picked up immediately rather than waiting on this
+/// provider's own [Timer].
+final todayDayStartProvider = Provider<DateTime?>((ref) {
+  final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+  if (prefs == null) return null;
+  final now = DateTime.now();
+  final window = dayWindow(now: now, boundaryHour: prefs.dayBoundaryHour);
+  final timer = Timer(window.$2.difference(now), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return window.$1;
+});
+
+/// Today's total intake in ml paired with [todayDayStartProvider] — a
+/// stable [Provider] wrapper so [reminderReschedulerProvider] only rebuilds
+/// when the *total* changes or a *day-boundary rollover* actually happened.
+///
+/// `AppShell._invalidateDayWindowProviders` (issue #95) invalidates
+/// [todayTotalMlProvider] on every app resume to force it to recompute
+/// "now". A plain `ref.watch(todayTotalMlProvider)` inside
+/// [reminderReschedulerProvider] would rebuild on that resubscription too —
+/// even when it re-emits the same total — re-anchoring the hydration
+/// reminder to the resume moment (notifications.md §Scheduling reserves
+/// that for *logging a drink*).
+///
+/// Suppressing purely on total-value equality broke the once-daily
+/// inactivity reminder: [ReminderScheduler]'s `_rescheduleInactivity`
+/// places only a single one-time notification per
+/// [ReminderScheduler.reschedule] call, so it depends on `reschedule()`
+/// running again at least once per day. A day-boundary rollover that
+/// happens to re-emit an unchanged total (e.g. 0 ml → 0 ml on a
+/// zero-intake streak) would otherwise be silently swallowed. Pairing the
+/// total with [todayDayStartProvider]'s value means
+/// Riverpod's default record `==` still suppresses a same-day resume
+/// (identical pair), while a genuine rollover (different day start) always
+/// notifies downstream regardless of whether the total happened to repeat
+/// (see providers_test.dart / reminder_reschedule_on_resume_test.dart for
+/// the regression coverage).
+final _todayTotalMlValueProvider =
+    Provider<({int? totalMl, DateTime? dayStart})>((ref) {
+  return (
+    totalMl: ref.watch(todayTotalMlProvider).valueOrNull,
+    dayStart: ref.watch(todayDayStartProvider),
+  );
+});
+
 /// Side-effect provider: re-runs [ReminderScheduler.reschedule] whenever
-/// preferences, the resolved default drink, or today's intake change.
+/// preferences, the resolved default drink, today's intake, or the current
+/// day window change.
 ///
 /// Must be `watch`ed somewhere always-mounted (see `_AppGate` in `app.dart`)
 /// so it stays alive for the lifetime of the app — a provider nobody watches
@@ -262,9 +318,10 @@ final reminderReschedulerProvider = Provider<void>((ref) {
   final prefs = ref.watch(userPreferencesProvider).valueOrNull;
   if (prefs == null) return;
   final defaultPreset = ref.watch(defaultDrinkPresetProvider).valueOrNull;
-  // Re-run on every log/delete so the "reset timer on log" and "cancel on
-  // goal met" rules (notifications.md §Scheduling) take effect promptly.
-  ref.watch(todayTotalMlProvider);
+  // Re-run on every log/delete and on every genuine day-boundary rollover
+  // (notifications.md §Scheduling) — see [_todayTotalMlValueProvider]'s doc
+  // for why this watches that rather than [todayTotalMlProvider] directly.
+  ref.watch(_todayTotalMlValueProvider);
   final scheduler = ref.watch(reminderSchedulerProvider);
   unawaited(
     scheduler.reschedule(prefs: prefs, defaultDrinkPreset: defaultPreset),
