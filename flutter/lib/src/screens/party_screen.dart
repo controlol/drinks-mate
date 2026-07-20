@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:core/core.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -342,17 +343,15 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
           const SizedBox(height: 12),
           const _ApproachingCapBanner(),
         ],
-        if (alcoholicEntries.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _BacLineChartCard(
-            profile: profile,
-            session: widget.session,
-            alcoholicEntries: alcoholicEntries,
-            meals: mealsAsync.requireValue,
-            now: now,
-            capGPerL: cap,
-          ),
-        ],
+        const SizedBox(height: 12),
+        _BacLineChartCard(
+          profile: profile,
+          session: widget.session,
+          alcoholicEntries: alcoholicEntries,
+          meals: mealsAsync.requireValue,
+          now: now,
+          capGPerL: cap,
+        ),
         const SizedBox(height: 12),
         _DrinksCountLine(
           session: widget.session,
@@ -437,7 +436,10 @@ class _BacCard extends ConsumerWidget {
           children: [
             // Session name (party-session.md §Party tab during a session):
             // shown above the BAC value when set; tappable to add/edit at
-            // any point during the active session.
+            // any point during the active session. Kept as its own tap
+            // target, outside the card-wide S9 tap target below, so it
+            // keeps taking priority over the whole-card tap in its own
+            // bounds (nested InkWells resolve to the innermost hit).
             Semantics(
               label: SemanticsLabels.editSessionNameButton,
               button: true,
@@ -463,63 +465,99 @@ class _BacCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
+            // The rest of the card (party-session.md §Party tab during a
+            // session): "the entire card is tappable" and opens S9, same
+            // destination as _DrinksCountLine below. No `excludeSemantics`
+            // here — unlike the name-edit InkWell above, the BAC-value
+            // Semantics node below carries detail (g/L + mmol/L) worth
+            // keeping independently explorable, not just this button label.
             Semantics(
-              label: '${SemanticsLabels.bacValue}: $gPerLText g/L, '
-                  'approximately $mmolText mmol/L',
-              excludeSemantics: true,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '$gPerLText g/L',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+              label: SemanticsLabels.bacSummaryCard,
+              button: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        PartySessionLogScreen(sessionId: session.id),
                   ),
-                  const SizedBox(width: 8),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '≈ $mmolText mmol/L',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      label: '${SemanticsLabels.bacValue}: $gPerLText g/L, '
+                          'approximately $mmolText mmol/L',
+                      excludeSemantics: true,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '$gPerLText g/L',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineLarge
+                                ?.copyWith(
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              '≈ $mmolText mmol/L',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'estimate',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'estimate',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
                     ),
+                    if (capGPerL != null) ...[
+                      const SizedBox(height: 16),
+                      _CapReferenceBar(
+                        bacGPerL: estimate.gPerL,
+                        capGPerL: capGPerL!,
+                        approachingCap: approachingCap,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      'Elapsed: ${_formatElapsed(elapsed)}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (estimate.unspecifiedGenderConservative) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        "Estimate uses a conservative model since gender "
+                        "isn't specified.",
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
-            if (capGPerL != null) ...[
-              const SizedBox(height: 16),
-              _CapReferenceBar(
-                bacGPerL: estimate.gPerL,
-                capGPerL: capGPerL!,
-                approachingCap: approachingCap,
-              ),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              'Elapsed: ${_formatElapsed(elapsed)}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (estimate.unspecifiedGenderConservative) ...[
-              const SizedBox(height: 8),
-              Text(
-                "Estimate uses a conservative model since gender isn't "
-                'specified.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
           ],
         ),
       ),
@@ -608,10 +646,18 @@ class _CapReferenceBar extends StatelessWidget {
   }
 }
 
-/// BAC line chart (party-session.md §BAC line chart). Only rendered by the
-/// caller once the session has at least one alcoholic entry — "chart only
-/// appears once the first alcoholic drink is logged."
-class _BacLineChartCard extends StatelessWidget {
+/// BAC line chart (party-session.md §BAC line chart). Always rendered from
+/// the moment the session starts, including the flat 0.00 g/L empty-state
+/// window before the first alcoholic drink (§BAC line chart → Empty state)
+/// — [buildBacChartSeries] never returns `null` for a live session, so the
+/// chart's footprint never jumps when the first drink lands.
+///
+/// Owns its own tap-to-inspect state (§BAC line chart → Tap to inspect a
+/// value): tapping a plotted point shows a vertical marker + BAC label at
+/// that point; tapping outside the card dismisses it. This is entirely
+/// local to the chart and never navigates — the card-wide tap-to-open-S9
+/// affordance lives on `_BacCard` above, not here.
+class _BacLineChartCard extends StatefulWidget {
   const _BacLineChartCard({
     required this.profile,
     required this.session,
@@ -629,136 +675,213 @@ class _BacLineChartCard extends StatelessWidget {
   final double? capGPerL;
 
   @override
+  State<_BacLineChartCard> createState() => _BacLineChartCardState();
+}
+
+class _BacLineChartCardState extends State<_BacLineChartCard> {
+  // The tapped-on spot, in the chart's own data coordinates (x = minutes
+  // since axisStart, y = g/L) — set from the touched line's own sampled
+  // point (fl_chart's `LineTouchResponse.lineBarSpots`), so the inspected
+  // value is exactly what's plotted rather than a value recomputed
+  // independently.
+  FlSpot? _tappedSpot;
+
+  @override
+  void didUpdateWidget(covariant _BacLineChartCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The tapped spot's coordinates are only meaningful against the series
+    // that was plotted when it was tapped. Entries/meals/profile changes can
+    // rescale the axis (e.g. the empty state -> first-drink transition, or
+    // editing weight/gender in Settings while Party stays alive under the
+    // IndexedStack shell) or change the sampled values at the same x, so
+    // drop a stale marker rather than let it render at a position/value
+    // nothing on the new series matches. `now` ticking alone doesn't move
+    // axisStart/axisEnd for an unchanged series, so the marker is
+    // deliberately left alone in that case.
+    if (!listEquals(oldWidget.alcoholicEntries, widget.alcoholicEntries) ||
+        !listEquals(oldWidget.meals, widget.meals) ||
+        oldWidget.profile != widget.profile) {
+      _tappedSpot = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final series = buildBacChartSeries(
-      profile: profile,
-      sessionStartedAt: session.startedAt,
-      alcoholicEntries: alcoholicEntries,
-      meals: meals,
-      now: now,
+      profile: widget.profile,
+      sessionStartedAt: widget.session.startedAt,
+      alcoholicEntries: widget.alcoholicEntries,
+      meals: widget.meals,
+      now: widget.now,
     );
     if (series == null) return const SizedBox.shrink();
 
     final colorScheme = Theme.of(context).colorScheme;
+    final capGPerL = widget.capGPerL;
     final axisMinutes =
         series.axisEnd.difference(series.axisStart).inMinutes.toDouble();
     final nowMinutes =
-        now.toLocal().difference(series.axisStart).inMinutes.toDouble();
+        widget.now.toLocal().difference(series.axisStart).inMinutes.toDouble();
     final maxGPerL = [
       ...series.actual.map((p) => p.gPerL),
       ...series.projected.map((p) => p.gPerL),
       capGPerL ?? 0.0,
     ].reduce((a, b) => a > b ? a : b);
     final maxY = (maxGPerL * 1.2).clamp(0.1, double.infinity);
+    final tappedSpot = _tappedSpot;
 
     return Semantics(
       label: SemanticsLabels.bacLineChart,
       container: true,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
-          child: SizedBox(
-            height: 180,
-            child: LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: axisMinutes <= 0 ? 1 : axisMinutes,
-                minY: 0,
-                maxY: maxY.toDouble(),
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                lineTouchData: const LineTouchData(enabled: false),
-                extraLinesData: ExtraLinesData(
-                  horizontalLines: [
-                    if (capGPerL != null)
-                      HorizontalLine(
-                        y: capGPerL!,
-                        color: colorScheme.outline,
-                        strokeWidth: 1.5,
-                        dashArray: const [6, 4],
-                      ),
-                  ],
-                  verticalLines: [
-                    if (nowMinutes >= 0 && nowMinutes <= axisMinutes)
-                      VerticalLine(
-                        x: nowMinutes,
-                        color: colorScheme.outline,
-                        strokeWidth: 1,
-                        dashArray: const [4, 4],
-                      ),
-                  ],
-                ),
-                rangeAnnotations: RangeAnnotations(
-                  verticalRangeAnnotations: [
-                    if (series.projected.isNotEmpty)
-                      VerticalRangeAnnotation(
-                        x1: nowMinutes.clamp(0, axisMinutes),
-                        x2: axisMinutes,
-                        color: kColorWarning.withAlpha(20),
-                      ),
-                  ],
-                ),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(),
-                  rightTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 36,
-                      getTitlesWidget: (value, meta) => Text(
-                        gPerLToMmol(value).toStringAsFixed(1),
-                        style: const TextStyle(fontSize: 9),
-                      ),
+      child: TapRegion(
+        onTapOutside: (_) => setState(() => _tappedSpot = null),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+            child: SizedBox(
+              height: 180,
+              child: LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: axisMinutes <= 0 ? 1 : axisMinutes,
+                  minY: 0,
+                  maxY: maxY.toDouble(),
+                  gridData: const FlGridData(show: false),
+                  borderData: FlBorderData(show: false),
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    handleBuiltInTouches: false,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (_) => const [],
                     ),
+                    touchCallback: (event, response) {
+                      final spots = response?.lineBarSpots;
+                      if (event is FlTapDownEvent &&
+                          spots != null &&
+                          spots.isNotEmpty) {
+                        setState(() => _tappedSpot = spots.first);
+                      }
+                    },
                   ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 32,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toStringAsFixed(2),
-                        style: const TextStyle(fontSize: 9),
-                      ),
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 20,
-                      interval: series.tickInterval.inMinutes.toDouble(),
-                      getTitlesWidget: (value, meta) {
-                        final t = series.axisStart.add(
-                          Duration(minutes: value.round()),
-                        );
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${t.hour.toString().padLeft(2, '0')}:'
-                            '${t.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(fontSize: 9),
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      if (capGPerL != null)
+                        HorizontalLine(
+                          y: capGPerL,
+                          color: colorScheme.outline,
+                          strokeWidth: 1.5,
+                          dashArray: const [6, 4],
+                        ),
+                    ],
+                    verticalLines: [
+                      // `series.projected.isNotEmpty` also hides the "now"
+                      // marker in the empty state (party-session.md §BAC
+                      // line chart -> Empty state: no "now" marker before
+                      // the first drink) — the empty-state series always
+                      // has an empty `projected`, so this one guard covers
+                      // both cases.
+                      if (series.projected.isNotEmpty &&
+                          nowMinutes >= 0 &&
+                          nowMinutes <= axisMinutes)
+                        VerticalLine(
+                          x: nowMinutes,
+                          color: colorScheme.outline,
+                          strokeWidth: 1,
+                          dashArray: const [4, 4],
+                        ),
+                      if (tappedSpot != null)
+                        VerticalLine(
+                          x: tappedSpot.x,
+                          color: colorScheme.primary,
+                          strokeWidth: 2,
+                          label: VerticalLineLabel(
+                            show: true,
+                            alignment: Alignment.topRight,
+                            padding: const EdgeInsets.only(bottom: 4, left: 4),
+                            style: TextStyle(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                            labelResolver: (_) =>
+                                '${tappedSpot.y.toStringAsFixed(2)} g/L\n'
+                                '≈ ${gPerLToMmol(tappedSpot.y).toStringAsFixed(2)} mmol/L',
                           ),
-                        );
-                      },
+                        ),
+                    ],
+                  ),
+                  rangeAnnotations: RangeAnnotations(
+                    verticalRangeAnnotations: [
+                      if (series.projected.isNotEmpty)
+                        VerticalRangeAnnotation(
+                          x1: nowMinutes.clamp(0, axisMinutes),
+                          x2: axisMinutes,
+                          color: kColorWarning.withAlpha(20),
+                        ),
+                    ],
+                  ),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(),
+                    rightTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 36,
+                        getTitlesWidget: (value, meta) => Text(
+                          gPerLToMmol(value).toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 9),
+                        ),
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 32,
+                        getTitlesWidget: (value, meta) => Text(
+                          value.toStringAsFixed(2),
+                          style: const TextStyle(fontSize: 9),
+                        ),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 20,
+                        interval: series.tickInterval.inMinutes.toDouble(),
+                        getTitlesWidget: (value, meta) {
+                          final t = series.axisStart.add(
+                            Duration(minutes: value.round()),
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '${t.hour.toString().padLeft(2, '0')}:'
+                              '${t.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(fontSize: 9),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: _spots(series.actual, series.axisStart),
-                    isCurved: false,
-                    color: colorScheme.primary,
-                    barWidth: 2,
-                    dotData: const FlDotData(show: false),
-                  ),
-                  if (series.projected.isNotEmpty)
+                  lineBarsData: [
                     LineChartBarData(
-                      spots: _spots(series.projected, series.axisStart),
+                      spots: _spots(series.actual, series.axisStart),
                       isCurved: false,
                       color: colorScheme.primary,
                       barWidth: 2,
-                      dashArray: const [6, 4],
                       dotData: const FlDotData(show: false),
                     ),
-                ],
+                    if (series.projected.isNotEmpty)
+                      LineChartBarData(
+                        spots: _spots(series.projected, series.axisStart),
+                        isCurved: false,
+                        color: colorScheme.primary,
+                        barWidth: 2,
+                        dashArray: const [6, 4],
+                        dotData: const FlDotData(show: false),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
