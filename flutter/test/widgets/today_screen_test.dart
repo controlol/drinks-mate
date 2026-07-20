@@ -901,6 +901,28 @@ void main() {
           now: startedAt,
           startedAt: startedAt,
         );
+        // A zero-drink session is discarded rather than auto-ended
+        // (party-session.md §Zero-drink sessions are never saved) — log one
+        // alcoholic drink at startedAt itself so the 12h mark this test
+        // asserts against is unchanged, while giving the session the drink
+        // it needs to actually auto-end instead of being silently discarded.
+        await realPartyRepo.logAlcoholicDrink(
+          preset: const DrinkPreset(
+            id: 'today-screen-test-beer-preset',
+            name: 'Test Beer',
+            beverageType: BeverageType.beer,
+            volumeMl: 330,
+            abvPercent: 5.0,
+            iconKey: 'beer_glass',
+            iconColor: '#d97706',
+            isUserCreated: false,
+            isHidden: false,
+            sortOrder: 99,
+          ),
+          sessionId: session.id,
+          consumedAt: startedAt,
+          now: startedAt,
+        );
         final mark = startedAt.add(const Duration(hours: 12));
 
         await tester.pumpWidget(

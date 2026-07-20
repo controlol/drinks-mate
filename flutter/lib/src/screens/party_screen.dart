@@ -170,13 +170,13 @@ class _PastSessionsList extends ConsumerWidget {
   }
 }
 
-class _PastSessionRow extends StatelessWidget {
+class _PastSessionRow extends ConsumerWidget {
   const _PastSessionRow({required this.summary});
 
   final SessionDaySummary summary;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final session = summary.session;
     final start = session.startedAt.toLocal();
     final end = (session.endedAt ?? session.startedAt).toLocal();
@@ -206,6 +206,16 @@ class _PastSessionRow extends StatelessWidget {
           context,
           MaterialPageRoute<void>(
             builder: (_) => PartySessionLogScreen(sessionId: session.id),
+          ),
+        ),
+        trailing: Semantics(
+          label: SemanticsLabels.deleteSessionButton,
+          button: true,
+          excludeSemantics: true,
+          child: IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete',
+            onPressed: () => confirmDeleteSession(context, ref, session),
           ),
         ),
       ),

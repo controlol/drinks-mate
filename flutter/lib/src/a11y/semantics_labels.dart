@@ -70,6 +70,7 @@ abstract final class SemanticsLabels {
       'Drinks logged this session — tap to open the session log';
   static const String mealIndicator = 'Meal logged this session';
   static const String pastSessionsList = 'Past party sessions';
+  static const String deleteSessionButton = 'Delete party session';
 
   // ---------------------------------------------------------------------------
   // Party Session Log screen (S9)

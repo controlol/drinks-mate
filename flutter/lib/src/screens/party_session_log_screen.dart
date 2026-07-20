@@ -33,10 +33,47 @@ class PartySessionLogScreen extends ConsumerWidget {
     final isActive = activeSession != null && activeSession.id == sessionId;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Party Session Log')),
+      appBar: AppBar(
+        title: const Text('Party Session Log'),
+        // No delete affordance on the active session — party-session.md
+        // §Deleting a session: "there is no delete affordance on the active
+        // session; end it first."
+        actions: [if (!isActive) _DeleteSessionButton(sessionId: sessionId)],
+      ),
       body: isActive
           ? _ActiveLog(session: activeSession)
           : _EndedLog(sessionId: sessionId),
+    );
+  }
+}
+
+class _DeleteSessionButton extends ConsumerWidget {
+  const _DeleteSessionButton({required this.sessionId});
+
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Semantics(
+      label: SemanticsLabels.deleteSessionButton,
+      button: true,
+      excludeSemantics: true,
+      child: IconButton(
+        icon: const Icon(Icons.delete_outline),
+        tooltip: 'Delete',
+        onPressed: () async {
+          final summary = await ref.read(
+            partySessionSummaryProvider(sessionId).future,
+          );
+          if (!context.mounted) return;
+          final deleted = await confirmDeleteSession(
+            context,
+            ref,
+            summary.session,
+          );
+          if (deleted && context.mounted) Navigator.of(context).pop();
+        },
+      ),
     );
   }
 }

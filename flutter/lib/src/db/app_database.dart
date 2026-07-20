@@ -773,6 +773,20 @@ class AppDatabase extends _$AppDatabase {
   ) =>
       (update(partySessions)..where((t) => t.id.equals(id))).write(companion);
 
+  /// Soft-deletes a [PartySessionRow] by setting [deletedAt] = [deletedAtUtc].
+  ///
+  /// The row is never hard-deleted (F7 — soft-delete rule). Covers both the
+  /// zero-drink-session discard (party-session.md §Zero-drink sessions are
+  /// never saved) and an explicit user-initiated delete of an ended session
+  /// (party-session.md §Deleting a session).
+  Future<int> softDeletePartySession(String id, DateTime deletedAtUtc) =>
+      (update(partySessions)..where((t) => t.id.equals(id))).write(
+        PartySessionsCompanion(
+          deletedAt: Value(deletedAtUtc),
+          updatedAt: Value(deletedAtUtc),
+        ),
+      );
+
   // ---------------------------------------------------------------------------
   // PartySessionPrice queries (issue #21)
   // ---------------------------------------------------------------------------
@@ -881,6 +895,24 @@ class AppDatabase extends _$AppDatabase {
       (update(drinkEntries)..where((t) => t.id.equals(entryId))).write(
         DrinkEntriesCompanion(
           partySessionId: Value(sessionId),
+          updatedAt: Value(updatedAtUtc),
+        ),
+      );
+
+  /// Detaches every entry belonging to [sessionId] by clearing
+  /// [DrinkEntryRow.partySessionId], turning them back into ordinary orphan
+  /// drinks — the write behind deleting a session (party-session.md §Deleting
+  /// a session: "detaches every drink ... back to orphan status"). The drinks
+  /// themselves are never touched otherwise (not soft-deleted).
+  ///
+  /// Returns the number of rows affected.
+  Future<int> detachSessionEntries(String sessionId, DateTime updatedAtUtc) =>
+      (update(
+        drinkEntries,
+      )..where((t) => t.partySessionId.equals(sessionId)))
+          .write(
+        DrinkEntriesCompanion(
+          partySessionId: const Value(null),
           updatedAt: Value(updatedAtUtc),
         ),
       );

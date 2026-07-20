@@ -58,6 +58,13 @@ class _FakePartySessionRepo extends PartySessionRepository {
         Optional<String?> currency,
       })> updateAlcoholicEntryCalls = [];
 
+  final List<String> deleteSessionCalls = [];
+
+  @override
+  Future<void> deleteSession(String id, {DateTime? now}) async {
+    deleteSessionCalls.add(id);
+  }
+
   @override
   Future<void> updateAlcoholicEntry({
     required String id,
@@ -717,8 +724,9 @@ void main() {
       );
 
       testWidgets(
-        'entries are read-only — no Delete button, and tapping a row does '
-        'nothing',
+        'entries are read-only — no per-entry Delete button, and tapping a '
+        'row does nothing (the AppBar\'s session-level delete button, '
+        'covered separately below, is unrelated to per-entry delete)',
         (tester) async {
           final session = _makeSession(startedAt: startedAt);
           final entry = _alcoholicEntry(id: 'beer-1', consumedAt: startedAt);
@@ -743,7 +751,17 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byTooltip('Delete'), findsNothing);
+          // Scoped to the entry row itself — EntryRow's own delete button
+          // shares the same 'Delete' tooltip text as the AppBar's
+          // session-level delete button (_DeleteSessionButton), which is
+          // legitimately present in ended mode.
+          expect(
+            find.descendant(
+              of: find.byType(ListTile),
+              matching: find.byTooltip('Delete'),
+            ),
+            findsNothing,
+          );
           expect(
             tester.widget<ListTile>(find.byType(ListTile)).onTap,
             isNull,
@@ -791,6 +809,116 @@ void main() {
       );
     },
   );
+
+  // -------------------------------------------------------------------------
+  // Delete session button (party-session.md §Deleting a session — "there is
+  // no delete affordance on the active session; end it first")
+  // -------------------------------------------------------------------------
+
+  group('Delete session button', () {
+    testWidgets(
+      'active mode does NOT show the delete button',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: const [],
+            profile: _makeProfile(),
+            now: startedAt,
+            partyRepo: _FakePartySessionRepo(),
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byTooltip('Delete'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'ended mode shows the delete button; tapping it then confirming calls '
+      'deleteSession and pops the screen',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final summary = SessionDaySummary(
+          session: session,
+          duration: const Duration(hours: 1),
+          totalAlcoholicDrinks: 1,
+          mealsLoggedCount: 0,
+          peakBacGPerL: 0.1,
+        );
+        final repo = _FakePartySessionRepo();
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              partySessionRepositoryProvider.overrideWithValue(repo),
+              drinksRepositoryProvider.overrideWithValue(_FakeDrinksRepo()),
+              activePartySessionProvider.overrideWith(
+                (_) => Stream.value(null),
+              ),
+              partySessionEntriesProvider.overrideWith(
+                (ref, id) => Stream.value(const <DrinkEntry>[]),
+              ),
+              partySessionMealsProvider.overrideWith(
+                (ref, id) => Stream.value(const <Meal>[]),
+              ),
+              userProfileProvider.overrideWith(
+                (_) => Stream.value(_makeProfile()),
+              ),
+              userPreferencesProvider.overrideWith(
+                (_) => Stream.value(_makePrefs()),
+              ),
+              nowTickerProvider.overrideWith((_) => Stream.value(startedAt)),
+              partySessionSummaryProvider.overrideWith(
+                (ref, id) async => summary,
+              ),
+            ],
+            // A real Navigator with a root route beneath PartySessionLogScreen
+            // — needed to observe the pop, unlike the other tests in this
+            // file (which set PartySessionLogScreen as `home` directly and
+            // so have nowhere to pop to).
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: Center(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              PartySessionLogScreen(sessionId: session.id),
+                        ),
+                      ),
+                      child: const Text('root-open'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('root-open'));
+        await tester.pumpAndSettle();
+
+        expect(find.byTooltip('Delete'), findsOneWidget);
+        await tester.tap(find.byTooltip('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete session?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(repo.deleteSessionCalls, [session.id]);
+        expect(find.text('Party Session Log'), findsNothing);
+        expect(find.text('root-open'), findsOneWidget);
+      },
+    );
+  });
 
   // ---------------------------------------------------------------------------
   // sessionEditMinDate — pure helper behind the edit sheet's date-picker

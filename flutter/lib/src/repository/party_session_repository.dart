@@ -146,6 +146,13 @@ class PartySessionRepository {
   /// Ends session [id]. [reason] is `manual` for a user-initiated end;
   /// [checkAndApplyAutoEnd] handles the `auto_timeout` path internally.
   ///
+  /// If the session has **zero alcoholic drinks** at this moment (none
+  /// in-session, none absorbed as orphans), it is discarded instead of ended
+  /// — soft-deleted immediately, with no confirmation prompt, rather than
+  /// getting an `endedAt`/`endReason` (party-session.md §Zero-drink sessions
+  /// are never saved). This applies even if the session has meals logged —
+  /// the check is drink-count-only.
+  ///
   /// Throws [StateError] if [id] does not exist.
   Future<void> endSession(
     String id,
@@ -153,15 +160,20 @@ class PartySessionRepository {
     DateTime? now,
   }) async {
     final nowUtc = (now ?? DateTime.now()).toUtc();
-    final rows = await _db.updatePartySessionFields(
-      id,
-      PartySessionsCompanion(
-        endedAt: Value(nowUtc),
-        endReason: Value(reason.stored),
-        updatedAt: Value(nowUtc),
-      ),
-    );
-    if (rows == 0) throw StateError('PartySession $id not found.');
+    if (await _hasAlcoholicEntries(id)) {
+      final rows = await _db.updatePartySessionFields(
+        id,
+        PartySessionsCompanion(
+          endedAt: Value(nowUtc),
+          endReason: Value(reason.stored),
+          updatedAt: Value(nowUtc),
+        ),
+      );
+      if (rows == 0) throw StateError('PartySession $id not found.');
+    } else {
+      final rows = await _db.softDeletePartySession(id, nowUtc);
+      if (rows == 0) throw StateError('PartySession $id not found.');
+    }
   }
 
   /// Applies the lazy 12h auto-end rule to the currently active session, if
@@ -174,7 +186,10 @@ class PartySessionRepository {
   /// those other trigger points should call it too.
   ///
   /// `endedAt` is set to the correct 12h mark, **not** to [now] — data-model.md
-  /// §PartySession → Auto-end semantics.
+  /// §PartySession → Auto-end semantics. If the session has zero alcoholic
+  /// drinks at its auto-end mark, it is discarded instead — same rule as the
+  /// manual path in [endSession] (party-session.md §Zero-drink sessions are
+  /// never saved).
   Future<void> checkAndApplyAutoEnd({DateTime? now}) async {
     final nowUtc = (now ?? DateTime.now()).toUtc();
     final active = await _db.getActiveSession();
@@ -182,15 +197,44 @@ class PartySessionRepository {
 
     final autoEndAt = await _autoEndMark(active);
     if (!nowUtc.isBefore(autoEndAt)) {
-      await _db.updatePartySessionFields(
-        active.id,
-        PartySessionsCompanion(
-          endedAt: Value(autoEndAt),
-          endReason: Value(PartySessionEndReason.autoTimeout.stored),
-          updatedAt: Value(nowUtc),
-        ),
+      if (await _hasAlcoholicEntries(active.id)) {
+        await _db.updatePartySessionFields(
+          active.id,
+          PartySessionsCompanion(
+            endedAt: Value(autoEndAt),
+            endReason: Value(PartySessionEndReason.autoTimeout.stored),
+            updatedAt: Value(nowUtc),
+          ),
+        );
+      } else {
+        await _db.softDeletePartySession(active.id, nowUtc);
+      }
+    }
+  }
+
+  /// Deletes ended session [id] — the past-sessions list / S9 ended-header
+  /// delete action (party-session.md §Deleting a session). Soft-deletes the
+  /// [PartySession] row and detaches every [DrinkEntry] that belonged to it
+  /// (`partySessionId = null`), turning them back into ordinary orphans. The
+  /// drinks themselves are never deleted.
+  ///
+  /// Throws [StateError] if [id] does not exist, or if it is still the
+  /// active session — only an ended session can be deleted (party-session.md:
+  /// "there is no delete affordance on the active session; end it first").
+  Future<void> deleteSession(String id, {DateTime? now}) async {
+    final session = await _db.getPartySessionById(id);
+    if (session == null) throw StateError('PartySession $id not found.');
+    if (session.endedAt == null) {
+      throw StateError(
+        'PartySession $id is still active; end it before deleting.',
       );
     }
+
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    await _db.transaction(() async {
+      await _db.softDeletePartySession(id, nowUtc);
+      await _db.detachSessionEntries(id, nowUtc);
+    });
   }
 
   Future<DateTime> _autoEndMark(PartySessionRow session) async {
@@ -200,6 +244,18 @@ class PartySessionRepository {
     );
     final base = last?.consumedAt ?? session.startedAt;
     return base.add(_autoEndAfter);
+  }
+
+  /// Whether [sessionId] has at least one live alcoholic [DrinkEntry] —
+  /// in-session or absorbed orphan, both of which carry `partySessionId ==
+  /// sessionId` (party-session.md §Zero-drink sessions are never saved:
+  /// "none logged in-session and none absorbed as orphans").
+  Future<bool> _hasAlcoholicEntries(String sessionId) async {
+    final last = await _db.getLastAlcoholicEntryInSession(
+      sessionId,
+      _alcoholicTypeStrings,
+    );
+    return last != null;
   }
 
   // ---------------------------------------------------------------------------
