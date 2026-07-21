@@ -21,6 +21,8 @@
 // (including partySessionSummaryProvider, per this repo's convention of
 // overriding derived FutureProviders directly rather than re-deriving them
 // through a fake repository's getSessionById/getEntriesForSessions).
+import 'dart:async';
+
 import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
@@ -64,6 +66,13 @@ class _FakePartySessionRepo extends PartySessionRepository {
   final List<String> deleteSessionCalls = [];
   final List<({String sessionId, String? name})> updateSessionNameCalls = [];
 
+  /// Optional side effect run after recording an `updateSessionName` call —
+  /// lets a test simulate what the real repository/DB stream would do
+  /// (mutate persisted state that a provider re-read then reflects), without
+  /// wiring an actual Drift stream. Used by the issue #123 rename-refresh
+  /// tests below; every other test in this file leaves it unset.
+  void Function(String sessionId, String? name)? onUpdateSessionName;
+
   @override
   Future<void> deleteSession(String id, {DateTime? now}) async {
     deleteSessionCalls.add(id);
@@ -76,6 +85,7 @@ class _FakePartySessionRepo extends PartySessionRepository {
     DateTime? now,
   }) async {
     updateSessionNameCalls.add((sessionId: sessionId, name: name));
+    onUpdateSessionName?.call(sessionId, name);
   }
 
   @override
@@ -816,6 +826,105 @@ void main() {
         expect(find.text('Medium meal'), findsOneWidget);
       },
     );
+
+    // -----------------------------------------------------------------------
+    // Issue #123: `_ActiveHeader` gets the same name display + edit-name
+    // pencil affordance as the ended-mode `SessionSummaryCard` header.
+    // `activePartySessionProvider` is a reactive stream (unlike the ended
+    // header's one-shot `partySessionSummaryProvider`), so a rename should
+    // reach the header live via a fresh stream emission — no explicit
+    // invalidation, and no re-pumping a fresh screen instance.
+    // -----------------------------------------------------------------------
+
+    testWidgets(
+      'renders the session name (or the "Party session" fallback when '
+      'unset), and a rename pushed live through activePartySessionProvider\'s '
+      'stream updates the header text on the same screen instance',
+      (tester) async {
+        final unnamedSession = _makeSession(startedAt: startedAt);
+        final partyRepo = _FakePartySessionRepo();
+        // Single-subscription (not `.broadcast()`) so the `add` below, made
+        // before Riverpod's stream provider subscribes on first build, is
+        // buffered rather than dropped — matches how the other overrides in
+        // this file (`Stream.value(...)`) behave.
+        final activeSessionController = StreamController<PartySession?>();
+        addTearDown(activeSessionController.close);
+        activeSessionController.add(unnamedSession);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              partySessionRepositoryProvider.overrideWithValue(partyRepo),
+              drinksRepositoryProvider.overrideWithValue(_FakeDrinksRepo()),
+              activePartySessionProvider.overrideWith(
+                (_) => activeSessionController.stream,
+              ),
+              partySessionEntriesProvider.overrideWith(
+                (ref, id) => Stream.value(const <DrinkEntry>[]),
+              ),
+              partySessionMealsProvider.overrideWith(
+                (ref, id) => Stream.value(const <Meal>[]),
+              ),
+              userProfileProvider.overrideWith(
+                (_) => Stream.value(_makeProfile()),
+              ),
+              userPreferencesProvider.overrideWith(
+                (_) => Stream.value(_makePrefs()),
+              ),
+              nowTickerProvider.overrideWith((_) => Stream.value(startedAt)),
+            ],
+            child: MaterialApp(
+              home: PartySessionLogScreen(sessionId: unnamedSession.id),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Unset name -> same fallback text as the ended-mode header.
+        expect(find.text('Party session'), findsOneWidget);
+
+        // Drive the active header's own rename affordance — records the
+        // repo call, same flow as the ended-mode pencil.
+        await tester.tap(find.byIcon(Icons.edit_outlined));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Session name'), findsOneWidget);
+        await tester.enterText(find.byType(TextField), 'Rooftop party');
+        await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        expect(
+          partyRepo.updateSessionNameCalls,
+          contains((sessionId: unnamedSession.id, name: 'Rooftop party')),
+        );
+        // The fake repo call above never touches the stream by itself (the
+        // real repository would, via its underlying DB stream) — the header
+        // hasn't moved yet. This isolates the next assertion to the stream
+        // push alone, which is the actual "live update" requirement under
+        // test.
+        expect(find.text('Party session'), findsOneWidget);
+        expect(find.text('Rooftop party'), findsNothing);
+
+        // Push a renamed session through the same stream
+        // `activePartySessionProvider` watches — this is what a real
+        // rename's DB stream re-emission looks like. Same `id` as
+        // `sessionId`, or `PartySessionLogScreen` would flip to ended mode
+        // instead of staying active.
+        activeSessionController.add(
+          _makeSession(
+            startedAt: startedAt,
+            id: unnamedSession.id,
+            name: 'Rooftop party',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Same screen instance throughout — no push/pop, no fresh pump.
+        expect(find.byType(PartySessionLogScreen), findsOneWidget);
+        expect(find.text('Party session'), findsNothing);
+        expect(find.text('Rooftop party'), findsOneWidget);
+      },
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -910,6 +1019,99 @@ void main() {
             partyRepo.updateSessionNameCalls,
             contains((sessionId: namedSession.id, name: 'Rooftop party')),
           );
+        },
+      );
+
+      // -----------------------------------------------------------------
+      // Issue #123: renaming from S9's ended-mode header must update the
+      // visible header text immediately, in the same test/pump — with no
+      // navigation away from and back to this PartySessionLogScreen
+      // instance. _EndedLog's `onEditName` explicitly
+      // `ref.invalidate(partySessionSummaryProvider(sessionId))` after the
+      // rename dialog completes, because (unlike `activePartySessionProvider`)
+      // `partySessionSummaryProvider` is a one-shot `FutureProvider.family`
+      // that would otherwise keep serving its already-resolved value.
+      // -----------------------------------------------------------------
+
+      testWidgets(
+        'renaming from the ended-mode header updates the header text '
+        'immediately (partySessionSummaryProvider invalidation) — the old '
+        'name disappears and the new name appears, on the same screen '
+        'instance, without navigating away',
+        (tester) async {
+          var currentSession = _makeSession(
+            startedAt: startedAt,
+            name: "Sarah's birthday",
+          );
+          final partyRepo = _FakePartySessionRepo();
+          // Simulates what the real repository/DB stream does on a rename:
+          // by the time `_EndedLog`'s `onEditName` callback invalidates
+          // `partySessionSummaryProvider`, the next read must already see
+          // the new name. This has to happen inside `updateSessionName`
+          // itself (not later in the test body) — `onEditName` awaits the
+          // dialog then invalidates in the same async callback, with no
+          // pump boundary in between for the test to intervene at.
+          partyRepo.onUpdateSessionName = (sessionId, name) {
+            currentSession =
+                _makeSession(startedAt: startedAt, id: sessionId, name: name);
+          };
+
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                partySessionRepositoryProvider.overrideWithValue(partyRepo),
+                drinksRepositoryProvider.overrideWithValue(_FakeDrinksRepo()),
+                activePartySessionProvider.overrideWith(
+                  (_) => Stream.value(null),
+                ),
+                partySessionEntriesProvider.overrideWith(
+                  (ref, id) => Stream.value(const <DrinkEntry>[]),
+                ),
+                partySessionMealsProvider.overrideWith(
+                  (ref, id) => Stream.value(const <Meal>[]),
+                ),
+                userProfileProvider.overrideWith(
+                  (_) => Stream.value(_makeProfile()),
+                ),
+                userPreferencesProvider.overrideWith(
+                  (_) => Stream.value(_makePrefs()),
+                ),
+                nowTickerProvider.overrideWith((_) => Stream.value(startedAt)),
+                // Re-reads `currentSession` on every (re)fetch — including
+                // after the invalidate the rename triggers — rather than
+                // freezing the summary at pump time, unlike `_buildScreen`'s
+                // `endedSummary` param elsewhere in this file.
+                partySessionSummaryProvider.overrideWith(
+                  (ref, id) async => SessionDaySummary(
+                    session: currentSession,
+                    duration: const Duration(hours: 3, minutes: 15),
+                    totalAlcoholicDrinks: 2,
+                    mealsLoggedCount: 1,
+                    peakBacGPerL: 0.36,
+                  ),
+                ),
+              ],
+              child: MaterialApp(
+                home: PartySessionLogScreen(sessionId: currentSession.id),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text("Sarah's birthday"), findsOneWidget);
+
+          await tester.tap(find.byIcon(Icons.edit_outlined));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Session name'), findsOneWidget);
+          await tester.enterText(find.byType(TextField), 'Rooftop party');
+          await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+          await tester.pumpAndSettle();
+
+          // Same PartySessionLogScreen instance throughout — no push/pop.
+          expect(find.byType(PartySessionLogScreen), findsOneWidget);
+          expect(find.text("Sarah's birthday"), findsNothing);
+          expect(find.text('Rooftop party'), findsOneWidget);
         },
       );
 
