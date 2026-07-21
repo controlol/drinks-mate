@@ -7,9 +7,11 @@ import '../models/drink_entry.dart';
 import '../models/user_preferences.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
+import '../services/history_bac_service.dart';
 import '../widgets/entry_edit_sheet.dart';
 import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
+import 'party_session_log_screen.dart';
 
 /// History day drill-down (F4/S3, issue #26; edit/delete added for #67).
 ///
@@ -72,7 +74,27 @@ class HistoryDayScreen extends ConsumerWidget {
               ),
               for (final summary in summaries) ...[
                 const SizedBox(height: 12),
-                SessionSummaryCard(summary: summary, expandable: true),
+                SessionSummaryCard(
+                  summary: summary,
+                  expandable: true,
+                  multiDayPosition: sessionMultiDayPosition(
+                    session: summary.session,
+                    dayStart: dayStart,
+                    boundaryHour: prefs?.dayBoundaryHour ?? 5,
+                    // Reuses the same snapshot instant buildSessionDaySummary
+                    // stamped this card's other data with (summary.asOf),
+                    // rather than a fresh DateTime.now() at build time, so an
+                    // active multi-day session can't show a pill computed
+                    // against a different instant than its duration/grams.
+                    now: summary.asOf ?? DateTime.now(),
+                  ),
+                  onViewFullSession: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          PartySessionLogScreen(sessionId: summary.session.id),
+                    ),
+                  ),
+                ),
               ],
               const SizedBox(height: 20),
               Text('Drinks', style: Theme.of(context).textTheme.titleMedium),
