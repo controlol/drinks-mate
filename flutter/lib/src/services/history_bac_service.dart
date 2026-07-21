@@ -330,9 +330,9 @@ SessionDaySummary buildSessionSummary({
   int boundaryMinute = 0,
   required DateTime now,
 }) {
-  final sessionEnd = session.endedAt ?? now;
+  final sessionEnd = (session.endedAt ?? now).toLocal();
   var day = dayWindow(
-    now: session.startedAt,
+    now: session.startedAt.toLocal(),
     boundaryHour: boundaryHour,
     boundaryMinute: boundaryMinute,
   ).$1;
