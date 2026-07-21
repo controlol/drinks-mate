@@ -93,7 +93,7 @@ If, at the moment a session would end (manual tap **or** the 12-hour auto-timeou
 
 #### Deleting a session
 
-Only an **ended** session can be deleted — there is no delete affordance on the active session; end it first. Delete is offered as a row action in the past-sessions list and from [S9](./user-experience.md#s9--party-session-log)'s ended-mode header, with a confirmation prompt (same pattern as deleting a drink entry). Deleting a session soft-deletes the `PartySession` row and **detaches** every drink that belonged to it — each entry's `partySessionId` is cleared, turning them back into ordinary orphan drinks. The drinks are never deleted themselves and remain visible in today's log / history exactly as any other orphan. See [data-model.md → PartySession → Deleting a session](./data-model.md#deleting-a-session).
+Only an **ended** session can be deleted — there is no delete affordance on the active session; end it first. Delete is offered from [S9](./user-experience.md#s9--party-session-log)'s ended-mode header only — the single entry point for this action (the past-sessions list row carries no delete affordance; tapping a row there only opens S9), with a confirmation prompt (same pattern as deleting a drink entry). Deleting a session soft-deletes the `PartySession` row and **detaches** every drink that belonged to it — each entry's `partySessionId` is cleared, turning them back into ordinary orphan drinks. The drinks are never deleted themselves and remain visible in today's log / history exactly as any other orphan. See [data-model.md → PartySession → Deleting a session](./data-model.md#deleting-a-session).
 
 ### Auto-end is computed lazily
 

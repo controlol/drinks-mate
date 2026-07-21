@@ -63,7 +63,7 @@ Maximum-BAC bars are clearly labelled as estimates everywhere they appear — sa
 
 #### Day drill-down
 
-Tapping any day on any chart drills into that day, showing total intake, goal, the drink list, and (when relevant) any `PartySession` summary including peak BAC, total alcoholic drinks, and meals logged. That summary card is itself tappable and expands in place to show start/end time, total consumed alcohol in grams, the full meals list, and a static full-session BAC chart — see [user-experience.md → S3 History](./user-experience.md#s3--history) for the complete expanded-field list.
+Tapping any day on any chart drills into that day, showing total intake, goal, the drink list, and (when relevant) any `PartySession` summary including peak BAC, total alcoholic drinks, and meals logged. That summary card is itself tappable and expands in place to show start/end time, total consumed alcohol in grams, and a static full-session BAC chart — see [user-experience.md → S3 History](./user-experience.md#s3--history) for the complete expanded-field list.
 
 **See also:** screen layout in [user-experience.md → S3 History](./user-experience.md#s3--history); charts are computed from [DrinkEntry](./data-model.md#drinkentry), [PartySession](./data-model.md#partysession), and [Meal](./data-model.md#meal) records.
 
