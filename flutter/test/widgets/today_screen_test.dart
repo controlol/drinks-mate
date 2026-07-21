@@ -14,6 +14,17 @@
 //     the column count (today_screen.dart _gridColumnsForWidth doc comment).
 //  6. The "Quick Log" header title is left-aligned, matching every other
 //     section heading on this screen (user-experience.md §S1, issue #99).
+//  7. Single-page-scroll (issue #120): the Quick Log GridView is shrink-
+//     wrapped with NeverScrollableScrollPhysics, so it cannot scroll on its
+//     own — the page's one SingleChildScrollView is what moves it.
+//  8. The "Log drink" button stays pinned at the bottom (outside the page
+//     scroll) while dragging that scroll moves the progress card / stat
+//     cards / grid together underneath it (user-experience.md §S1: "The
+//     whole page scrolls as a single vertical scroll ... Only the 'Log
+//     drink' button is exempt, staying pinned at the bottom").
+//  9. Same as 8, but at the wide (isWide, >= kTabletBreakpointWidth)
+//     two-column layout — the progress/stat column and the Quick Log column
+//     both participate in the same single page scroll there too.
 //
 // Harness mirrors goal_celebration_test.dart's _buildTodayScreen, plus a
 // recording DrinksRepository/PreferencesRepository fake (same pattern as
@@ -894,6 +905,192 @@ void main() {
       // margin and the grid's own tile padding, not centered or indented.
       final titleX = tester.getTopLeft(find.text('Quick Log')).dx;
       expect(titleX, 16.0);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 7. Single-page-scroll: the Quick Log grid cannot scroll independently
+  // (issue #120; user-experience.md §S1: "the grid lays out at its full
+  // height within that scroll rather than scrolling independently within
+  // its own bounded region").
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'the Quick Log GridView is shrink-wrapped with '
+    'NeverScrollableScrollPhysics and sits inside the page\'s single '
+    'SingleChildScrollView, so it cannot scroll independently of the rest '
+    'of the page',
+    (tester) async {
+      final preset = _preset('p1', 'Still Water', sortOrder: 1);
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: [preset],
+          prefs: _makePrefs(),
+          drinksRepo: _FakeDrinksRepo(),
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Not "scrollable" in the sense that matters here: shrink-wrapped and
+      // given NeverScrollableScrollPhysics, so a drag directly on the grid
+      // cannot move its own content — only the page's own scroll view (below)
+      // can move it, together with everything else on the page.
+      final gridView = tester.widget<GridView>(find.byType(GridView));
+      expect(
+        gridView.shrinkWrap,
+        isTrue,
+        reason: 'the grid must lay out at its full height, not scroll '
+            'independently within a bounded region (user-experience.md §S1)',
+      );
+      expect(
+        gridView.physics,
+        isA<NeverScrollableScrollPhysics>(),
+        reason: 'dragging the grid itself must not scroll it — only the '
+            'page-level SingleChildScrollView is scrollable',
+      );
+
+      // Exactly one page-level scroll view, and the grid lives inside it —
+      // confirms there is a single scroll region for the whole page, not a
+      // separate one nested around the grid.
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byType(GridView),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 8. "Log drink" button stays pinned while the rest of the page scrolls
+  // (issue #120; user-experience.md §S1: "Only the 'Log drink' button is
+  // exempt, staying pinned at the bottom regardless of scroll position").
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'dragging the page scroll moves the "Quick Log" heading but leaves the '
+    'pinned "Log drink" button in place',
+    (tester) async {
+      // A short, narrow test surface (same pattern as the responsive-column
+      // test above) with enough presets to guarantee the page content is
+      // taller than the viewport, so this actually exercises scrolling
+      // rather than relying on everything fitting on screen.
+      final presets = List.generate(
+        kLogADrinkGridSize,
+        (i) => _preset('p$i', 'Preset $i', sortOrder: i),
+      );
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.view.physicalSize = const Size(400, 500);
+
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: presets,
+          prefs: _makePrefs(),
+          drinksRepo: _FakeDrinksRepo(),
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final buttonFinder = find.widgetWithText(FilledButton, 'Log drink');
+      expect(buttonFinder, findsOneWidget);
+
+      final headingDyBefore = tester.getTopLeft(find.text('Quick Log')).dy;
+      final buttonDyBefore = tester.getTopLeft(buttonFinder).dy;
+
+      // Drag the page's single scroll view (not the grid — it can't scroll
+      // on its own, per the test above) so content taller than the 500dp
+      // viewport moves underneath the pinned button.
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+
+      final headingDyAfter = tester.getTopLeft(find.text('Quick Log')).dy;
+      final buttonDyAfter = tester.getTopLeft(buttonFinder).dy;
+
+      // Content that scrolled with the page moves up...
+      expect(
+        headingDyAfter,
+        lessThan(headingDyBefore),
+        reason: 'the "Quick Log" heading is inside the page scroll, so it '
+            'must move together with the rest of the content when the page '
+            'is dragged',
+      );
+      // ...but the "Log drink" button, sitting outside the scroll view as
+      // the last child of the outer Column, does not move at all.
+      expect(
+        buttonDyAfter,
+        closeTo(buttonDyBefore, 0.5),
+        reason: 'the "Log drink" button must stay pinned at the bottom '
+            'regardless of scroll position (user-experience.md §S1)',
+      );
+    },
+  );
+
+  testWidgets(
+    'at the wide (isWide, >= kTabletBreakpointWidth) two-column layout, the '
+    'progress/stat column and the Quick Log column still participate in one '
+    'page scroll, and the pinned button still does not move',
+    (tester) async {
+      // >= kTabletBreakpointWidth (840dp) so the progress/stat column and the
+      // Quick Log column render side-by-side (the isWide branch), with a
+      // short viewport so the taller Quick Log column overflows it.
+      final presets = List.generate(
+        kLogADrinkGridSize,
+        (i) => _preset('p$i', 'Preset $i', sortOrder: i),
+      );
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.view.physicalSize = const Size(900, 500);
+
+      await tester.pumpWidget(
+        _buildTodayScreen(
+          visiblePresets: presets,
+          prefs: _makePrefs(),
+          drinksRepo: _FakeDrinksRepo(),
+          preferencesRepo: _FakePreferencesRepo(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final buttonFinder = find.widgetWithText(FilledButton, 'Log drink');
+      expect(buttonFinder, findsOneWidget);
+
+      final headingDyBefore = tester.getTopLeft(find.text('Quick Log')).dy;
+      final buttonDyBefore = tester.getTopLeft(buttonFinder).dy;
+
+      // Same single page-level scroll view drives both the left
+      // (progress/stat) and right (Quick Log) columns in the wide layout.
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, -200),
+      );
+      await tester.pumpAndSettle();
+
+      final headingDyAfter = tester.getTopLeft(find.text('Quick Log')).dy;
+      final buttonDyAfter = tester.getTopLeft(buttonFinder).dy;
+
+      expect(
+        headingDyAfter,
+        lessThan(headingDyBefore),
+        reason: 'the right-hand Quick Log column scrolls together with the '
+            'rest of the page in the wide layout too (user-experience.md '
+            '§Responsive layout)',
+      );
+      expect(
+        buttonDyAfter,
+        closeTo(buttonDyBefore, 0.5),
+        reason: 'the "Log drink" button stays pinned at both width tiers',
+      );
     },
   );
 
