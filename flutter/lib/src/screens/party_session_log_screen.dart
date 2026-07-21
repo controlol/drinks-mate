@@ -172,9 +172,11 @@ class _ActiveLog extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         _ActiveHeader(
+          name: session.name,
           estimate: estimate,
           drinksCount: alcoholicEntries.length,
           elapsed: elapsed,
+          onEditName: () => showEditSessionNameDialog(context, ref, session),
         ),
         const SizedBox(height: 20),
         if (alcoholicEntries.isEmpty) _EmptyActiveState(session: session),
@@ -205,19 +207,29 @@ class _ActiveLog extends ConsumerWidget {
 
 class _ActiveHeader extends StatelessWidget {
   const _ActiveHeader({
+    required this.name,
     required this.estimate,
     required this.drinksCount,
     required this.elapsed,
+    required this.onEditName,
   });
 
+  final String? name;
   final BacEstimate estimate;
   final int drinksCount;
   final Duration elapsed;
+
+  /// Tap target for the "edit name" affordance — user-experience.md §S9
+  /// gives the header a name display "tappable to add/edit one in either
+  /// mode", so the active header gets the same pencil affordance as the
+  /// ended header's [SessionSummaryCard].
+  final VoidCallback onEditName;
 
   @override
   Widget build(BuildContext context) {
     final gPerLText = estimate.gPerL.toStringAsFixed(2);
     final mmolText = estimate.mmolPerL.toStringAsFixed(2);
+    final onSurfaceVariant = Theme.of(context).colorScheme.onSurfaceVariant;
 
     return Card(
       child: Padding(
@@ -225,6 +237,34 @@ class _ActiveHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Semantics(
+              label: SemanticsLabels.editSessionNameButton,
+              button: true,
+              excludeSemantics: true,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: onEditName,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        // Default label matches the ended header's own
+                        // convention (session_summary_card.dart) — same
+                        // fallback text in both modes.
+                        name ?? 'Party session',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Semantics(
               label: '${SemanticsLabels.bacValue}: $gPerLText g/L, '
                   'approximately $mmolText mmol/L',
@@ -356,8 +396,15 @@ class _EndedLog extends ConsumerWidget {
             SessionSummaryCard(
               summary: summary,
               expandable: true,
-              onEditName: () =>
-                  showEditSessionNameDialog(context, ref, summary.session),
+              onEditName: () async {
+                await showEditSessionNameDialog(context, ref, summary.session);
+                if (!context.mounted) return;
+                // partySessionSummaryProvider is a one-shot FutureProvider
+                // (unlike activePartySessionProvider's live stream), so a
+                // rename here needs an explicit invalidation to show up
+                // without leaving and re-entering S9.
+                ref.invalidate(partySessionSummaryProvider(sessionId));
+              },
             ),
             const SizedBox(height: 20),
             if (alcoholicEntries.isEmpty)
