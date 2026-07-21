@@ -2760,59 +2760,15 @@ void main() {
     );
 
     testWidgets(
-        'tapping the row\'s delete button then confirming calls '
-        'PartySessionRepository.deleteSession with the session id '
-        '(party-session.md §Deleting a session)', (tester) async {
-      final repo = _FakePartySessionRepo();
-      final profile = _makeProfile();
-
-      final session = PartySession(
-        id: 'delete-me',
-        startedAt: DateTime.utc(2026, 7, 1, 20, 0),
-        endedAt: DateTime.utc(2026, 7, 1, 23, 0),
-        endReason: PartySessionEndReason.manual,
-        useSessionPrices: false,
-        createdAt: DateTime.utc(2026, 7, 1, 20, 0),
-        updatedAt: DateTime.utc(2026, 7, 1, 23, 0),
-      );
-      final summaries = [
-        SessionDaySummary(
-          session: session,
-          duration: const Duration(hours: 3),
-          totalAlcoholicDrinks: 1,
-          mealsLoggedCount: 0,
-          peakBacGPerL: 0.1,
-        ),
-      ];
-
-      await tester.pumpWidget(
-        _buildScreen(
-          session: null,
-          profile: profile,
-          partyRepo: repo,
-          endedSessionSummaries: summaries,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byTooltip('Delete'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Delete session?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
-      await tester.pumpAndSettle();
-
-      expect(repo.deleteSessionCalls, ['delete-me']);
-    });
-
-    testWidgets(
-      'cancelling the delete confirmation calls deleteSession zero times',
+      'a past-sessions-list row has no delete affordance (party-session.md '
+      '§Deleting a session: S9\'s ended-mode header is the sole entry '
+      'point)',
       (tester) async {
         final repo = _FakePartySessionRepo();
         final profile = _makeProfile();
 
         final session = PartySession(
-          id: 'keep-me',
+          id: 'no-delete-here',
           startedAt: DateTime.utc(2026, 7, 1, 20, 0),
           endedAt: DateTime.utc(2026, 7, 1, 23, 0),
           endReason: PartySessionEndReason.manual,
@@ -2840,16 +2796,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byTooltip('Delete'));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Delete session?'), findsOneWidget);
-        await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-        await tester.pumpAndSettle();
-
-        expect(repo.deleteSessionCalls, isEmpty);
-        // The row itself is still present — cancelling never navigated away.
+        // Positive control: the row itself renders (otherwise the
+        // findsNothing checks below would pass vacuously).
         expect(find.text(_expectedPastSessionTitle(session)), findsOneWidget);
+        expect(find.byTooltip('Delete'), findsNothing);
+        expect(find.byIcon(Icons.delete_outline), findsNothing);
+        expect(repo.deleteSessionCalls, isEmpty);
       },
     );
   });
