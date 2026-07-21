@@ -3,15 +3,63 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/drink_entry.dart';
+import '../models/meal.dart';
 import '../models/party_session.dart';
 import '../repository/providers.dart';
 import '../services/bac_estimator.dart';
 import '../services/format_service.dart';
+import '../services/meal_format.dart';
 import '../widgets/entry_edit_sheet.dart';
 import '../widgets/entry_row.dart';
 import '../widgets/session_summary_card.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_session_flows.dart';
+
+/// A row in S9's merged entry list — either a [DrinkEntry] or a [Meal],
+/// interleaved chronologically (user-experience.md §S9: "merged with the
+/// meals logged during it").
+sealed class _LogItem {
+  DateTime get time;
+}
+
+class _DrinkItem extends _LogItem {
+  _DrinkItem(this.entry);
+
+  final DrinkEntry entry;
+
+  @override
+  DateTime get time => entry.consumedAt;
+}
+
+class _MealItem extends _LogItem {
+  _MealItem(this.meal);
+
+  final Meal meal;
+
+  @override
+  DateTime get time => meal.eatenAt;
+}
+
+/// Merges [entries] and [meals] into one newest-first list (user-experience.md
+/// §S9: "newest first"). [List.sort] isn't guaranteed stable, so two items
+/// sharing an identical timestamp are tie-broken by their original position
+/// (drinks before meals, each in [entries]/[meals] order) rather than left
+/// to vary run to run.
+List<_LogItem> _mergeEntriesAndMeals(
+  List<DrinkEntry> entries,
+  List<Meal> meals,
+) {
+  final items = <_LogItem>[
+    for (final entry in entries) _DrinkItem(entry),
+    for (final meal in meals) _MealItem(meal),
+  ];
+  final originalIndex = {for (final (i, item) in items.indexed) item: i};
+  items.sort((a, b) {
+    final byTime = b.time.compareTo(a.time);
+    return byTime != 0 ? byTime : originalIndex[a]! - originalIndex[b]!;
+  });
+  return items;
+}
 
 /// S9 — Party Session Log (user-experience.md §S9).
 ///
@@ -104,16 +152,18 @@ class _ActiveLog extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // partySessionEntriesProvider is oldest-first; S9 wants newest-first
-    // (user-experience.md §S9).
     final alcoholicEntries = entriesAsync.requireValue
         .where((e) => e.beverageType.isAlcoholic)
         .toList();
-    final displayEntries = alcoholicEntries.reversed.toList();
+    final meals = mealsAsync.requireValue;
+    // partySessionEntriesProvider is oldest-first; S9 wants newest-first
+    // (user-experience.md §S9) — _mergeEntriesAndMeals re-sorts, so the
+    // provider's own ordering doesn't matter here.
+    final mergedItems = _mergeEntriesAndMeals(alcoholicEntries, meals);
     final estimate = estimateSessionBac(
       profile: profile,
       alcoholicEntries: alcoholicEntries,
-      meals: mealsAsync.requireValue,
+      meals: meals,
       at: now,
     );
     final elapsed = now.difference(session.startedAt);
@@ -127,22 +177,24 @@ class _ActiveLog extends ConsumerWidget {
           elapsed: elapsed,
         ),
         const SizedBox(height: 20),
-        if (displayEntries.isEmpty)
-          _EmptyActiveState(session: session)
-        else
+        if (alcoholicEntries.isEmpty) _EmptyActiveState(session: session),
+        if (mergedItems.isNotEmpty)
           Semantics(
             label: SemanticsLabels.partySessionEntryList,
             container: true,
             child: Column(
               children: [
-                for (final entry in displayEntries)
-                  _EntryRow(
-                    entry: entry,
-                    active: true,
-                    sessionStartedAt: session.startedAt,
-                    fmt: fmt,
-                    defaultCurrency: defaultCurrency,
-                  ),
+                for (final item in mergedItems)
+                  switch (item) {
+                    _DrinkItem(:final entry) => _EntryRow(
+                        entry: entry,
+                        active: true,
+                        sessionStartedAt: session.startedAt,
+                        fmt: fmt,
+                        defaultCurrency: defaultCurrency,
+                      ),
+                    _MealItem(:final meal) => _MealRow(meal: meal, now: now),
+                  },
               ],
             ),
           ),
@@ -283,7 +335,9 @@ class _EndedLog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(partySessionSummaryProvider(sessionId));
     final entriesAsync = ref.watch(partySessionEntriesProvider(sessionId));
+    final mealsAsync = ref.watch(partySessionMealsProvider(sessionId));
     final fmt = ref.watch(formatServiceProvider);
+    final now = ref.watch(nowTickerProvider).valueOrNull ?? DateTime.now();
 
     return summaryAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -293,18 +347,20 @@ class _EndedLog extends ConsumerWidget {
         final entries = entriesAsync.valueOrNull ?? const <DrinkEntry>[];
         final alcoholicEntries =
             entries.where((e) => e.beverageType.isAlcoholic).toList();
-        final displayEntries = alcoholicEntries.reversed.toList();
+        final meals = mealsAsync.valueOrNull ?? const <Meal>[];
+        final mergedItems = _mergeEntriesAndMeals(alcoholicEntries, meals);
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
             SessionSummaryCard(
               summary: summary,
+              expandable: true,
               onEditName: () =>
                   showEditSessionNameDialog(context, ref, summary.session),
             ),
             const SizedBox(height: 20),
-            if (displayEntries.isEmpty)
+            if (alcoholicEntries.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 32),
                 child: Center(
@@ -317,15 +373,25 @@ class _EndedLog extends ConsumerWidget {
                     ),
                   ),
                 ),
-              )
-            else
+              ),
+            if (mergedItems.isNotEmpty)
               Semantics(
                 label: SemanticsLabels.partySessionEntryList,
                 container: true,
                 child: Column(
                   children: [
-                    for (final entry in displayEntries)
-                      _EntryRow(entry: entry, active: false, fmt: fmt),
+                    for (final item in mergedItems)
+                      switch (item) {
+                        _DrinkItem(:final entry) => _EntryRow(
+                            entry: entry,
+                            active: false,
+                            fmt: fmt,
+                          ),
+                        _MealItem(:final meal) => _MealRow(
+                            meal: meal,
+                            now: now,
+                          ),
+                      },
                   ],
                 ),
               ),
@@ -444,6 +510,36 @@ class _EntryRow extends ConsumerWidget {
     if (confirmed == true) {
       await ref.read(drinksRepositoryProvider).deleteDrinkEntry(entry.id);
     }
+  }
+}
+
+/// A meal merged into S9's entry list (user-experience.md §S9: "visually
+/// distinct (meal icon, size, and time)"). Always display-only — no tap or
+/// delete affordance, in either session mode; meals stay editable only from
+/// the Party tab's meal indicator.
+class _MealRow extends StatelessWidget {
+  const _MealRow({required this.meal, required this.now});
+
+  final Meal meal;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = '${mealSizeLabel(meal.size)} meal';
+    final timeLabel = relativeTimeAgo(meal.eatenAt, now);
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Semantics(
+      label: '$label, $timeLabel',
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: primary.withAlpha(38),
+          child: Icon(Icons.restaurant_outlined, color: primary, size: 22),
+        ),
+        title: Text(label),
+        subtitle: Text(timeLabel),
+      ),
+    );
   }
 }
 

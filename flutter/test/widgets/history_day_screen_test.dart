@@ -19,24 +19,39 @@
 //  8. Expand-on-tap (issue #105, design/user-experience.md §S3 "The day's
 //     Party Session summary is tappable, and expands in place"): the History
 //     day drill-down passes `expandable: true`, so tapping a card reveals
-//     Started/Ended time, "Total consumed alcohol in grams", the full meals
-//     list (Semantics-labelled, present iff non-empty), and a
+//     Started/Ended time, "Total consumed alcohol in grams", and a
 //     SessionLifetimeBacChart, IN THAT VERTICAL ORDER (asserted via
-//     getTopLeft().dy, not just presence — a reorder should fail this);
-//     tapping again collapses back to exactly the original field set. The
-//     expand/collapse icon (expand_more/expand_less) flips with state.
+//     getTopLeft().dy, not just presence — a reorder should fail this) —
+//     issue #122 removed the per-meal list from this card entirely, so this
+//     also asserts meal text's ABSENCE even when `summary.meals` is
+//     non-empty; tapping again collapses back to exactly the original field
+//     set. The expand/collapse icon (expand_more/expand_less) flips with
+//     state.
 //  9. The multi-day acceptance criterion at the widget level: two
 //     SessionDaySummary fixtures for the "same" session (identical id/
-//     startedAt/endedAt/lifetimeBacChart) but different day-clipped
-//     grams/meals — expanding either card shows its own day-specific
-//     grams/meals but identical Started/Ended text and a chart on both.
+//     startedAt/endedAt/lifetimeBacChart) but different day-clipped grams —
+//     expanding either card shows identical Started/Ended text and a chart
+//     on both, but its own day-specific grams (meals are no longer
+//     rendered on this card at all — see point 8).
+//  10. issue #122: the "Day N of M" multi-day pill and "View full session"
+//      button, as wired through this screen's real call site
+//      (`sessionMultiDayPosition`/`Navigator.push`) — unit-level coverage of
+//      the pill's/button's own rendering rules lives in
+//      session_summary_card_test.dart; this file only checks the two real
+//      production wirings flow through correctly end-to-end.
 //
 // Provider override pattern mirrors history_screen_test.dart: the two #26
 // day-drilldown family providers (historyDayEntriesProvider,
 // historyDaySessionSummariesProvider) are overridden directly with
 // caller-supplied fake data. Edit/delete tests additionally override
 // drinksRepositoryProvider with a _FakeRepo (pattern mirrors
-// today_drinks_screen_test.dart's _FakeRepo) — no real DB needed.
+// today_drinks_screen_test.dart's _FakeRepo) — no real DB needed. Point 10's
+// navigation test additionally overrides the handful of providers the
+// pushed PartySessionLogScreen itself reads (activePartySessionProvider,
+// partySessionEntriesProvider, partySessionMealsProvider,
+// partySessionSummaryProvider, nowTickerProvider) — unconditionally, in
+// every test in this file, since they cost nothing when unused (lazy
+// Riverpod providers) and keep _buildScreen a single shared helper.
 
 import 'package:core/core.dart';
 import 'package:drift/native.dart';
@@ -52,6 +67,7 @@ import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/screens/history_day_screen.dart';
+import 'package:drinks_mate/src/screens/party_session_log_screen.dart';
 import 'package:drinks_mate/src/services/format_service.dart';
 import 'package:drinks_mate/src/widgets/session_lifetime_bac_chart.dart';
 import 'package:flutter/material.dart';
@@ -231,6 +247,22 @@ Widget _buildScreen({
         (ref, key) => Future.value(summaries),
       ),
       if (repo != null) drinksRepositoryProvider.overrideWithValue(repo),
+      // Only exercised by the "View full session" navigation test (point
+      // 10), which pushes a real PartySessionLogScreen — overridden
+      // unconditionally here (rather than only in that one test) since
+      // these are lazy Riverpod providers with no cost when never read, and
+      // it keeps every test sharing one _buildScreen helper.
+      activePartySessionProvider.overrideWith((_) => Stream.value(null)),
+      partySessionEntriesProvider.overrideWith(
+        (ref, id) => Stream.value(const <DrinkEntry>[]),
+      ),
+      partySessionMealsProvider.overrideWith(
+        (ref, id) => Stream.value(const <Meal>[]),
+      ),
+      partySessionSummaryProvider.overrideWith(
+        (ref, id) async => summaries.firstWhere((s) => s.session.id == id),
+      ),
+      nowTickerProvider.overrideWith((_) => Stream.value(DateTime.now())),
     ],
     child: MaterialApp(
       builder: (context, child) => MediaQuery(
@@ -948,18 +980,14 @@ void main() {
 
   testWidgets(
     'tapping the card reveals Started/Ended time, total consumed alcohol in '
-    'grams, the meals list, and a BAC chart; tapping again collapses back '
-    'to exactly the original fields',
+    'grams, and a BAC chart (NOT a meals list — issue #122 removed it from '
+    'this card entirely, even though summary.meals is non-empty here); '
+    'tapping again collapses back to exactly the original fields',
     (tester) async {
-      // find.bySemanticsLabel requires an active SemanticsHandle — see
-      // party_screen_test.dart's identical note. Disposed explicitly at the
-      // end of the test body (not via addTearDown): WidgetTester's
-      // "handles disposed" check runs before package:test's own queued
-      // addTearDown callbacks, so an addTearDown-only dispose fails it.
-      final semantics = tester.ensureSemantics();
-
       // asOf 2h after the meal, so relativeTimeAgo deterministically reads
-      // "2 h ago" rather than depending on DateTime.now().
+      // "2 h ago" rather than depending on DateTime.now() — kept even though
+      // no meal text renders on this card, since asOf/meals are still part
+      // of the SessionDaySummary this screen receives.
       final asOf = _dayStart.add(const Duration(hours: 5));
       final summary = SessionDaySummary(
         session: _session(
@@ -1000,25 +1028,17 @@ void main() {
       await tester.tap(find.byIcon(Icons.expand_more));
       await tester.pump();
 
-      // Expanded: the four new fields, in the order the diff specifies —
-      // Started/Ended after Duration, grams after peak BAC, then meals,
-      // then the chart.
+      // Expanded: Started/Ended after Duration, grams after peak BAC, then
+      // the chart — no meals list at any point (issue #122).
       expect(find.text('Started: 5:00 AM'), findsOneWidget);
       expect(find.text('Ended: 8:15 AM'), findsOneWidget);
       expect(find.text('Total consumed alcohol: 43 g'), findsOneWidget);
-      expect(find.text('Medium meal · 2 h ago'), findsOneWidget);
       expect(find.byType(SessionLifetimeBacChart), findsOneWidget);
       expect(find.byIcon(Icons.expand_less), findsOneWidget);
       expect(find.byIcon(Icons.expand_more), findsNothing);
-      // Meals list is wrapped in its own labelled Semantics container when
-      // non-empty (the mirror of the "no meals" test's absence assertion).
-      // Matched as a RegExp: Semantics merges the container's own label with
-      // its descendants' text into one combined node label ("Meals logged
-      // this session\nMedium meal · 2 h ago"), not an exact string.
-      expect(
-        find.bySemanticsLabel(RegExp('Meals logged this session')),
-        findsOneWidget,
-      );
+      // Regression guard: the per-meal list block was removed entirely, even
+      // though this summary's `meals` list is non-empty.
+      expect(find.textContaining('Medium meal'), findsNothing);
 
       // Vertical order matters — the spec pins it explicitly ("IN THIS
       // ORDER" per the issue brief / design/user-experience.md §S3). A
@@ -1042,13 +1062,9 @@ void main() {
       );
       expect(
         dy(find.text('Total consumed alcohol: 43 g')),
-        lessThan(dy(find.text('Medium meal · 2 h ago'))),
-        reason: 'the meals list comes after the grams line',
-      );
-      expect(
-        dy(find.text('Medium meal · 2 h ago')),
         lessThan(dy(find.byType(SessionLifetimeBacChart))),
-        reason: 'the chart is rendered last, at the bottom',
+        reason: 'the chart is rendered last, at the bottom, right after the '
+            'grams line',
       );
 
       await tester.tap(find.byIcon(Icons.expand_less));
@@ -1063,8 +1079,6 @@ void main() {
       expect(find.byType(SessionLifetimeBacChart), findsNothing);
       expect(find.byIcon(Icons.expand_more), findsOneWidget);
       expect(find.byIcon(Icons.expand_less), findsNothing);
-
-      semantics.dispose();
     },
   );
 
@@ -1095,11 +1109,9 @@ void main() {
   );
 
   testWidgets(
-    'no meals logged that day -> the meals Semantics container is absent '
-    'when expanded, but grams/chart still show',
+    'no meals logged that day -> grams/chart still show (there is no meals '
+    'list on this card at all, with or without meals — see section 8)',
     (tester) async {
-      final semantics = tester.ensureSemantics();
-
       final summary = SessionDaySummary(
         session: _session(
           id: 's1',
@@ -1124,12 +1136,6 @@ void main() {
 
       expect(find.text('Total consumed alcohol: 12 g'), findsOneWidget);
       expect(find.byType(SessionLifetimeBacChart), findsOneWidget);
-      expect(
-        find.bySemanticsLabel(RegExp('Meals logged this session')),
-        findsNothing,
-      );
-
-      semantics.dispose();
     },
   );
 
@@ -1169,8 +1175,9 @@ void main() {
 
   testWidgets(
     'two SessionDaySummary cards for the same multi-day session show '
-    'day-specific grams/meals but identical Started/Ended text and a chart '
-    'on both, once both are expanded',
+    'day-specific grams but identical Started/Ended text and a chart on '
+    'both, once both are expanded (meals no longer render on this card at '
+    'all — issue #122)',
     (tester) async {
       final session = _session(
         id: 's1',
@@ -1239,8 +1246,112 @@ void main() {
       expect(find.text('Total consumed alcohol: 10 g'), findsOneWidget);
       expect(find.text('Total consumed alcohol: 25 g'), findsOneWidget);
 
-      // Meals differ per day: only day 1 has one.
-      expect(find.textContaining('Small meal'), findsOneWidget);
+      // Meals no longer render on this card at all (issue #122), even
+      // though day1Summary's own `meals` list is non-empty.
+      expect(find.textContaining('Small meal'), findsNothing);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 10. issue #122 — "Day N of M" pill and "View full session" button, as
+  //     wired through this screen's real call site. Per-rendering-rule
+  //     coverage of the pill/button themselves lives in
+  //     session_summary_card_test.dart; these two tests only check that
+  //     HistoryDayScreen's own `sessionMultiDayPosition`/`Navigator.push`
+  //     wiring actually flows through correctly end-to-end.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'a 2-day session\'s card, viewed on its first day, shows the "Day 1 of '
+    '2" pill (real sessionMultiDayPosition output flowing through the '
+    'screen, not a hand-supplied multiDayPosition)',
+    (tester) async {
+      // Explicit endedAt (not still-active) — sessionMultiDayPosition's
+      // `now` parameter is HistoryDayScreen's own uncontrollable
+      // `DateTime.now()` call site, so an ended session keeps this test's
+      // day-window count deterministic regardless of wall-clock time.
+      final session = _session(
+        id: 's-multiday',
+        endedAt: _dayStart.add(const Duration(days: 1, hours: 3)),
+      );
+      final summary = SessionDaySummary(
+        session: session,
+        duration: const Duration(hours: 3),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.1,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Day 1 of 2'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a single-day session\'s card shows no "Day N of M" pill '
+    '(sessionMultiDayPosition returns null)',
+    (tester) async {
+      final summary = SessionDaySummary(
+        session: _session(
+          id: 's1',
+          endedAt: _dayStart.add(const Duration(hours: 3)),
+        ),
+        duration: const Duration(hours: 3),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.1,
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.textContaining(RegExp(r'^Day \d+ of \d+$')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'tapping "View full session" (visible once expanded) navigates to '
+    'PartySessionLogScreen for the tapped card\'s session id',
+    (tester) async {
+      final summary = SessionDaySummary(
+        session: _session(
+          id: 's-nav',
+          endedAt: _dayStart.add(const Duration(hours: 2)),
+        ),
+        duration: const Duration(hours: 2),
+        totalAlcoholicDrinks: 1,
+        mealsLoggedCount: 0,
+        peakBacGPerL: 0.1,
+        totalAlcoholGrams: 10,
+        lifetimeBacChart: _chartSeries(),
+        asOf: _dayStart.add(const Duration(hours: 2)),
+      );
+
+      await tester.pumpWidget(_buildScreen(summaries: [summary]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(PartySessionLogScreen), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pump();
+
+      final buttonFinder =
+          find.widgetWithText(OutlinedButton, 'View full session');
+      expect(buttonFinder, findsOneWidget);
+
+      await tester.tap(buttonFinder);
+      await tester.pump();
+      await tester.pump();
+
+      final pushed = tester.widget<PartySessionLogScreen>(
+        find.byType(PartySessionLogScreen),
+      );
+      expect(pushed.sessionId, 's-nav');
     },
   );
 }

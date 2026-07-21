@@ -237,13 +237,14 @@ BacChartSeries buildSessionLifetimeBacSeries({
 }
 
 /// Builds [session]'s whole-lifetime summary — [SessionDaySummary]'s "day"
-/// framing doesn't apply here; every metric spans `[startedAt, endedAt)`
-/// (or `[startedAt, now)` while still active) rather than a single calendar
-/// day. Feeds the S7 past-sessions list and S9 Party Session Log's
-/// ended-mode header (user-experience.md §S9: "the same fields already shown
-/// on the History day drill-down's session summary card"), which need the
-/// session's full lifetime, not a day-clipped slice — see
-/// [buildSessionDaySummary] for the clipped sibling.
+/// framing doesn't apply here; every metric, including the returned grams
+/// total and BAC chart, spans `[startedAt, endedAt)` (or `[startedAt, now)`
+/// while still active) rather than a single calendar day. Feeds the S7
+/// past-sessions list and S9 Party Session Log's ended-mode header
+/// (user-experience.md §S9: "the same fields already shown on the History
+/// day drill-down's session summary card"), which need the session's full
+/// lifetime, not a day-clipped slice — see [buildSessionDaySummary] for the
+/// clipped sibling.
 ///
 /// [entries]/[meals] should already be scoped to [session] (e.g. via
 /// [PartySessionRepository.getEntriesForSessions]/`getMealsForSessions`
@@ -277,13 +278,81 @@ SessionDaySummary buildSessionSummary({
     sampleInterval: const Duration(minutes: 15),
   );
 
+  final totalGrams = sessionEntries.fold<double>(
+    0,
+    (sum, e) =>
+        sum +
+        alcoholGrams(
+          volumeMl: e.volumeMl.toDouble(),
+          abvPercent: e.abvPercent ?? 0,
+        ),
+  );
+
+  // Session-scoped, not day-clipped — S9's expanded header shows the same
+  // whole-session chart as S3's expanded card (user-experience.md §S9),
+  // gated on the same profile-completeness precondition as peakBac so it's
+  // null exactly when peakBac is (mirrors buildSessionDaySummary).
+  final lifetimeChart = profile != null && profile.birthDate != null
+      ? buildSessionLifetimeBacSeries(
+          session: session,
+          alcoholicEntries: sessionEntries,
+          meals: sessionMeals,
+          profile: profile,
+          now: now,
+        )
+      : null;
+
   return SessionDaySummary(
     session: session,
     duration: duration,
     totalAlcoholicDrinks: sessionEntries.length,
     mealsLoggedCount: sessionMeals.length,
     peakBacGPerL: peakBac,
+    totalAlcoholGrams: totalGrams,
+    lifetimeBacChart: lifetimeChart,
   );
+}
+
+/// Computes the History day drill-down's "Day N of M" multi-day indicator
+/// (user-experience.md §S3 multi-day indicator) for [session] on the day
+/// starting at [dayStart]: the 1-indexed [dayIndex] of that day-window among
+/// every day-window `[session.startedAt, session.endedAt ?? now)` touches,
+/// and the [totalDays] count of windows touched. Returns null for a
+/// single-day session — the caller shows no pill in that case.
+///
+/// [dayStart] must be an exact day-window start (from `core`'s
+/// `dayWindow`/History bucketing, same contract as
+/// [buildSessionDaySummary]'s own `dayStart`), not just any `DateTime`.
+({int dayIndex, int totalDays})? sessionMultiDayPosition({
+  required PartySession session,
+  required DateTime dayStart,
+  required int boundaryHour,
+  int boundaryMinute = 0,
+  required DateTime now,
+}) {
+  final sessionEnd = session.endedAt ?? now;
+  var day = dayWindow(
+    now: session.startedAt,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  ).$1;
+
+  var total = 0;
+  var dayIndex = 0;
+  while (day.isBefore(sessionEnd)) {
+    total++;
+    if (day.isAtSameMomentAs(dayStart)) dayIndex = total;
+    day = DateTime(
+      day.year,
+      day.month,
+      day.day + 1,
+      boundaryHour,
+      boundaryMinute,
+    );
+  }
+
+  if (total <= 1) return null;
+  return (dayIndex: dayIndex, totalDays: total);
 }
 
 /// Shared sampler behind [computeMaxBacPerDay] and [buildSessionDaySummary]:

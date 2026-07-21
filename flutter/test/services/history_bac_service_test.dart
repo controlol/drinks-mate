@@ -47,10 +47,22 @@
 //      of the same midnight-spanning session yields different day-clipped
 //      grams/meals but byte-identical `lifetimeBacChart`s and identical
 //      `session.startedAt`/`endedAt`.
-//  11. `buildSessionSummary` (the S9/S7 whole-session builder) is
-//      deliberately left unchanged by #105 — a guard that its result still
-//      has the four new fields at their untouched defaults, so that scope
-//      limit stays a deliberate choice rather than an accidental drift.
+//  11. `buildSessionSummary` (the S9/S7 whole-session builder): issue #122
+//      extended it to also populate `totalAlcoholGrams`/`lifetimeBacChart`
+//      across the whole session (unclipped), gated on the same
+//      profile-completeness precondition as `peakBacGPerL` — `meals`/`asOf`
+//      remain unset (still `SessionDaySummary`'s own defaults), since S9
+//      surfaces meals via its own merged entry list rather than this
+//      builder's `meals` field.
+//
+// Added for issue #122 (S3 multi-day pill / S9 meals-merge / #105 meals-list
+// removal):
+//  12. `sessionMultiDayPosition` — the "Day N of M" pill's pure helper:
+//      single-day session -> null; 2- and 4-day-window sessions -> correct
+//      1-indexed `dayIndex`/`totalDays` for every touched day; the day
+//      boundary is honoured (not midnight — `boundaryHour: 5`, the app
+//      default), per `core`'s `dayWindow` contract; an active session
+//      (`endedAt == null`) uses `now` as the effective end.
 import 'package:core/core.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
@@ -1399,7 +1411,10 @@ void main() {
         },
       );
 
-      test('profile.birthDate == null -> peakBacGPerL is null, no throw', () {
+      test(
+          'profile.birthDate == null -> peakBacGPerL and lifetimeBacChart '
+          'are both null, no throw (mirrors buildSessionDaySummary\'s '
+          'identical null-profile chart guard)', () {
         final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
         final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
         final session =
@@ -1414,20 +1429,38 @@ void main() {
         );
 
         expect(summary.peakBacGPerL, isNull);
+        expect(summary.lifetimeBacChart, isNull);
       });
 
       test(
-          'issue #105 scope guard: buildSessionSummary does NOT populate '
-          'totalAlcoholGrams/meals/lifetimeBacChart/asOf — it is deliberately '
-          'left unchanged (history_bac_service.dart doc comment: '
-          '"buildSessionSummary ... was deliberately left UNCHANGED"), so '
-          'they stay at SessionDaySummary\'s own defaults', () {
+          'issue #122: buildSessionSummary now populates totalAlcoholGrams '
+          'and lifetimeBacChart across the whole (unclipped) session — '
+          'cross-checked against core\'s alcoholGrams directly, not a '
+          'hand-derived number, mirroring buildSessionDaySummary\'s own '
+          'grams test above. meals/asOf remain unset (still '
+          'SessionDaySummary\'s own defaults) — S9 surfaces meals via its '
+          'own merged entry list, not this field', () {
         final startedAt = DateTime.utc(2026, 7, 20, 22, 0);
         final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
         final session =
             _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
         final entries = [
-          _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
+          // Before midnight.
+          _entry(
+            id: 'e1',
+            consumedAt: DateTime.utc(2026, 7, 20, 23, 0),
+            volumeMl: 250,
+            abvPercent: 5.0,
+            partySessionId: 's1',
+          ),
+          // After midnight, still inside the session.
+          _entry(
+            id: 'e2',
+            consumedAt: DateTime.utc(2026, 7, 21, 1, 0),
+            volumeMl: 330,
+            abvPercent: 4.5,
+            partySessionId: 's1',
+          ),
         ];
         final meals = [
           _meal(id: 'm1', eatenAt: startedAt, partySessionId: 's1'),
@@ -1441,13 +1474,214 @@ void main() {
           now: endedAt,
         );
 
-        expect(summary.totalAlcoholGrams, 0);
+        // Source: alcoholGrams (package:core) — Parity Rulebook's own
+        // grams-of-alcohol formula, summed over the whole (unclipped)
+        // session, not a single day.
+        final expectedGrams = alcoholGrams(volumeMl: 250, abvPercent: 5.0) +
+            alcoholGrams(volumeMl: 330, abvPercent: 4.5);
+        expect(summary.totalAlcoholGrams, closeTo(expectedGrams, 1e-9));
+
+        expect(summary.lifetimeBacChart, isNotNull);
+        expect(summary.lifetimeBacChart!.axisStart, startedAt.toLocal());
+        expect(summary.lifetimeBacChart!.axisEnd, endedAt.toLocal());
+
+        // meals/asOf remain unset (SessionDaySummary's own defaults) —
+        // buildSessionSummary doesn't scope a day-clipped meals list (that's
+        // buildSessionDaySummary's job); S9 merges meals into its own entry
+        // list instead (party_session_log_screen.dart).
         expect(summary.meals, isEmpty);
-        expect(summary.lifetimeBacChart, isNull);
         expect(summary.asOf, isNull);
       });
     },
   );
+
+  // ---------------------------------------------------------------------------
+  // sessionMultiDayPosition — the "Day N of M" pill's pure helper (issue
+  // #122, design/user-experience.md §S3 multi-day indicator).
+  // ---------------------------------------------------------------------------
+
+  group('sessionMultiDayPosition', () {
+    // boundaryHour: 5 throughout (the app default) — deliberately NOT
+    // midnight, so these tests also exercise dayWindow's own "a pre-boundary
+    // instant belongs to the PREVIOUS day-window" contract (see
+    // flutter/packages/core/test/day_boundary_test.dart /
+    // day_boundary.dart's `dayWindow`), not just plain calendar-day math.
+    final day1Start = DateTime.utc(2026, 7, 20, 5, 0);
+    final day2Start = DateTime.utc(2026, 7, 21, 5, 0);
+    final day3Start = DateTime.utc(2026, 7, 22, 5, 0);
+    final day4Start = DateTime.utc(2026, 7, 23, 5, 0);
+
+    test('(a) a session fully inside one day-window returns null', () {
+      final session = _session(
+        id: 's1',
+        startedAt: day1Start.add(const Duration(hours: 2)),
+        endedAt: day1Start.add(const Duration(hours: 5)),
+      );
+
+      final result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day1Start,
+        boundaryHour: 5,
+        now: day1Start.add(const Duration(hours: 6)),
+      );
+
+      expect(result, isNull);
+    });
+
+    test(
+        '(b) a session spanning exactly 2 day-windows returns correct '
+        'dayIndex/totalDays for both day 1\'s and day 2\'s dayStart', () {
+      final session = _session(
+        id: 's1',
+        startedAt: DateTime.utc(2026, 7, 20, 22, 0),
+        endedAt: DateTime.utc(2026, 7, 21, 8, 0),
+      );
+      final now = DateTime.utc(2026, 7, 21, 8, 0);
+
+      final day1Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day1Start,
+        boundaryHour: 5,
+        now: now,
+      );
+      final day2Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day2Start,
+        boundaryHour: 5,
+        now: now,
+      );
+
+      expect(day1Result, (dayIndex: 1, totalDays: 2));
+      expect(day2Result, (dayIndex: 2, totalDays: 2));
+    });
+
+    test(
+        '(c) a session spanning 4 day-windows returns the correct middle '
+        'index', () {
+      final session = _session(
+        id: 's1',
+        startedAt: DateTime.utc(2026, 7, 20, 20, 0),
+        endedAt: DateTime.utc(2026, 7, 23, 8, 0),
+      );
+      final now = DateTime.utc(2026, 7, 23, 8, 0);
+
+      final result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day3Start,
+        boundaryHour: 5,
+        now: now,
+      );
+
+      expect(result, (dayIndex: 3, totalDays: 4));
+      // Sanity-check the other end of the same span, per (b)'s pattern.
+      expect(
+        sessionMultiDayPosition(
+          session: session,
+          dayStart: day1Start,
+          boundaryHour: 5,
+          now: now,
+        ),
+        (dayIndex: 1, totalDays: 4),
+      );
+      expect(
+        sessionMultiDayPosition(
+          session: session,
+          dayStart: day4Start,
+          boundaryHour: 5,
+          now: now,
+        ),
+        (dayIndex: 4, totalDays: 4),
+      );
+    });
+
+    test(
+        '(d) the boundary is NOT midnight (boundaryHour: 5) — a session '
+        'starting at 04:00 belongs to the PREVIOUS day-window, matching '
+        'dayWindow\'s own contract, not a naive calendar-day split', () {
+      // 04:00 is before the 05:00 boundary, so per dayWindow it falls in
+      // the day-window that STARTED the day before (day1Start), not
+      // day2Start — this is the case the task brief calls out explicitly.
+      final startedAt = DateTime.utc(2026, 7, 21, 4, 0);
+      final endedAt = DateTime.utc(2026, 7, 21, 8, 0);
+      final session =
+          _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
+      final now = endedAt;
+
+      // Sanity check against dayWindow directly (core's own contract) —
+      // confirms the fixture actually exercises the non-midnight boundary
+      // rather than assuming it.
+      final startedAtWindow = dayWindow(now: startedAt, boundaryHour: 5);
+      expect(
+        startedAtWindow.$1.isAtSameMomentAs(day1Start),
+        isTrue,
+        reason: '04:00 is before the 05:00 boundary, so it falls in the '
+            "PREVIOUS day-window (day1Start), not day2Start's",
+      );
+
+      final day1Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day1Start,
+        boundaryHour: 5,
+        now: now,
+      );
+      final day2Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day2Start,
+        boundaryHour: 5,
+        now: now,
+      );
+
+      expect(day1Result, (dayIndex: 1, totalDays: 2));
+      expect(day2Result, (dayIndex: 2, totalDays: 2));
+    });
+
+    test(
+        '(e) an active session (endedAt == null) uses `now` as the '
+        'effective end', () {
+      final session = _session(
+        id: 's1',
+        startedAt: DateTime.utc(2026, 7, 20, 20, 0),
+        // endedAt: null — still active.
+      );
+      final now = DateTime.utc(2026, 7, 21, 8, 0);
+
+      final day1Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day1Start,
+        boundaryHour: 5,
+        now: now,
+      );
+      final day2Result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day2Start,
+        boundaryHour: 5,
+        now: now,
+      );
+
+      expect(day1Result, (dayIndex: 1, totalDays: 2));
+      expect(day2Result, (dayIndex: 2, totalDays: 2));
+    });
+
+    test(
+        'an active session still fully inside its own single day-window '
+        'returns null (the `now` effective-end does not itself force a '
+        'multi-day result)', () {
+      final session = _session(
+        id: 's1',
+        startedAt: day1Start.add(const Duration(hours: 1)),
+      );
+      final now = day1Start.add(const Duration(hours: 3));
+
+      final result = sessionMultiDayPosition(
+        session: session,
+        dayStart: day1Start,
+        boundaryHour: 5,
+        now: now,
+      );
+
+      expect(result, isNull);
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // Group 7: multi-drink over-reporting regression (previously a known bug).

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../a11y/semantics_labels.dart';
 import '../models/session_day_summary.dart';
-import '../services/meal_format.dart';
 import 'session_lifetime_bac_chart.dart';
 
 /// A Party Session's summary card: duration, total alcoholic drinks, meals
@@ -13,18 +12,19 @@ import 'session_lifetime_bac_chart.dart';
 /// user-experience.md §S9: "the same fields already shown on the History day
 /// drill-down's session summary card."
 ///
-/// [expandable] additionally gates the History day drill-down's own
-/// accordion-expand behaviour (user-experience.md §S3 expand, issue #105):
-/// tapping the card reveals start/end time, total consumed alcohol in
-/// grams, the full meals list, and a static whole-lifetime BAC chart. S9's
-/// ended-mode header passes `false` (the default) — it stays unexpanded, as
-/// the full itemised drink list is already right below it.
+/// [expandable] additionally gates the accordion-expand behaviour shared by
+/// both usages (user-experience.md §S3 expand, issue #105; §S9): tapping the
+/// card reveals start/end time, total consumed alcohol in grams, and a
+/// static whole-lifetime BAC chart — never a meals list; S9 surfaces meals
+/// in its own entry list instead (user-experience.md §S9).
 class SessionSummaryCard extends StatefulWidget {
   const SessionSummaryCard({
     super.key,
     required this.summary,
     this.onEditName,
     this.expandable = false,
+    this.multiDayPosition,
+    this.onViewFullSession,
   });
 
   final SessionDaySummary summary;
@@ -32,11 +32,24 @@ class SessionSummaryCard extends StatefulWidget {
   /// Tap target for the "edit name" affordance. Only S9's ended-mode header
   /// passes this (user-experience.md §S9: "tappable to add/edit one in
   /// either mode") — the History day drill-down usage of this same card
-  /// leaves it null, so no edit affordance appears there. Never combined
-  /// with [expandable] in practice — each call site uses exactly one.
+  /// leaves it null, so no edit affordance appears there.
   final VoidCallback? onEditName;
 
   final bool expandable;
+
+  /// This card's 1-indexed position among the calendar days its session
+  /// touches, and the total day count — renders the "Day N of M" pill
+  /// (user-experience.md §S3 multi-day indicator). Null (the default) shows
+  /// no pill, which is every single-day session and every S9 usage (S9 is
+  /// never day-clipped, so the pill never applies there). Only the History
+  /// day drill-down's call site ever passes this.
+  final ({int dayIndex, int totalDays})? multiDayPosition;
+
+  /// Tap target for the "View full session" button, rendered at the bottom
+  /// of the expanded content after the BAC chart (user-experience.md §S3
+  /// expand). Only the History day drill-down's call site passes this — S9
+  /// never does, since S9 already is the full-session view.
+  final VoidCallback? onViewFullSession;
 
   @override
   State<SessionSummaryCard> createState() => _SessionSummaryCardState();
@@ -106,6 +119,10 @@ class _SessionSummaryCardState extends State<SessionSummaryCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                if (widget.multiDayPosition != null) ...[
+                  _MultiDayPill(position: widget.multiDayPosition!),
+                  const SizedBox(height: 8),
+                ],
                 Text('Duration: ${formatSessionDuration(summary.duration)}'),
                 if (expanded) ...[
                   Text(
@@ -127,24 +144,24 @@ class _SessionSummaryCardState extends State<SessionSummaryCard> {
                   Text(
                     'Total consumed alcohol: ${summary.totalAlcoholGrams.round()} g',
                   ),
-                  if (summary.meals.isNotEmpty)
-                    Semantics(
-                      label: SemanticsLabels.historySessionSummaryCardMeals,
-                      container: true,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final meal in summary.meals)
-                            Text(
-                              '${mealSizeLabel(meal.size)} meal · '
-                              '${relativeTimeAgo(meal.eatenAt, summary.asOf ?? DateTime.now())}',
-                            ),
-                        ],
-                      ),
-                    ),
                   if (summary.lifetimeBacChart != null) ...[
                     const SizedBox(height: 8),
                     SessionLifetimeBacChart(series: summary.lifetimeBacChart!),
+                  ],
+                  if (widget.onViewFullSession != null) ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Semantics(
+                        label: SemanticsLabels.viewFullSessionButton,
+                        button: true,
+                        excludeSemantics: true,
+                        child: OutlinedButton(
+                          onPressed: widget.onViewFullSession,
+                          child: const Text('View full session'),
+                        ),
+                      ),
+                    ),
                   ],
                 ],
               ],
@@ -167,4 +184,32 @@ String formatSessionDuration(Duration d) {
   final hours = d.inHours;
   final minutes = d.inMinutes.remainder(60);
   return '${hours}h ${minutes}m';
+}
+
+/// The "Day N of M" multi-day indicator (user-experience.md §S3 multi-day
+/// indicator) — same rounded-pill shape as S1's `_StatusPill`
+/// (today_screen.dart), but with neutral, non-semantic colouring since this
+/// carries no good/bad signal the way pace status does.
+class _MultiDayPill extends StatelessWidget {
+  const _MultiDayPill({required this.position});
+
+  final ({int dayIndex, int totalDays}) position;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        'Day ${position.dayIndex} of ${position.totalDays}',
+        style: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
 }

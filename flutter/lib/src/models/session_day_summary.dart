@@ -52,9 +52,10 @@ class SessionDaySummary {
   final double totalAlcoholGrams;
 
   /// The meals logged within the day-window, same scope as
-  /// [mealsLoggedCount] (`mealsLoggedCount == meals.length`) — the expanded
-  /// card's "full list of meals logged" (size + relative time, not just a
-  /// count).
+  /// [mealsLoggedCount] (`mealsLoggedCount == meals.length`). Not rendered
+  /// by [SessionSummaryCard] (the expanded card shows only the
+  /// [mealsLoggedCount] count — user-experience.md §S3 expand); kept here
+  /// as the day-scoped meal list for any other caller that needs it.
   final List<Meal> meals;
 
   /// The session's whole-lifetime static BAC chart — never day-clipped
@@ -63,9 +64,8 @@ class SessionDaySummary {
   /// (incomplete profile, no estimate possible).
   final BacChartSeries? lifetimeBacChart;
 
-  /// The instant [meals]' relative "N ago" times should be rendered
-  /// against, for consistency with the rest of this snapshot. Null when the
-  /// caller doesn't need the expanded card (e.g. S9's non-expandable
-  /// usage).
+  /// The instant this snapshot was taken, e.g. for callers computing
+  /// relative "N ago" times against [meals] elsewhere. Null when the caller
+  /// doesn't need it.
   final DateTime? asOf;
 }
