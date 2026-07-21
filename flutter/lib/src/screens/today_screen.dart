@@ -19,17 +19,23 @@ import 'today_drinks_screen.dart';
 
 /// Today tab — F3 home screen (issue #13; Log-a-drink grid: issue #78).
 ///
-/// Layout, below [kTabletBreakpointWidth] (top to bottom):
+/// The whole page scrolls as a single vertical scroll (user-experience.md
+/// §S1: "The whole page scrolls as a single vertical scroll") — below
+/// [kTabletBreakpointWidth] (top to bottom):
 ///   1. Progress card — intake vs goal, pace tick, status pill (taps → S6 log).
 ///   2. Stat card pair — 7-day daily average and days-on-goal n/7.
-///   3. Log-a-drink section — sort-mode dropdown + a vertically-scrolling
-///      grid of the top [kLogADrinkGridSize] presets by the selected mode
-///      (Manual / Recently used / Most used — F14 §Sort modes).
-///   4. "Log drink" button — full-width, opens S2 sheet.
+///   3. Log-a-drink section — sort-mode dropdown + a grid (shrink-wrapped,
+///      laid out at full height within the page scroll) of the top
+///      [kLogADrinkGridSize] presets by the selected mode (Manual /
+///      Recently used / Most used — F14 §Sort modes).
+///
+/// The full-width "Log drink" button sits outside that scroll, pinned at the
+/// bottom regardless of scroll position.
 ///
 /// At or above [kTabletBreakpointWidth], 1–2 sit in a left column beside the
-/// Log-a-drink section on the right, with the "Log drink" button still
-/// full-width at the bottom (user-experience.md §Responsive layout).
+/// Log-a-drink section on the right, both participating in the same page
+/// scroll, with the "Log drink" button still pinned full-width at the bottom
+/// (user-experience.md §Responsive layout).
 ///
 /// Also listens for the first intake-crosses-goal event each day and shows
 /// the full-screen [GoalCelebrationOverlay] (issue #14).
@@ -109,31 +115,36 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (isWide)
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
+              Expanded(
+                child: SingleChildScrollView(
+                  child: isWide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _ProgressCard(),
+                                  const SizedBox(height: 12),
+                                  _StatCardRow(),
+                                ],
+                              ),
+                            ),
+                            Expanded(child: _LogADrinkSection()),
+                          ],
+                        )
+                      : Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _ProgressCard(),
                             const SizedBox(height: 12),
                             _StatCardRow(),
+                            _LogADrinkSection(),
                           ],
                         ),
-                      ),
-                      Expanded(child: _LogADrinkSection()),
-                    ],
-                  ),
-                )
-              else ...[
-                _ProgressCard(),
-                const SizedBox(height: 12),
-                _StatCardRow(),
-                Expanded(child: _LogADrinkSection()),
-              ],
+                ),
+              ),
               _LogDrinkButton(),
             ],
           );
@@ -589,25 +600,28 @@ class _LogADrinkSection extends ConsumerWidget {
             ],
           ),
         ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = _gridColumnsForWidth(constraints.maxWidth);
-                return GridView.builder(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 1.1,
-                  ),
-                  itemCount: shown.length,
-                  itemBuilder: (context, i) => _LogADrinkTile(preset: shown[i]),
-                );
-              },
-            ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = _gridColumnsForWidth(constraints.maxWidth);
+              // Shrink-wrapped and non-scrolling: the grid lays out at its
+              // full height within the page's single scroll view rather than
+              // scrolling independently (user-experience.md §S1).
+              return GridView.builder(
+                padding: const EdgeInsets.only(bottom: 8),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.1,
+                ),
+                itemCount: shown.length,
+                itemBuilder: (context, i) => _LogADrinkTile(preset: shown[i]),
+              );
+            },
           ),
         ),
       ],
