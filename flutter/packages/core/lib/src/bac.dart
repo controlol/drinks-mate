@@ -106,3 +106,182 @@ double bacAtTime({required double bacInitial, required double hoursSince}) =>
 
 /// Step 6 — g/L → mmol/L (display-only).
 double gPerLToMmol(double gPerL) => gPerL * gPerLToMmolPerL;
+
+/// Hours for a single drink's contribution to decay from [bacInitial] to
+/// zero under zero-order elimination at β (party-session.md §Absorbing
+/// orphan drinks: `t_zero = consumedAt + BAC_initial / β`; also the
+/// sober-estimate notification's projected-zero time, notifications.md
+/// §Party Mode notifications).
+double hoursToZero(double bacInitial) =>
+    bacInitial / eliminationBetaGPerLPerHour;
+
+/// One drink's already meal-modified initial BAC ([bacInitialForDrink]) and
+/// the time it was consumed — the input unit for [sessionBacAtTime] and
+/// [sessionSoberTime].
+typedef SessionDrink = ({DateTime consumedAt, double bacInitial});
+
+/// Steps 4–5 (session total) — current BAC across every drink in a session,
+/// under a single shared elimination pool rather than per-drink independent
+/// decay.
+///
+/// The body eliminates alcohol at one fixed rate β regardless of how many
+/// drinks contributed to it, so [drinks] are folded in consumption order
+/// into one running total: each drink adds its own [bacInitial] to the
+/// pool, and the pool decays at β for the elapsed time between additions,
+/// floored at 0. Summing each drink's own independently-decaying
+/// [bacAtTime] instead over-eliminates by β for every additional drink
+/// still "active" at once — the whole-body rate gets multiplied by however
+/// many separate drinks haven't individually decayed to 0 yet, which is not
+/// how elimination works (party-session.md §BAC estimation algorithm
+/// Step 5).
+///
+/// Drinks after [at] are ignored (a drink consumed exactly at [at] counts in
+/// full), matching "already-consumed drinks only" elsewhere in the session
+/// BAC calculation. [drinks] need not be
+/// pre-sorted.
+double sessionBacAtTime({
+  required Iterable<SessionDrink> drinks,
+  required DateTime at,
+}) {
+  final sorted = drinks.where((d) => !d.consumedAt.isAfter(at)).toList()
+    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
+  if (sorted.isEmpty) return 0.0;
+
+  var pool = 0.0;
+  var last = sorted.first.consumedAt;
+  for (final drink in sorted) {
+    pool = _decay(pool, last, drink.consumedAt);
+    pool += drink.bacInitial;
+    last = drink.consumedAt;
+  }
+  return _decay(pool, last, at);
+}
+
+/// Projected time the session's pooled BAC ([sessionBacAtTime]) returns to
+/// 0 g/L, or `null` if [drinks] is empty. Folds every drink into the same
+/// running pool as [sessionBacAtTime], then projects [hoursToZero] forward
+/// from the final drink's post-fold state — the session goes sober once,
+/// when that shared pool empties, not per-drink.
+DateTime? sessionSoberTime({required Iterable<SessionDrink> drinks}) {
+  final sorted = drinks.toList()
+    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
+  if (sorted.isEmpty) return null;
+
+  var pool = 0.0;
+  var last = sorted.first.consumedAt;
+  for (final drink in sorted) {
+    pool = _decay(pool, last, drink.consumedAt);
+    pool += drink.bacInitial;
+    last = drink.consumedAt;
+  }
+  return last.add(
+    Duration(
+      microseconds: (hoursToZero(pool) * Duration.microsecondsPerHour).round(),
+    ),
+  );
+}
+
+double _decay(double bac, DateTime from, DateTime to) {
+  final hours =
+      to.difference(from).inMicroseconds / Duration.microsecondsPerHour;
+  return math.max(0.0, bac - eliminationBetaGPerLPerHour * hours);
+}
+
+/// Step 2/3 combined — picks Watson (height available) or Widmark (height
+/// missing) and returns that drink's initial BAC, g/L. Model choice is
+/// data-driven, never user-selectable (party-session.md §BAC estimation
+/// algorithm Step 2: "the app picks the most accurate option the available
+/// data supports").
+double bacInitialForDrink({
+  required double alcoholGrams,
+  required Gender gender,
+  required int ageYears,
+  double? heightCm,
+  required double weightKg,
+  double mealModifier = 1.0,
+}) {
+  if (heightCm != null) {
+    final tbw = watsonTbwLitres(
+      gender: gender,
+      ageYears: ageYears,
+      heightCm: heightCm,
+      weightKg: weightKg,
+    );
+    return bacInitialWatson(
+      alcoholGrams: alcoholGrams,
+      tbwLitres: tbw,
+      mealModifier: mealModifier,
+    );
+  }
+  return bacInitialWidmark(
+    alcoholGrams: alcoholGrams,
+    weightKg: weightKg,
+    r: widmarkR(gender),
+    mealModifier: mealModifier,
+  );
+}
+
+/// Body-mass index, kg/m² — feeds the Watson-path BMI-range warning.
+double bmi({required double weightKg, required double heightCm}) {
+  final heightM = heightCm / 100;
+  return weightKg / (heightM * heightM);
+}
+
+/// Watson-path BMI-range warning (party-session.md §BAC estimation algorithm
+/// Step 2; Parity Rulebook note): warn if `BMI < 17` (any gender), `BMI > 67`
+/// for `male`, or `BMI > 80` for `female`/`unspecified` (unspecified follows
+/// the conservative path). Informational only — the estimate still displays
+/// when this returns true. Only meaningful on the Watson path; callers on the
+/// Widmark fallback (no height, so no BMI) should never call this.
+bool bmiWarningApplies({required double bmi, required Gender gender}) {
+  if (bmi < 17) return true;
+  return switch (gender) {
+    Gender.male => bmi > 67,
+    Gender.female || Gender.unspecified => bmi > 80,
+  };
+}
+
+/// party-session.md §BAC goal / Parity Rulebook (design-system.md
+/// "Approaching-cap trigger"): the "approaching cap" trigger fires once the
+/// estimated BAC reaches **80%** of the personal cap. The boundary is
+/// inclusive (`>=`, not `>`) — reaching the threshold counts as approaching
+/// it, matching the app's conservative-estimate posture elsewhere (e.g. the
+/// unspecified-gender path). Pinned explicitly here and in the Rulebook
+/// rather than left implicit, since "past 80%" alone is ambiguous.
+bool isApproachingCap({required double bacGPerL, required double capGPerL}) =>
+    bacGPerL >= 0.8 * capGPerL;
+
+/// party-session.md §BAC line chart — Time axis (X): the axis ends at the
+/// projected return-to-zero time "rounded up to the next 30 minutes" (e.g.
+/// predicted 02:47 → axis ends at 03:00; predicted 02:05 → axis ends at
+/// 02:30). Operates on [time]'s own wall-clock fields (hour/minute), so
+/// callers wanting the *local* 24-hour tick labels the spec requires must
+/// pass a local `DateTime` (`.toLocal()`) — rounding a UTC instant would
+/// align to UTC clock boundaries instead.
+///
+/// A [time] already exactly on a 30-minute mark (`:00` or `:30`, no smaller
+/// component) is returned unchanged — this is ceiling, not "always add
+/// time" — rounding.
+DateTime roundUpToNextHalfHour(DateTime time) {
+  final flooredMinute = time.minute < 30 ? 0 : 30;
+  final floored = DateTime(
+    time.year,
+    time.month,
+    time.day,
+    time.hour,
+    flooredMinute,
+  );
+  final isExact = floored.isAtSameMomentAs(time);
+  return isExact ? floored : floored.add(const Duration(minutes: 30));
+}
+
+/// party-session.md §BAC line chart — Tick spacing: every 30 min for an axis
+/// span under ~3h, every hour for ~3–8h, every 2 hours beyond that. The
+/// spec's own "~" hedges the boundaries; this picks inclusive upper bounds
+/// for the tighter tiers (`<= 3h` → 30 min, `<= 8h` → 1h) so a span landing
+/// exactly on a boundary gets the coarser-adjacent tier's finer spacing.
+Duration bacChartTickInterval(Duration axisSpan) {
+  if (axisSpan <= const Duration(hours: 3)) return const Duration(minutes: 30);
+  if (axisSpan <= const Duration(hours: 8)) return const Duration(hours: 1);
+  return const Duration(hours: 2);
+}

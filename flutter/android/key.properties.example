@@ -1,0 +1,6 @@
+# Copy to key.properties (gitignored) to build a release APK locally with
+# the release signing key instead of falling back to the debug key.
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=/absolute/path/to/upload-keystore.jks

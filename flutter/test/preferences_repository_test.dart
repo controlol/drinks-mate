@@ -1,3 +1,4 @@
+import 'package:core/core.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,10 +41,15 @@ void main() {
       expect(prefs.weeklySummaryEnabled, isTrue);
       expect(prefs.defaultDrinkPresetId, kWaterGlassPresetId);
       expect(prefs.bacCapGramsPerL, isNull);
-      expect(prefs.bacOnLockScreenEnabled, isFalse);
+      // data-model.md §UserPreferences: default ON (notifications.md
+      // §Lock-screen visibility).
+      expect(prefs.bacOnLockScreenEnabled, isTrue);
       // Party Mode notifications are OFF by default (notifications.md §4).
       expect(prefs.approachingCapNotifEnabled, isFalse);
       expect(prefs.soberEstimateNotifEnabled, isFalse);
+      // Alcoholic presets are always visible in Manage Drinks by default
+      // (features.md F14).
+      expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
       expect(prefs.installedAt, isNotNull);
     });
 
@@ -174,6 +180,48 @@ void main() {
       expect(prefs.approachingCapNotifEnabled, isTrue);
       expect(prefs.soberEstimateNotifEnabled, isTrue);
     });
+
+    test(
+      'updateAlcoholicPresetsAlwaysVisible writes false then true',
+      () async {
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isTrue,
+          reason: 'seed default is true',
+        );
+
+        await repo.updateAlcoholicPresetsAlwaysVisible(false);
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isFalse,
+        );
+
+        await repo.updateAlcoholicPresetsAlwaysVisible(true);
+        expect(
+          (await repo.getPreferences()).alcoholicPresetsAlwaysVisible,
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'updateDrinkSortMode round-trips every PresetSortMode through '
+      'getPreferences (features.md F14 §Sort modes — shared by the Today '
+      'grid and the S2 picker)',
+      () async {
+        expect(
+          (await repo.getPreferences()).drinkSortMode,
+          PresetSortMode.recentlyUsed,
+          reason: "seed default is 'recentlyUsed' (app_database.dart "
+              'drinkSortMode column default)',
+        );
+
+        for (final mode in PresetSortMode.values) {
+          await repo.updateDrinkSortMode(mode);
+          expect((await repo.getPreferences()).drinkSortMode, mode);
+        }
+      },
+    );
 
     test('updatedAt is set to a recent UTC timestamp', () async {
       final beforeUpdate = DateTime.now().toUtc();

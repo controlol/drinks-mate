@@ -136,6 +136,27 @@ class PreferencesRepository {
         ),
       );
 
+  /// Update whether alcoholic presets are always visible in Manage Drinks
+  /// (`true`, default) or shown only during an active party session
+  /// (`false`) — features.md F14.
+  Future<void> updateAlcoholicPresetsAlwaysVisible(bool value) =>
+      _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          alcoholicPresetsAlwaysVisible: Value(value),
+          updatedAt: Value(DateTime.now().toUtc()),
+        ),
+      );
+
+  /// Update the shared drink-preset sort mode — one preference read/written
+  /// by both the Today grid and the S2 picker (features.md F14 §Sort modes).
+  Future<void> updateDrinkSortMode(PresetSortMode mode) =>
+      _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          drinkSortMode: Value(mode.stored),
+          updatedAt: Value(DateTime.now().toUtc()),
+        ),
+      );
+
   // ---------------------------------------------------------------------------
   // UserProfile — watch / upsert
   // ---------------------------------------------------------------------------
@@ -262,6 +283,8 @@ class PreferencesRepository {
         bacOnLockScreenEnabled: row.bacOnLockScreenEnabled,
         approachingCapNotifEnabled: row.approachingCapNotifEnabled,
         soberEstimateNotifEnabled: row.soberEstimateNotifEnabled,
+        alcoholicPresetsAlwaysVisible: row.alcoholicPresetsAlwaysVisible,
+        drinkSortMode: PresetSortMode.fromStored(row.drinkSortMode),
         installedAt: DateTime.fromMillisecondsSinceEpoch(
           row.installedAt,
           isUtc: true,

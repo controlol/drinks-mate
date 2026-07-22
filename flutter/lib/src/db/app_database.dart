@@ -7,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 
 import 'tables/drink_entry_table.dart';
 import 'tables/drink_preset_table.dart';
+import 'tables/meal_table.dart';
+import 'tables/party_session_price_table.dart';
+import 'tables/party_session_table.dart';
 import 'tables/user_preferences_table.dart';
 import 'tables/user_profile_table.dart';
 
@@ -22,26 +25,52 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 3.
+/// Phase-1 Drift database — schema version 8.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
 /// v3 (issue #9): UserProfiles + UserPreferences tables + preferences seeding.
+/// (issue #16): added 4 default alcoholic presets to beforeOpen seeding;
+///   no DDL change → schema stays at v3.
+/// v4 (issue #21): PartySessions + PartySessionPrices + Meals tables;
+///   DrinkEntries gains partySessionId/priceTokens/tokenValueMinor/
+///   tokenValueCurrency columns.
+/// v5 (issue #68 / PR #69 review remediation): UserPreferences gains
+///   alcoholicPresetsAlwaysVisible (default true) — governs whether
+///   ManageDrinksScreen shows alcoholic presets unconditionally or only
+///   while a party session is active.
+/// v6 (issue #78): DrinkEntries gains presetId (nullable, no FK — see the
+///   column's own doc comment); UserPreferences gains drinkSortMode
+///   (default 'recentlyUsed') — feeds the Today grid / S2 picker sort modes.
+/// v7 (issue #87): DrinkEntries gains manualPriceOverride (default false) —
+///   marks a this-entry-only price edit so the retroactive party-price
+///   sweep in `setSessionPrices` knows which entries to skip.
+/// v8 (issue #102): PartySessions gains name (nullable) — an optional,
+///   user-set freeform session label.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
 ///
 /// Drift row types are named [DrinkPresetRow] / [DrinkEntryRow] /
-/// [UserProfileRow] / [UserPreferencesRow] (via @DataClassName) to avoid name
+/// [UserProfileRow] / [UserPreferencesRow] / [PartySessionRow] /
+/// [PartySessionPriceRow] / [MealRow] (via @DataClassName) to avoid name
 /// collisions with the pure-Dart domain models in lib/src/models/.
 @DriftDatabase(
-  tables: [DrinkPresets, DrinkEntries, UserProfiles, UserPreferencesTable],
+  tables: [
+    DrinkPresets,
+    DrinkEntries,
+    UserProfiles,
+    UserPreferencesTable,
+    PartySessions,
+    PartySessionPrices,
+    Meals,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -51,7 +80,7 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           // Add an `if (from < N)` block for each schema version bump.
           // Each block must be cumulative — a user upgrading directly from v1
-          // to v3 must run BOTH the v1→v2 and v2→v3 blocks in sequence.
+          // to v5 must run every earlier block in sequence.
           if (from < 2) {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
@@ -59,6 +88,39 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await m.createTable(userProfiles);
             await m.createTable(userPreferencesTable);
+          }
+          if (from < 4) {
+            await m.createTable(partySessions);
+            await m.createTable(partySessionPrices);
+            await m.createTable(meals);
+            await m.addColumn(drinkEntries, drinkEntries.partySessionId);
+            await m.addColumn(drinkEntries, drinkEntries.priceTokens);
+            await m.addColumn(drinkEntries, drinkEntries.tokenValueMinor);
+            await m.addColumn(drinkEntries, drinkEntries.tokenValueCurrency);
+          }
+          if (from < 5) {
+            await m.addColumn(
+              userPreferencesTable,
+              userPreferencesTable.alcoholicPresetsAlwaysVisible,
+            );
+          }
+          if (from < 6) {
+            await m.addColumn(drinkEntries, drinkEntries.presetId);
+            await m.addColumn(
+              userPreferencesTable,
+              userPreferencesTable.drinkSortMode,
+            );
+          }
+          if (from < 7) {
+            await m.addColumn(drinkEntries, drinkEntries.manualPriceOverride);
+          }
+          // Lower-bounded at 4 (not just `from < 8`): `createTable` above
+          // builds the table from today's Dart schema — which already
+          // includes `name` — so an upgrade starting below v4 already has
+          // the column by the time this runs; adding it again would throw
+          // "duplicate column name".
+          if (from >= 4 && from < 8) {
+            await m.addColumn(partySessions, partySessions.name);
           }
         },
         beforeOpen: (_) async {
@@ -185,6 +247,52 @@ class AppDatabase extends _$AppDatabase {
           sortOrder: 10,
           now: now,
         ),
+        // Alcoholic defaults — visible only when Party Mode is active (F14).
+        // Colours from BeverageType.defaultIconColor.
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d011',
+          name: 'Small beer (0.2L)',
+          beverageType: 'beer',
+          volumeMl: 200,
+          abvPercent: 5.0,
+          iconKey: 'plastic_cup',
+          iconColor: '#d97706',
+          sortOrder: 11,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d012',
+          name: 'Beer (0.33L)',
+          beverageType: 'beer',
+          volumeMl: 330,
+          abvPercent: 5.0,
+          iconKey: 'beer_glass',
+          iconColor: '#d97706',
+          sortOrder: 12,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d013',
+          name: 'Glass of wine',
+          beverageType: 'wine',
+          volumeMl: 175,
+          abvPercent: 12.0,
+          iconKey: 'wine_glass',
+          iconColor: '#be185d',
+          sortOrder: 13,
+          now: now,
+        ),
+        _preset(
+          id: 'f47ac10b-58cc-4372-a567-0e02b2c3d014',
+          name: 'Shot of spirit',
+          beverageType: 'spirit',
+          volumeMl: 30,
+          abvPercent: 40.0,
+          iconKey: 'shot_glass',
+          iconColor: '#0369a1',
+          sortOrder: 14,
+          now: now,
+        ),
       ];
 
   static DrinkPresetsCompanion _preset({
@@ -192,6 +300,7 @@ class AppDatabase extends _$AppDatabase {
     required String name,
     required String beverageType,
     required int volumeMl,
+    double? abvPercent,
     required String iconKey,
     required String iconColor,
     required int sortOrder,
@@ -202,6 +311,7 @@ class AppDatabase extends _$AppDatabase {
         name: name,
         beverageType: beverageType,
         volumeMl: volumeMl,
+        abvPercent: Value(abvPercent),
         iconKey: iconKey,
         iconColor: iconColor,
         isUserCreated: false,
@@ -235,10 +345,17 @@ class AppDatabase extends _$AppDatabase {
       inactivityReminderEnabled: true,
       weeklySummaryEnabled: true,
       defaultDrinkPresetId: const Value(kWaterGlassPresetId),
-      bacOnLockScreenEnabled: false,
+      // data-model.md §UserPreferences / notifications.md §Lock-screen
+      // visibility: default ON — we surface the choice without recommending
+      // either side, but the seed itself defaults to showing BAC.
+      bacOnLockScreenEnabled: true,
       // Party Mode notifications are OFF by default (notifications.md §4).
       approachingCapNotifEnabled: false,
       soberEstimateNotifEnabled: false,
+      // Default ON — alcoholic presets are always visible in Manage Drinks
+      // unless the user opts into session-only visibility (features.md F14).
+      alcoholicPresetsAlwaysVisible: const Value(true),
+      drinkSortMode: const Value('recentlyUsed'),
       installedAt: now.millisecondsSinceEpoch,
       createdAt: now,
       updatedAt: now,
@@ -267,6 +384,79 @@ class AppDatabase extends _$AppDatabase {
   /// Insert a new drink entry (snapshot semantics).
   Future<void> insertDrinkEntry(DrinkEntriesCompanion companion) =>
       into(drinkEntries).insert(companion);
+
+  /// One-shot read of the most recent live entry's [consumedAt], across every
+  /// beverage type (alcoholic entries count as engagement too). Null if the
+  /// user has never logged a drink.
+  ///
+  /// Used by the reminder scheduler for the inactive-user silence check
+  /// (notifications.md §Inactive-user silence: `last_engagement` is the most
+  /// recent `DrinkEntry.consumedAt`, any type).
+  Future<DateTime?> getLatestDrinkConsumedAt() async {
+    final row = await (select(drinkEntries)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.consumedAt)])
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.consumedAt;
+  }
+
+  /// Reactive stream of the earliest live entry's [consumedAt], across every
+  /// beverage type. Null if the user has never logged a drink.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3): the
+  /// earliest day-window with any data to show. Reactive (not one-shot) so
+  /// the bound can never go stale relative to a backdated entry — S3 itself
+  /// lets a drink be moved to an earlier calendar day with no lower bound.
+  Stream<DateTime?> watchEarliestDrinkConsumedAt() => (select(drinkEntries)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.consumedAt)])
+        ..limit(1))
+      .watchSingleOrNull()
+      .map((row) => row?.consumedAt);
+
+  /// One-shot sum of [volumeMl] for live entries within [startUtc, endUtc)
+  /// whose [beverageType] is in [allowedTypes]. Same filter as
+  /// [watchTotalMlInWindow], but a single read for scheduling-time queries
+  /// that don't need a live subscription.
+  Future<int> getTotalMlInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) async {
+    final expr = drinkEntries.volumeMl.sum();
+    final query = selectOnly(drinkEntries)
+      ..addColumns([expr])
+      ..where(
+        drinkEntries.deletedAt.isNull() &
+            drinkEntries.consumedAt.isBiggerOrEqualValue(startUtc) &
+            drinkEntries.consumedAt.isSmallerThanValue(endUtc) &
+            drinkEntries.beverageType.isIn(allowedTypes),
+      );
+    final row = await query.getSingle();
+    return row.read(expr) ?? 0;
+  }
+
+  /// One-shot read of `(consumedAt, volumeMl)` pairs for live entries within
+  /// [startUtc, endUtc) whose [beverageType] is in [allowedTypes]. Same filter
+  /// as [watchEntriesInWindow], for one-shot multi-day aggregation (e.g. the
+  /// weekly-summary ISO-week goal count).
+  Future<List<(DateTime, int)>> getEntriesInWindow(
+    DateTime startUtc,
+    DateTime endUtc,
+    List<String> allowedTypes,
+  ) async {
+    final rows = await (select(drinkEntries)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.consumedAt.isBiggerOrEqualValue(startUtc) &
+                t.consumedAt.isSmallerThanValue(endUtc) &
+                t.beverageType.isIn(allowedTypes),
+          ))
+        .get();
+    return rows.map((r) => (r.consumedAt, r.volumeMl)).toList();
+  }
 
   /// Reactive stream of the sum of [volumeMl] for live entries within
   /// [start, end) (both UTC) whose [beverageType] is in [allowedTypes].
@@ -337,27 +527,52 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// Partial update of a [DrinkEntryRow]: only [volumeMl] and/or [consumedAt]
-  /// may be changed (log immutability — snapshot fields are never rewritten).
-  ///
-  /// Always bumps [updatedAt] to [updatedAtUtc].
-  Future<void> updateDrinkEntryPartial(
-    String id, {
-    int? volumeMl,
-    DateTime? consumedAtUtc,
-    required DateTime updatedAtUtc,
-  }) {
-    final companion = DrinkEntriesCompanion(
-      volumeMl: volumeMl != null ? Value(volumeMl) : const Value.absent(),
-      consumedAt:
-          consumedAtUtc != null ? Value(consumedAtUtc) : const Value.absent(),
-      updatedAt: Value(updatedAtUtc),
-    );
-    return (update(
-      drinkEntries,
-    )..where((t) => t.id.equals(id)))
-        .write(companion);
+  /// Reactive stream of `(presetId, consumedAt)` pairs for every live entry
+  /// that was logged from a preset (`presetId IS NOT NULL`) — the raw feed
+  /// for [DrinksRepository.watchPresetUsageStats]'s last-used/30-day-count
+  /// aggregation (F14 §Sort modes). Aggregation itself happens in Dart, same
+  /// pattern as [watchEntriesInWindow] feeding the 7-day stat providers.
+  Stream<List<(String, DateTime)>> watchPresetEntryTimestamps() {
+    return (select(drinkEntries)
+          ..where((t) => t.deletedAt.isNull() & t.presetId.isNotNull()))
+        .watch()
+        .map((rows) => rows.map((r) => (r.presetId!, r.consumedAt)).toList());
   }
+
+  /// Partial update of arbitrary [DrinkEntryRow] fields — the shared write
+  /// path behind [DrinksRepository.updateDrinkEntry] (S6/S3) and
+  /// [PartySessionRepository.updateAlcoholicEntry] (S9). Accepts any
+  /// [DrinkEntriesCompanion] the caller builds; each repository owns the
+  /// validation/normalisation of which fields its callers may change.
+  ///
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updateDrinkEntryFields(
+    String id,
+    DrinkEntriesCompanion companion,
+  ) =>
+      (update(drinkEntries)..where((t) => t.id.equals(id))).write(companion);
+
+  /// Applies [companion] (a resolved price snapshot) to every live entry in
+  /// [sessionId] logged from [presetId] — the retroactive party-price sweep
+  /// (issue #87, party-session.md §Editing prices during a session). Entries
+  /// with `manualPriceOverride == true` are excluded so a one-off,
+  /// this-entry-only price edit is never clobbered by a session-wide edit.
+  ///
+  /// Returns the number of rows affected.
+  Future<int> sweepSessionEntryPrices({
+    required String sessionId,
+    required String presetId,
+    required DrinkEntriesCompanion companion,
+  }) =>
+      (update(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.equals(sessionId) &
+                  t.presetId.equals(presetId) &
+                  t.deletedAt.isNull() &
+                  t.manualPriceOverride.equals(false),
+            ))
+          .write(companion);
 
   /// Soft-deletes a [DrinkEntryRow] by setting [deletedAt] = [deletedAtUtc].
   ///
@@ -415,6 +630,379 @@ class AppDatabase extends _$AppDatabase {
   /// Insert or replace the user profile by id.
   Future<void> upsertProfile(UserProfilesCompanion companion) =>
       into(userProfiles).insertOnConflictUpdate(companion);
+
+  // ---------------------------------------------------------------------------
+  // DrinkPreset CRUD (issue #16)
+  // ---------------------------------------------------------------------------
+
+  /// All non-deleted presets (including hidden) ordered by [sortOrder].
+  /// Used by the "Manage drinks" settings UI.
+  Stream<List<DrinkPresetRow>> watchAllPresets() => (select(drinkPresets)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+      .watch();
+
+  /// Non-deleted, non-hidden alcoholic presets ordered by [sortOrder].
+  /// Used by Party Mode (log-drink picker — party-session.md §Price overrides
+  /// explicitly excludes hidden presets).
+  ///
+  /// [alcoholicTypes] is the list of stored beverage-type strings to include
+  /// (derived from [BeverageType] at the repository layer so this method stays
+  /// free of domain-model imports).
+  Stream<List<DrinkPresetRow>> watchAlcoholicPresets(
+    List<String> alcoholicTypes,
+  ) {
+    return (select(drinkPresets)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.isHidden.equals(false) &
+                t.beverageType.isIn(alcoholicTypes),
+          )
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .watch();
+  }
+
+  /// Insert a new user-created preset.
+  Future<void> insertPreset(DrinkPresetsCompanion companion) =>
+      into(drinkPresets).insert(companion);
+
+  /// Highest [sortOrder] among non-deleted presets, or null if none exist.
+  ///
+  /// A `COUNT` of non-deleted presets is *not* a safe stand-in for this —
+  /// [softDeletePreset] leaves the row in place (only [deletedAt] is set), so
+  /// the count of live presets can be lower than the highest sortOrder still
+  /// in use. See [reorderPresets]'s doc comment for the same MAX-vs-COUNT
+  /// distinction.
+  Future<int?> getMaxPresetSortOrder() async {
+    final maxSortOrder = drinkPresets.sortOrder.max();
+    final query = selectOnly(drinkPresets)
+      ..addColumns([maxSortOrder])
+      ..where(drinkPresets.deletedAt.isNull());
+    final row = await query.getSingle();
+    return row.read(maxSortOrder);
+  }
+
+  /// Partial update of a preset row. Only fields wrapped in [Value] are written.
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updatePresetFields(String id, DrinkPresetsCompanion companion) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(companion);
+
+  /// Sets [isHidden] to [hidden] for the given preset id.
+  Future<void> setPresetHidden(String id, bool hidden, DateTime now) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(
+        DrinkPresetsCompanion(isHidden: Value(hidden), updatedAt: Value(now)),
+      );
+
+  /// Soft-deletes a preset by setting [deletedAt].
+  Future<void> softDeletePreset(String id, DateTime now) =>
+      (update(drinkPresets)..where((t) => t.id.equals(id))).write(
+        DrinkPresetsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+      );
+
+  /// Bulk-updates [sortOrder] (and [updatedAt]) for every non-deleted preset,
+  /// in a single transaction. Ids in [orderedIds] receive sortOrder 1..N (in
+  /// the order given); any other non-deleted preset not in [orderedIds] keeps
+  /// its relative order and is appended after, at N+1... This renumbers the
+  /// *entire* non-deleted set — including seeded defaults not passed in — so
+  /// a partial [orderedIds] can never collide with an untouched preset's
+  /// existing sortOrder.
+  ///
+  /// Throws [ArgumentError] if [orderedIds] contains duplicates, or
+  /// [StateError] if it contains an id that does not exist or is deleted.
+  Future<void> reorderPresets(List<String> orderedIds, DateTime now) =>
+      transaction(() async {
+        if (orderedIds.toSet().length != orderedIds.length) {
+          throw ArgumentError.value(
+            orderedIds,
+            'orderedIds',
+            'Contains duplicate ids',
+          );
+        }
+
+        final all = await (select(drinkPresets)
+              ..where((t) => t.deletedAt.isNull())
+              ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+            .get();
+        final validIds = all.map((r) => r.id).toSet();
+        if (!orderedIds.every(validIds.contains)) {
+          throw StateError(
+            'orderedIds contains an id that does not exist or is deleted.',
+          );
+        }
+
+        final movedIds = orderedIds.toSet();
+        final remainingIds =
+            all.map((r) => r.id).where((id) => !movedIds.contains(id));
+        final finalOrder = [...orderedIds, ...remainingIds];
+
+        for (var i = 0; i < finalOrder.length; i++) {
+          await (update(
+            drinkPresets,
+          )..where((t) => t.id.equals(finalOrder[i])))
+              .write(
+            DrinkPresetsCompanion(
+              sortOrder: Value(i + 1),
+              updatedAt: Value(now),
+            ),
+          );
+        }
+      });
+
+  // ---------------------------------------------------------------------------
+  // PartySession queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of the current open session (`endedAt IS NULL`), or null.
+  /// At most one live row can match — enforced by [PartySessionRepository].
+  Stream<PartySessionRow?> watchActiveSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNull() & t.deletedAt.isNull())
+        ..limit(1))
+      .watchSingleOrNull();
+
+  /// One-shot read of the current open session, or null.
+  Future<PartySessionRow?> getActiveSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNull() & t.deletedAt.isNull())
+        ..limit(1))
+      .getSingleOrNull();
+
+  Future<PartySessionRow?> getPartySessionById(String id) =>
+      (select(partySessions)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// The most recently *ended* session (`endedAt IS NOT NULL`), ordered by
+  /// `endedAt` descending — feeds the "copy prices from last session"
+  /// shortcut (party-session.md §Starting a session — pricing prompt).
+  Future<PartySessionRow?> getMostRecentEndedSession() => (select(partySessions)
+        ..where((t) => t.endedAt.isNotNull() & t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.desc(t.endedAt)])
+        ..limit(1))
+      .getSingleOrNull();
+
+  /// Reactive stream of every live *ended* session (`endedAt IS NOT NULL`),
+  /// newest-ended-first — feeds the S7 "past sessions" list
+  /// (user-experience.md §S7 → No active session — subsequent visits).
+  Stream<List<PartySessionRow>> watchEndedSessions() => (select(partySessions)
+        ..where((t) => t.endedAt.isNotNull() & t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.desc(t.endedAt)]))
+      .watch();
+
+  /// Reactive stream of the earliest live session's [startedAt], regardless
+  /// of ended state. Null if no session has ever been started.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3): the
+  /// earliest day-window with any data to show. Reactive (not one-shot) for
+  /// the same staleness reason as [watchEarliestDrinkConsumedAt].
+  Stream<DateTime?> watchEarliestSessionStartedAt() => (select(partySessions)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.startedAt)])
+        ..limit(1))
+      .watchSingleOrNull()
+      .map((row) => row?.startedAt);
+
+  Future<void> insertPartySession(PartySessionsCompanion companion) =>
+      into(partySessions).insert(companion);
+
+  /// Partial update of a session row (end it, toggle prices, edit tokens).
+  /// Returns the number of rows affected (0 if [id] not found).
+  Future<int> updatePartySessionFields(
+    String id,
+    PartySessionsCompanion companion,
+  ) =>
+      (update(partySessions)..where((t) => t.id.equals(id))).write(companion);
+
+  /// Soft-deletes a [PartySessionRow] by setting [deletedAt] = [deletedAtUtc].
+  ///
+  /// The row is never hard-deleted (F7 — soft-delete rule). Covers both the
+  /// zero-drink-session discard (party-session.md §Zero-drink sessions are
+  /// never saved) and an explicit user-initiated delete of an ended session
+  /// (party-session.md §Deleting a session).
+  Future<int> softDeletePartySession(String id, DateTime deletedAtUtc) =>
+      (update(partySessions)..where((t) => t.id.equals(id))).write(
+        PartySessionsCompanion(
+          deletedAt: Value(deletedAtUtc),
+          updatedAt: Value(deletedAtUtc),
+        ),
+      );
+
+  // ---------------------------------------------------------------------------
+  // PartySessionPrice queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Live (non-deleted) price overrides for [sessionId].
+  Future<List<PartySessionPriceRow>> getSessionPrices(String sessionId) =>
+      (select(partySessionPrices)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            ))
+          .get();
+
+  /// Reactive stream of [getSessionPrices] — feeds the session-prices control
+  /// ("off — using regular prices" label) and the "Manage prices" sheet.
+  Stream<List<PartySessionPriceRow>> watchSessionPrices(String sessionId) =>
+      (select(partySessionPrices)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            ))
+          .watch();
+
+  Future<void> insertSessionPrice(PartySessionPricesCompanion companion) =>
+      into(partySessionPrices).insert(companion);
+
+  Future<void> updateSessionPriceById(
+    String id,
+    PartySessionPricesCompanion companion,
+  ) =>
+      (update(
+        partySessionPrices,
+      )..where((t) => t.id.equals(id)))
+          .write(companion);
+
+  // ---------------------------------------------------------------------------
+  // Meal queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  Future<void> insertMeal(MealsCompanion companion) =>
+      into(meals).insert(companion);
+
+  /// Reactive stream of live meals for [sessionId], oldest first.
+  Stream<List<MealRow>> watchSessionMeals(String sessionId) => (select(meals)
+        ..where(
+          (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+        )
+        ..orderBy([(t) => OrderingTerm.asc(t.eatenAt)]))
+      .watch();
+
+  /// Partial update of a [MealRow] (Party tab's meal indicator: "edit the
+  /// last one", party-session.md §Party tab during a session). Returns the
+  /// number of rows affected (0 if [id] not found).
+  Future<int> updateMealFields(String id, MealsCompanion companion) =>
+      (update(meals)..where((t) => t.id.equals(id))).write(companion);
+
+  // ---------------------------------------------------------------------------
+  // DrinkEntry — Party Session queries (issue #21)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of live entries belonging to [sessionId], oldest first.
+  Stream<List<DrinkEntryRow>> watchSessionEntries(String sessionId) =>
+      (select(drinkEntries)
+            ..where(
+              (t) => t.partySessionId.equals(sessionId) & t.deletedAt.isNull(),
+            )
+            ..orderBy([(t) => OrderingTerm.asc(t.consumedAt)]))
+          .watch();
+
+  /// Most recently consumed live alcoholic entry in [sessionId], or null if
+  /// none — used to compute the lazy 12h auto-end mark.
+  Future<DrinkEntryRow?> getLastAlcoholicEntryInSession(
+    String sessionId,
+    List<String> alcoholicTypes,
+  ) =>
+      (select(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.equals(sessionId) &
+                  t.deletedAt.isNull() &
+                  t.beverageType.isIn(alcoholicTypes),
+            )
+            ..orderBy([(t) => OrderingTerm.desc(t.consumedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// Live alcoholic entries with no session (orphans), for absorption.
+  Future<List<DrinkEntryRow>> getOrphanAlcoholicEntries(
+    List<String> alcoholicTypes,
+  ) =>
+      (select(drinkEntries)
+            ..where(
+              (t) =>
+                  t.partySessionId.isNull() &
+                  t.deletedAt.isNull() &
+                  t.beverageType.isIn(alcoholicTypes),
+            ))
+          .get();
+
+  /// Assigns [entryId] to [sessionId] (orphan absorption) and bumps
+  /// [updatedAtUtc] — the one spec-sanctioned side-effect mutation of a
+  /// [DrinkEntryRow] (data-model.md §Meal → Relationship to DrinkEntry).
+  Future<void> absorbOrphanEntry(
+    String entryId,
+    String sessionId,
+    DateTime updatedAtUtc,
+  ) =>
+      (update(drinkEntries)..where((t) => t.id.equals(entryId))).write(
+        DrinkEntriesCompanion(
+          partySessionId: Value(sessionId),
+          updatedAt: Value(updatedAtUtc),
+        ),
+      );
+
+  /// Detaches every entry belonging to [sessionId] by clearing
+  /// [DrinkEntryRow.partySessionId], turning them back into ordinary orphan
+  /// drinks — the write behind deleting a session (party-session.md §Deleting
+  /// a session: "detaches every drink ... back to orphan status"). The drinks
+  /// themselves are never touched otherwise (not soft-deleted).
+  ///
+  /// Returns the number of rows affected.
+  Future<int> detachSessionEntries(String sessionId, DateTime updatedAtUtc) =>
+      (update(
+        drinkEntries,
+      )..where((t) => t.partySessionId.equals(sessionId)))
+          .write(
+        DrinkEntriesCompanion(
+          partySessionId: const Value(null),
+          updatedAt: Value(updatedAtUtc),
+        ),
+      );
+
+  // ---------------------------------------------------------------------------
+  // History — alcohol charts + day drill-down (issue #26)
+  // ---------------------------------------------------------------------------
+
+  /// Reactive stream of live sessions whose window `[startedAt, endedAt)`
+  /// overlaps `[startUtc, endUtc)`, ordered by [startedAt]. An active session
+  /// (`endedAt IS NULL`) is treated as open-ended — it overlaps any window
+  /// that starts before "now" could reach, so it's included whenever
+  /// `startedAt < endUtc`.
+  Stream<List<PartySessionRow>> watchSessionsOverlapping(
+    DateTime startUtc,
+    DateTime endUtc,
+  ) {
+    return (select(partySessions)
+          ..where(
+            (t) =>
+                t.deletedAt.isNull() &
+                t.startedAt.isSmallerThanValue(endUtc) &
+                (t.endedAt.isNull() | t.endedAt.isBiggerThanValue(startUtc)),
+          )
+          ..orderBy([(t) => OrderingTerm.asc(t.startedAt)]))
+        .watch();
+  }
+
+  /// Live [DrinkEntryRow]s belonging to any of [sessionIds] — feeds BAC-peak
+  /// sampling (F4/#26), which needs each session's *full* entry list
+  /// regardless of the day/range being sampled (a drink just before the
+  /// sampled window can still contribute decayed BAC into it).
+  Future<List<DrinkEntryRow>> getEntriesForSessions(
+    List<String> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return [];
+    return (select(drinkEntries)
+          ..where(
+            (t) => t.partySessionId.isIn(sessionIds) & t.deletedAt.isNull(),
+          ))
+        .get();
+  }
+
+  /// Live [MealRow]s belonging to any of [sessionIds] — see
+  /// [getEntriesForSessions].
+  Future<List<MealRow>> getMealsForSessions(List<String> sessionIds) async {
+    if (sessionIds.isEmpty) return [];
+    return (select(meals)
+          ..where(
+            (t) => t.partySessionId.isIn(sessionIds) & t.deletedAt.isNull(),
+          ))
+        .get();
+  }
 }
 
 LazyDatabase _openConnection() {

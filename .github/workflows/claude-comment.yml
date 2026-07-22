@@ -46,7 +46,7 @@ jobs:
       # it the Flutter/Dart SDK on the runner.
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.x'
+          flutter-version: '3.44.6'
           channel: stable
           cache: true
 
@@ -59,4 +59,6 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Auto mode: ephemeral CI runner, so let the agent run its tools
           # (git, gh, flutter, dart) without per-command allowlisting.
-          claude_args: "--permission-mode bypassPermissions"
+          claude_args: '--permission-mode bypassPermissions --disallowedTools "ScheduleWakeup"'
+          allowed_bots: "github-actions[bot],claude[bot],controlol-auth[bot]"
+

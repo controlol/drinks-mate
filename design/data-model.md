@@ -24,6 +24,8 @@ A single recorded drink. Created via [features.md → F1 Log a drink](./features
 | `tokenValueCurrency` | enum \| null    | Snapshot of the currency the token value was expressed in. Null when `priceTokens` is null. |
 | `iconKey`      | string \| null        | Snapshot of the preset's icon key at log time. Null when no preset was used.   |
 | `iconColor`    | string \| null        | Snapshot of the preset's icon colour at log time (hex, e.g. `#3b82f6`).        |
+| `presetId`     | string / UUID \| null | Reference to the `DrinkPreset` this entry was logged from. Null for a fully custom one-off log. **Not a foreign-key constraint** — see [Snapshot semantics — log immutability](#snapshot-semantics--log-immutability) below. **Non-authoritative:** never read to resolve display values (those stay on the snapshot fields above); used only to attribute usage for the **Recently used** / **Most used** preset sort modes. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation). A dangling reference (preset later deleted) is harmless — the entry just stops contributing to that preset's ranking. Must be set on **every** preset-derived write path — the S2 "Confirm" and "Save and confirm" paths (the original preset's id), "Save as copy and confirm" (the newly-created preset's id), and the notification background quick-log action — or usage logged via that path silently doesn't count toward ranking. |
+| `manualPriceOverride` | boolean        | Default `false`. `true` when `priceMinor`/`priceTokens` were set by a deliberate, this-entry-only price edit (the Party log-alcohol sheet's price field at log time, or a per-entry price edit from S6/S9) rather than resolved from the preset's regular price or the session-wide `PartySessionPrice` table. Exempts the entry from the retroactive party-price sweep — see [party-session.md → Editing prices during a session](./party-session.md#editing-prices-during-a-session). |
 | `consumedAt`   | timestamp (with tz)   | When the drink was consumed. Defaults to "now" at logging time.                |
 | `createdAt`    | timestamp             | When the entry was logged. Distinct from `consumedAt` for retroactive logs.    |
 | `updatedAt`    | timestamp             | Updated on every edit. Used by phase 2 sync for last-writer-wins.              |
@@ -38,7 +40,7 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 | Field            | Type                  | Notes                                                                                  |
 | ---------------- | --------------------- | -------------------------------------------------------------------------------------- |
 | `id`             | string / UUID         | Stable identifier, generated locally.                                                  |
-| `name`           | string                | Required. 3–30 characters. Allows Unicode letters `L*`, ASCII digits `0–9`, connectors (`_ - .`), and **ASCII space** — enables multi-word names like "Glass of water". Must start and end with a letter or digit. Rejects control characters, zero-width characters, emoji, and other symbols. See `validatePresetName()` in `core`. |
+| `name`           | string                | Required. 3–30 characters. Allows Unicode letters `L*`, ASCII digits `0–9`, connectors (`_ - .`), **ASCII space**, and **parentheses `( )`** — enables multi-word names like "Glass of water" and volume-suffixed names like "Beer (0.33L)". Must start and end with a letter, digit, or parenthesis. Rejects control characters, zero-width characters, emoji, and other symbols. See `validatePresetName()` in `core`. |
 | `beverageType`   | enum                  | Required. One of the values in `BeverageType` (see below).                             |
 | `volumeMl`       | integer               | Required, must be > 0.                                                                 |
 | `abvPercent`     | decimal \| null       | Required when `beverageType` is alcoholic; null otherwise.                             |
@@ -47,7 +49,7 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 | `iconKey`        | string                | Required. References one of the bundled SVG icons.                                     |
 | `iconColor`      | string                | Required. Hex colour (e.g. `#3b82f6`). Default per beverage type.                       |
 | `isUserCreated`  | boolean               | `true` for user-created presets, `false` for app-seeded defaults.                       |
-| `isHidden`       | boolean               | Default `false`. When `true`, the preset is excluded from quick-log and the log-drink picker but kept in the database. Lets users dismiss seeded defaults without losing the option to restore them. |
+| `isHidden`       | boolean               | Default `false`. When `true`, the preset is excluded from the "Quick Log" grid and the log-drink picker but kept in the database. Lets users dismiss seeded defaults without losing the option to restore them. |
 | `sortOrder`      | integer               | Per-user ordering for display. Lower values come first.                                 |
 | `createdAt`      | timestamp             | Record creation time.                                                                  |
 | `updatedAt`      | timestamp             | Updated on every edit. Used by phase 2 sync.                                           |
@@ -55,7 +57,9 @@ A named, pre-configured drink that the user can pick when logging. Functional sp
 
 #### Seeded defaults
 
-On first launch the database is seeded with the default preset list (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)) using `isUserCreated = false`. The user can edit, hide, or delete them — there is no special protection. A "Reset to defaults" action in settings re-seeds any missing default presets.
+On first launch the database is seeded with the default preset list (see [features.md → F14 Drink presets and customisation](./features.md#f14--drink-presets-and-customisation)) using `isUserCreated = false`. The user can edit and hide them freely. Deleting them is intended to have no special protection once a "Reset to defaults" action exists in settings to re-seed any missing default presets. `[OPEN]` — that action is not built yet, so the Manage Drinks screen (F14) restricts delete to `isUserCreated` presets in the meantime, since deleting a seeded default today has no recovery path. Lift this restriction once "Reset to defaults" ships.
+
+Seeded presets need defined initial `sortOrder` values at seed time — this field is load-bearing beyond the Manual sort mode: it's also the tie-break and cold-start order for **Recently used** and **Most used** (see [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation)), so it directly determines the grid's initial appearance for every new install. `[OPEN]` — the exact seed order (the table order in F14 is a reasonable default, e.g. Glass of water first).
 
 #### Snapshot semantics — log immutability
 
@@ -63,8 +67,8 @@ The drink log is **immutable with respect to external changes**. This is a load-
 
 - When a `DrinkEntry` is created from a preset, the resolved values (`name`, `beverageType`, `volumeMl`, `abvPercent`, `priceMinor`, `currency`, `iconKey`, `iconColor`) are **copied into the entry**.
 - **Editing or deleting a preset never modifies historical entries.** If you rename "Light beer" to "IPA" today, last week's log still says "Light beer".
-- `DrinkEntry` does not carry a foreign key back to `DrinkPreset`. The relationship is intentionally one-way at log time.
-- The only path to change a `DrinkEntry` is a **direct, deliberate user edit** of that entry (see [features.md → F3 Today view](./features.md#f3--today-view)). Side-effect modifications from other entities are not allowed.
+- `DrinkEntry` carries no **enforced** foreign key back to `DrinkPreset` for display purposes — the relationship is intentionally one-way at log time. The one exception is `presetId` (see the table above): a **non-authoritative** reference used solely to rank presets by recency/frequency for the sort modes in [F14](./features.md#f14--drink-presets-and-customisation). It is never read to resolve `name`/`volumeMl`/`abvPercent`/etc. — those come only from the snapshot fields — so editing or deleting a preset still cannot change what a historical entry displays. `presetId` is deliberately **not** declared as a database-level foreign key: there is no `ON DELETE` behaviour that would be correct here (`CASCADE` would delete history, `RESTRICT` would block deleting a used preset), and `DrinkPreset` already soft-deletes, so a real constraint would never fire anyway.
+- The only path to change a `DrinkEntry` is a **direct, deliberate user edit** of that entry (see [features.md → F3 Today view](./features.md#f3--today-view)). Side-effect modifications from other entities are not allowed. The one exception: a party-price edit (`PartySessionPrice`, see [party-session.md → Editing prices during a session](./party-session.md#editing-prices-during-a-session)) retroactively rewrites the price snapshot (`priceMinor`/`priceTokens`/`currency`/`tokenValueMinor`/`tokenValueCurrency`) on already-logged, non-overridden entries for the affected preset — itself a deliberate user edit, just made at the session level rather than the entry level. Entries with `manualPriceOverride = true` are excluded from this sweep.
 
 This keeps history accurate, makes preset deletion safe, avoids a sync ordering dependency in phase 2, and means historical analytics in phase 3 reflect what was actually logged at the time.
 
@@ -116,9 +120,11 @@ A single per-device record holding the user's settings. Edited via [user-experie
 | `weeklySummaryEnabled`   | boolean               | Default `true`. Independent toggle for the end-of-week summary notification. See [notifications.md → Notification types](./notifications.md#notification-types). |
 | `bacOnLockScreenEnabled` | boolean               | Default `true`. When `true`, Party Mode notifications render the BAC value in full on the lock screen and in notification previews. When `false`, the BAC value is hidden from the visible body. See [notifications.md → Lock-screen visibility](./notifications.md#lock-screen-visibility). |
 | `bacCapGramsPerL`        | decimal \| null       | Optional personal cap, stored canonically in g/L. Null means no cap is set. The UI shows g/L as primary and mmol/L as secondary. Persistent across sessions. |
+| `alcoholicPresetsAlwaysVisible` | boolean        | Default `true`. Governs alcoholic-preset visibility in the Manage Drinks screen (F14). When `true`, alcoholic presets are always listed there, matching the S2 log-drink picker (which never filters alcoholic presets by session state — see [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active)). When `false`, alcoholic presets are shown there only while a `PartySession` is active (`endedAt IS NULL`). Settings → Drinks → "Always show alcoholic drinks". |
+| `drinkSortMode`          | enum                  | `manual` / `recentlyUsed` (**default**) / `mostUsed`. One setting drives two surfaces: which presets rank into the Today "Quick Log" grid's top 8 (and in what order), and the ordering of the S2 log-drink picker's full list. See [features.md → F14 → Sort modes](./features.md#f14--drink-presets-and-customisation) for the ranking rules and the `sortOrder` tie-break. |
 | `updatedAt`              | timestamp             | Used by phase 2 sync.                                       |
 
-**Phase 2 sync notes for `UserPreferences`.** `[OPEN]` — confirm which preferences travel across devices vs. stay per-device. Recommended split: `dailyGoalMl`, `unitsDisplay`, `currency`, `dayBoundary`, `defaultDrinkPresetId`, `bacCapGramsPerL`, and the notification-type toggles sync; the reminder schedule (`reminderStartTime`, `reminderEndTime`, `reminderIntervalMin`) stays per-device since a user's phone and tablet may want different windows. `installedAt` is per-device by definition.
+**Phase 2 sync notes for `UserPreferences`.** `[OPEN]` — confirm which preferences travel across devices vs. stay per-device. Recommended split: `dailyGoalMl`, `unitsDisplay`, `currency`, `dayBoundary`, `defaultDrinkPresetId`, `drinkSortMode`, `bacCapGramsPerL`, and the notification-type toggles sync; the reminder schedule (`reminderStartTime`, `reminderEndTime`, `reminderIntervalMin`) stays per-device since a user's phone and tablet may want different windows. `installedAt` is per-device by definition.
 
 #### UserProfile
 
@@ -140,6 +146,7 @@ A discrete drinking occasion. There is at most one active session (`endedAt IS N
 | Field         | Type                  | Notes                                                                                |
 | ------------- | --------------------- | ------------------------------------------------------------------------------------ |
 | `id`          | string / UUID         | Stable identifier, generated locally.                                                |
+| `name`        | string \| null        | Optional, user-set freeform label (e.g. "Sarah's birthday"). Settable in the start-session flow (skippable) and editable any time after — during an active session from the Party tab, or on an ended session from [user-experience.md → S9](./user-experience.md#s9--party-session-log). Max 40 characters after trimming leading/trailing whitespace; empty-after-trim is stored as `null`, not an empty string. **Not** validated against the `username`/`tokenName` structural whitelist (that whitelist rejects spaces and apostrophes, which a natural-language session name needs) — any character is allowed except control characters (`Cc`), which are stripped. Shown in the past-sessions list ahead of the date — see [user-experience.md → S7](./user-experience.md#s7--party). |
 | `startedAt`   | timestamp (with tz)   | When the session was started (manually or via auto-start on logging an alcoholic drink). |
 | `endedAt`     | timestamp \| null     | Null while active. Set when the session ends.                                        |
 | `endReason`   | enum \| null          | `manual` or `auto_timeout`. Null while active.                                       |
@@ -154,6 +161,14 @@ A discrete drinking occasion. There is at most one active session (`endedAt IS N
 #### Auto-end semantics
 
 A session auto-ends 12 hours after the most recently logged alcoholic drink within the session (or 12 hours after `startedAt` if none were logged). The check is run lazily — on app foreground, today-view open, drink log, and settings open — and `endedAt` is set to the correct 12-hour mark, **not** to the time the app happened to notice. This keeps history correct even after long absences.
+
+#### Zero-drink sessions are discarded, not saved
+
+If a session has **zero alcoholic drinks** (in-session or absorbed orphans) at the moment it ends — by either path, manual or `auto_timeout` — the session is discarded instead of kept: it is soft-deleted (`deletedAt` set) immediately and silently, with no confirmation prompt. This covers a session started and then abandoned with nothing ever logged. See [party-session.md → Ending a session](./party-session.md#ending-a-session).
+
+#### Deleting a session
+
+A user can explicitly delete an **ended** session (not the active one) from the past-sessions list or [S9](./user-experience.md#s9--party-session-log)'s ended-mode header. Deleting sets `deletedAt` (same soft-delete semantics as `DrinkEntry`) and detaches every drink that was attached to it: each affected `DrinkEntry.partySessionId` is set to `null`, turning the drinks back into orphans. The drinks themselves are never deleted and remain visible in history. See [party-session.md → Ending a session](./party-session.md#ending-a-session).
 
 ### PartySessionPrice
 
@@ -295,6 +310,8 @@ Display conversion to imperial (fl oz, lb, in, °F where relevant) happens at th
 
 When the user enters a value in imperial in the UI (e.g. "12 fl oz"), the UI converts to metric before writing to the database. Round-tripping (imperial → metric → imperial) may lose minor precision; this is acceptable.
 
+Volume has two distinct display precisions depending on context: single-drink / entry-field displays show the nearest **integer ml** (metric) / 1 decimal place (fl oz), while daily-progress headlines (today's total, daily goal, history totals) always show litres (metric) regardless of magnitude — there is no ml fallback below 1 000 ml — to **1 decimal place, trailing `.0` omitted for whole litres** (e.g. "0.2 L", "1.4 L", "2 L"); imperial always shows 1 decimal place. See the table below.
+
 ### Display precision
 
 These rules apply whenever a numeric value is shown in the UI, regardless of the user's unit preference.
@@ -303,7 +320,8 @@ All rounding uses **half-away-from-zero** (round 0.5 up for positive values).
 
 | Value | Metric display | Imperial display |
 | ----- | -------------- | ---------------- |
-| Volume | nearest integer ml | 1 decimal place (fl oz) |
+| Volume — single-drink / entry field | nearest integer ml | 1 decimal place (fl oz) |
+| Volume — daily-progress headline (today card, history totals) | always litres regardless of magnitude; 1 decimal place, trailing `.0` omitted for whole litres (e.g. "0.2 L", "1.4 L", "2 L") | always 1 decimal place (fl oz) |
 | Mass | 1 decimal place (kg) | 1 decimal place (lb) |
 | Height | 1 decimal place (cm) | nearest inch, split into ft + in |
 

@@ -60,6 +60,20 @@ class UserPreferencesTable extends Table {
   BoolColumn get approachingCapNotifEnabled => boolean()();
   BoolColumn get soberEstimateNotifEnabled => boolean()();
 
+  /// Schema v5 addition. When `true` (default), alcoholic presets are always
+  /// shown in the Manage Drinks screen (F14). When `false`, they're shown
+  /// only while a [PartySession] is active (`endedAt IS NULL`) — see
+  /// `ManageDrinksScreen`'s doc comment for the full rationale.
+  BoolColumn get alcoholicPresetsAlwaysVisible =>
+      boolean().withDefault(const Constant(true))();
+
+  /// Schema v6 addition. One of `manual` / `recentlyUsed` / `mostUsed`
+  /// (see `PresetSortMode` in `core`) — the sort mode shared by the Today
+  /// "Log a drink" grid and the S2 log-drink picker (features.md F14 §Sort
+  /// modes). Default `recentlyUsed`.
+  TextColumn get drinkSortMode =>
+      text().withDefault(const Constant('recentlyUsed'))();
+
   /// Epoch-milliseconds of when the local database was first created.
   /// Set once in beforeOpen; never changes.
   IntColumn get installedAt => integer()();

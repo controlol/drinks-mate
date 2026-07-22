@@ -1,3 +1,5 @@
+import 'package:core/core.dart';
+
 /// Pure-Dart domain model for per-device user preferences (singleton).
 ///
 /// All time-of-day values are integer hours (0–23). installedAt is a [DateTime]
@@ -22,6 +24,8 @@ class UserPreferences {
     required this.bacOnLockScreenEnabled,
     required this.approachingCapNotifEnabled,
     required this.soberEstimateNotifEnabled,
+    required this.alcoholicPresetsAlwaysVisible,
+    this.drinkSortMode = PresetSortMode.recentlyUsed,
     required this.installedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -71,6 +75,15 @@ class UserPreferences {
   final bool approachingCapNotifEnabled;
   final bool soberEstimateNotifEnabled;
 
+  /// When `true` (default), alcoholic presets are always shown in the Manage
+  /// Drinks screen. When `false`, they're shown only while a party session
+  /// is active — see `ManageDrinksScreen`'s doc comment (features.md F14).
+  final bool alcoholicPresetsAlwaysVisible;
+
+  /// Sort mode shared by the Today "Log a drink" grid and the S2 log-drink
+  /// picker (features.md F14 §Sort modes). Default `recentlyUsed`.
+  final PresetSortMode drinkSortMode;
+
   /// When the local database was first created on this device.
   final DateTime installedAt;
 
@@ -95,6 +108,8 @@ class UserPreferences {
     bool? bacOnLockScreenEnabled,
     bool? approachingCapNotifEnabled,
     bool? soberEstimateNotifEnabled,
+    bool? alcoholicPresetsAlwaysVisible,
+    PresetSortMode? drinkSortMode,
     DateTime? installedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -125,6 +140,9 @@ class UserPreferences {
           approachingCapNotifEnabled ?? this.approachingCapNotifEnabled,
       soberEstimateNotifEnabled:
           soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
+      alcoholicPresetsAlwaysVisible:
+          alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
+      drinkSortMode: drinkSortMode ?? this.drinkSortMode,
       installedAt: installedAt ?? this.installedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

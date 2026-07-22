@@ -13,7 +13,7 @@ The user can record a drink by:
 - Picking a **drink preset** (default or custom — see [F14](#f14--drink-presets-and-customisation)). The preset supplies name, beverage type, volume, ABV, icon, and optional price. The user can adjust volume or ABV before confirming.
 - Adjusting the **time** of consumption. Defaults to "now"; the user can adjust to log retroactively.
 
-Logging must be reachable in at most two taps from the home screen for the most common cases (e.g. tapping the "Glass of water" quick-log preset on the today view).
+Logging must be reachable in at most two taps from the home screen for the most common cases (e.g. tapping the "Glass of water" tile in the today view's "Quick Log" grid).
 
 **See also:** screen flow in [user-experience.md → S2 Log drink](./user-experience.md#s2--log-drink); each logged drink is stored as a [DrinkEntry](./data-model.md#drinkentry).
 
@@ -35,8 +35,8 @@ The home screen is reached via the **Today** tab in the bottom navigation. It sh
 - Two **stat cards** side-by-side under the progress card:
   - **7-day daily average** — mean daily intake across the last 7 completed days.
   - **Days on goal (last 7)** — count of days in the last 7 completed days where intake met or exceeded the daily goal, formatted as `n/7`.
-- A row of **quick-log shortcuts** — drink presets (see [F14](#f14--drink-presets-and-customisation)). Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time the row promotes the user's most-used presets to the top.
-- A **full-width "Log drink" button** persistent at the bottom of the screen, opening the full log-drink drawer (F1). This is the path for any drink not in the quick-log row, including new presets.
+- A **"Quick Log" section** — drink presets (see [F14](#f14--drink-presets-and-customisation)) shown as a vertically-scrolling grid of up to **8** preset tiles. Initially seeded with common defaults (e.g. Glass of water, Cup of coffee); over time re-ranks based on the selected sort mode. A **sort-mode dropdown** next to the section heading lets the user choose the ranking: Manual, Recently used (default), or Most used. See [F14 → Sort modes](#f14--drink-presets-and-customisation). On wider screens the section sits beside the progress card and stat cards instead of below them — see [user-experience.md → S1](./user-experience.md#s1--today-home) for the layout tiers.
+- A **full-width "Log drink" button** persistent at the bottom of the screen, opening the full log-drink drawer (F1). This is the path for any drink not in the "Quick Log" grid, including new presets.
 
 Today's drink list is **not** rendered inline on the Today screen. The user reaches it by tapping the progress card, which navigates to a dedicated Today Drinks Log screen where each entry can be edited or deleted. Edits and deletes recompute the progress card on return.
 
@@ -55,17 +55,17 @@ Both charts use the user's configured **day boundary** (default 05:00) for the p
 
 #### Alcohol charts (shown only when relevant)
 
-The alcohol charts appear only when the user has at least one `PartySession` whose window intersects the selected range. For users who never use Party Mode, history shows only the hydration charts.
-
-- **Alcoholic drinks per day** — bar chart of the count of alcoholic drink entries per day.
-- **Maximum estimated BAC per day** — bar chart of the daily peak of the BAC estimate, in g/L (with the user's cap drawn as a reference line if one is set, mmol/L shown alongside in tooltips). The peak is computed by sampling the BAC curve from the session(s) on that day; days with no session show no bar (not zero — to avoid implying the estimate ran and produced 0 g/L).
+- **Alcoholic drinks per day** — bar chart of the count of *all* alcoholic drink entries per day, whether logged inside a `PartySession` or as a standalone entry outside Party Mode (e.g. via the Today tab). It is visually a plain chart card like the hydration/drinks charts, not a section that's badged as "Party Mode only", so it counts everything a user would see for that day in the History day drill-down — no `partySessionId` condition. It appears whenever the range has at least one alcoholic entry (session-attached or not); for users who never log alcohol, history shows only the hydration charts.
+- **Maximum estimated BAC per day** — bar chart of the daily peak of the BAC estimate, in g/L (with the user's cap drawn as a reference line if one is set, mmol/L shown alongside in tooltips). The peak is computed by sampling the BAC curve from the session(s) on that day; days with no session show no bar (not zero — to avoid implying the estimate ran and produced 0 g/L). Unlike the drinks-per-day chart above, this one is inherently `PartySession`-scoped — BAC estimation requires a session's start time and weight/ABV curve, so it only appears when the user has at least one `PartySession` whose window intersects the selected range.
 - **Session overlay** — both alcohol charts get a shaded background band under the time-axis range covered by each `PartySession` (`startedAt` to `endedAt`). On the weekly chart this is a horizontal band spanning the relevant days; on the monthly chart it is a per-day marker under days touched by a session. The overlay makes the visual link between "session was active" and "BAC + drink counts" explicit at a glance.
 
 Maximum-BAC bars are clearly labelled as estimates everywhere they appear — same disclaimer rule as the live BAC display in [party-session.md → Important: this is an estimate](./party-session.md#important-this-is-an-estimate-not-a-measurement).
 
 #### Day drill-down
 
-Tapping any day on any chart drills into that day, showing total intake, goal, the drink list, and (when relevant) any `PartySession` summary including peak BAC, total alcoholic drinks, and meals logged.
+Tapping any day on any chart drills into that day, showing total intake, goal, the drink list, and (when relevant) any `PartySession` summary including peak BAC, total alcoholic drinks, and meals logged. That summary card is itself tappable and expands in place to show start/end time, total consumed alcohol in grams, and a static full-session BAC chart — see [user-experience.md → S3 History](./user-experience.md#s3--history) for the complete expanded-field list.
+
+Once inside the drill-down, swiping anywhere on the screen steps to the adjacent day (bounded to today's day-window going forward, and the earliest day with any data going back) — see [user-experience.md → S3 History](./user-experience.md#s3--history) for the full behaviour, bounds, and motion spec.
 
 **See also:** screen layout in [user-experience.md → S3 History](./user-experience.md#s3--history); charts are computed from [DrinkEntry](./data-model.md#drinkentry), [PartySession](./data-model.md#partysession), and [Meal](./data-model.md#meal) records.
 
@@ -98,6 +98,7 @@ The settings screen exposes every persisted preference. The canonical grouping, 
    - **Default drink** — reference to one of the user's drink presets; restricted to non-alcoholic. Defaults to the seeded "Glass of water" preset. Used by the notification quick-log action and as the "glass" unit in the per-reminder recommended-volume calculation.
 3. **Drinks**
    - **Manage drinks** — create, edit, hide, delete, and reorder drink presets (see F14).
+   - **Always show alcoholic drinks** toggle (default ON). When on, alcoholic presets are always listed in Manage Drinks. When off, they're listed there only while a Party Session is active. See [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
 4. **Profile** — used by the goal suggestion and the BAC algorithm in Party Mode. See [data-model.md → UserProfile](./data-model.md#userprofile).
    - Gender (male / female / unspecified).
    - Weight (kg).
@@ -123,7 +124,7 @@ The settings screen exposes every persisted preference. The canonical grouping, 
 
 ### F14 — Drink presets and customisation
 
-Drink presets are named, pre-configured shortcuts that combine a beverage type, a volume, an ABV, an optional price, and an icon + colour. They are the **primary way the user enters drinks** — both via quick-log on the today view and via the log-drink screen.
+Drink presets are named, pre-configured shortcuts that combine a beverage type, a volume, an ABV, an optional price, and an icon + colour. They are the **primary way the user enters drinks** — both via the "Quick Log" grid on the today view and via the log-drink screen.
 
 #### Default presets (shipped with the app)
 
@@ -131,27 +132,29 @@ Seeded into the local database on first launch. The user can edit, hide, or dele
 
 Non-alcoholic:
 
-| Name                   | Beverage type | Volume | Icon       |
-| ---------------------- | ------------- | ------ | ---------- |
-| Glass of water         | water         | 200 ml | glass      |
-| Bottle of water (0.5L) | water         | 500 ml | bottle     |
-| Can of water (0.33L)   | water         | 330 ml | can        |
-| Glass of tea           | tea           | 250 ml | mug        |
-| Cup of coffee          | coffee        | 200 ml | mug        |
-| Espresso               | coffee        | 30 ml  | small_cup  |
-| Glass of juice         | juice         | 200 ml | glass      |
-| Glass of lemonade      | soft_drink    | 200 ml | glass      |
-| Glass of milk          | milk          | 200 ml | glass      |
+| Name                      | Beverage type | Volume | Icon       |
+| ------------------------- | ------------- | ------ | ---------- |
+| Glass of water            | water         | 200 ml | glass      |
+| Bottle of water (0.5L)    | water         | 500 ml | bottle     |
+| Can of water (0.33L)      | water         | 330 ml | can        |
+| Glass of tea              | tea           | 250 ml | mug        |
+| Cup of coffee             | coffee        | 200 ml | mug        |
+| Espresso                  | coffee        | 30 ml  | small_cup  |
+| Glass of juice            | juice         | 200 ml | glass      |
+| Glass of lemonade         | soft_drink    | 200 ml | glass      |
+| Glass of milk             | milk          | 200 ml | glass      |
 | Alcohol-free beer (0.33L) | non_alcoholic_beer | 330 ml | beer_glass |
 
-Alcoholic (visible only when Party Mode is active — see [party-session.md](./party-session.md)):
+Alcoholic:
 
-| Name                   | Beverage type | Volume | ABV | Icon       |
-| ---------------------- | ------------- | ------ | --- | ---------- |
+These are always selectable via the Today "Quick Log" grid and the S2 log-drink picker regardless of session state, matching [party-session.md → Logging alcohol when no session is active](./party-session.md#logging-alcohol-when-no-session-is-active) ("alcohol can always be logged; the app just prompts to start a session"). The **Manage Drinks** screen (below) is the only screen that ever hides them, and only when the user has turned off the "Always show alcoholic drinks" setting (default ON) — see [data-model.md → UserPreferences](./data-model.md#userpreferences) `alcoholicPresetsAlwaysVisible`.
+
+| Name                   | Beverage type | Volume | ABV | Icon        |
+| ---------------------- | ------------- | ------ | --- | ----------- |
 | Small beer (0.2L)      | beer          | 200 ml | 5%  | plastic_cup |
-| Beer (0.33L)           | beer          | 330 ml | 5%  | beer_glass |
-| Glass of wine          | wine          | 175 ml | 12% | wine_glass |
-| Shot of spirit         | spirit        | 30 ml  | 40% | shot_glass |
+| Beer (0.33L)           | beer          | 330 ml | 5%  | beer_glass  |
+| Glass of wine          | wine          | 175 ml | 12% | wine_glass  |
+| Shot of spirit         | spirit        | 30 ml  | 40% | shot_glass  |
 
 The 200 ml beer reflects the typical festival pour, which is smaller than the standard café glass.
 
@@ -177,10 +180,26 @@ Icons use a two-shade structure (silhouette + inner-detail) both rendered from t
 
 #### Where presets appear
 
-- **Today view (S1):** the quick-log row shows a small selection of presets — the user's most-used ones, with seeded defaults until usage data accumulates.
-- **Log-drink screen (S2):** the full preset list is shown as the primary picker. Tapping a preset pre-fills volume + beverage type + ABV; the user can still tweak volume or ABV before confirming.
-- **Settings:** a "Manage drinks" section lets the user reorder, edit, hide, delete, and create presets.
+- **Today view (S1):** the "Quick Log" grid shows up to **8** presets — ranked by the selected sort mode (see below), with seeded defaults until usage data accumulates.
+- **Log-drink screen (S2):** the full preset list is shown as the primary picker, ordered by the same sort mode as the Today grid. Tapping a preset pre-fills volume + beverage type + ABV; the user can still tweak volume or ABV before confirming.
+- **Settings:** a "Manage drinks" section lets the user reorder, edit, hide, delete, and create presets. This reorder action defines the **Manual** sort mode's order.
 - **Notification quick-log:** the user's chosen default preset is logged when the notification action is tapped.
+
+#### Sort modes (Today grid & S2 picker)
+
+One **sort mode** — a single `drinkSortMode` preference — drives two surfaces: the **Today "Quick Log" grid** (S1), which shows its top **8** presets by this ranking, and the **S2 log-drink picker's full list**, which shows every visible preset in the same ranking. Each surface has its own dropdown next to its own heading ("Quick Log" for S1's grid header, "Log a drink" for S2's Phase 1 header — deliberately not renamed to match, see [user-experience.md → S1](./user-experience.md#s1--today-home)); either one changes the shared preference, so picking a mode on one surface re-ranks the other too. Three modes:
+
+1. **Manual** — the order set on the "Manage drinks" screen (drag-to-reorder), i.e. `DrinkPreset.sortOrder` ascending; the grid shows the first 8.
+2. **Recently used** (**default**) — most-recently-logged preset first, based on the most recent non-deleted `DrinkEntry` attributed to each preset (`consumedAt`, descending). Presets never logged rank after every used preset, ordered by `sortOrder` among themselves.
+3. **Most used** — highest count of non-deleted `DrinkEntry` records attributed to the preset **within the trailing 30 days** (relative to now) first. Presets with zero uses in the window rank after every used preset, ordered by `sortOrder` among themselves.
+
+Both modes key off **`consumedAt`** (when the drink was drunk), not `createdAt` (when the entry was logged) — this matches every other stat in the app (daily totals, history charts, pace), which are all bucketed by `consumedAt`. A retroactively-backdated entry therefore does not jump a preset to the top of "Recently used" just because the user happened to log it today; it slots into the ranking as if it had been logged at the time it was consumed, and may already sit outside the 30-day "Most used" window.
+
+**Ties** — equal last-used timestamp in mode 2, or equal 30-day usage count in mode 3 — are broken by `sortOrder` ascending, the same order used by mode 1. This also defines the cold-start behaviour: with no logged drinks at all, every preset ties at zero, so all three modes degrade to the manual/seeded order (i.e. the first 8 by `sortOrder`) until the user starts logging.
+
+Hidden presets (`isHidden = true`) never appear in either surface, regardless of sort mode. The Today grid's count of **8** is a fixed constant — it does not grow on wider responsive tiers; only the column count changes (see [user-experience.md → Responsive layout](./user-experience.md#responsive-layout)), so more columns just mean fewer, wider rows for the same 8 presets.
+
+**See also:** [data-model.md → DrinkEntry `presetId`](./data-model.md#drinkentry) for how usage is attributed to a preset without compromising log immutability, and [→ UserPreferences `drinkSortMode`](./data-model.md#userpreferences) for where the chosen mode is persisted.
 
 #### Storage and historical accuracy
 
