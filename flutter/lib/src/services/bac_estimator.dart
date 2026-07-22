@@ -114,7 +114,9 @@ BacEstimate estimateSessionBac({
 /// `consumedAt` (S9's edit affordance allows this, e.g. correcting a
 /// mis-picked time) must not be pooled in before its time, or the projected
 /// sober time would disagree with the current BAC estimate about what has
-/// actually been "consumed" as of [at].
+/// actually been "consumed" as of [at]. The `birthDate` precondition is
+/// checked against the raw (unfiltered) list, so an incomplete profile
+/// still throws even when every entry happens to be future-dated.
 ///
 /// Requires [profile.birthDate] to be set — same precondition as
 /// [estimateSessionBac].
@@ -124,14 +126,17 @@ DateTime? projectedSoberTime({
   required List<Meal> meals,
   required DateTime at,
 }) {
-  final consumedByAt =
-      alcoholicEntries.where((e) => !e.consumedAt.isAfter(at)).toList();
-  if (consumedByAt.isEmpty) return null;
+  if (alcoholicEntries.isEmpty) return null;
 
   final birthDateString = profile.birthDate;
   if (birthDateString == null) {
     throw StateError('UserProfile.birthDate is required to estimate BAC.');
   }
+
+  final consumedByAt =
+      alcoholicEntries.where((e) => !e.consumedAt.isAfter(at)).toList();
+  if (consumedByAt.isEmpty) return null;
+
   final birthDate = DateTime.parse(birthDateString);
   final gender = _genderFromProfile(profile.gender);
   final weightKg = profile.weightKg ?? 70.0;

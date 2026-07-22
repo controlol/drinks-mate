@@ -315,6 +315,28 @@ void main() {
         throwsStateError,
       );
     });
+
+    test(
+        'throws StateError when profile.birthDate is null even if every '
+        'entry is future-dated relative to `at` (birthDate precondition '
+        'must be checked before the consumedAt <= at filter, not after)', () {
+      final at = DateTime.utc(2026, 3, 1);
+      expect(
+        () => projectedSoberTime(
+          profile: _profile(birthDate: null),
+          alcoholicEntries: [
+            _entry(
+              volumeMl: 500,
+              abvPercent: 5.0,
+              consumedAt: at.add(const Duration(hours: 1)),
+            ),
+          ],
+          meals: const [],
+          at: at,
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group(
