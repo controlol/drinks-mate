@@ -26,10 +26,10 @@
 // Worked-example fixture (design/party-session.md §Worked example): 75 kg,
 // 180 cm, 30-year-old male. Two simultaneous 250 ml 5% ABV beers are
 // modelled as one 500 ml 5% ABV entry with the same total alcohol dose —
-// same convention documented at length in
-// flutter/test/widgets/party_screen_test.dart's file-header comment (two
-// independent 250 ml entries would decay independently and diverge from the
-// worked example's combined-dose arithmetic once any time has elapsed).
+// same convention documented in
+// flutter/test/widgets/party_screen_test.dart's file-header comment: since
+// estimateSessionBac pools same-instant entries into one running total,
+// this is just the simpler fixture, not a behavioral requirement.
 import 'package:core/core.dart';
 import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_entry.dart';
