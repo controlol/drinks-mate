@@ -163,7 +163,9 @@ The rule is applied **per orphan drink**:
 - If `t_zero > startedAt` of the new session, the orphan still has residual BAC and is absorbed: the drink's `consumedAt` falls within the session's `[startedAt, endedAt)` window for BAC computation, and it appears in the session's drink list ([user-experience.md → S9 Party Session Log](./user-experience.md#s9--party-session-log)).
 - Otherwise the orphan has fully decayed and stays orphaned. It remains visible in history but does not contribute to the new session.
 
-`BAC_initial / β` is just the time the model says it takes that drink's contribution to reach 0 from its peak. We do not need to track partial decay separately — the existing per-drink summation in Step 5 handles a partially-decayed drink correctly.
+`BAC_initial / β` is just the time the model says it takes that drink's contribution to reach 0 from its peak, used here only as the absorb/discard cutoff. We do not need to track partial decay separately for this check — once absorbed, the drink's `consumedAt`/`BAC_initial` feed into the pooled Step 5 calculation like any other session drink, which handles a partially-decayed drink correctly.
+
+This per-orphan `t_zero` check is itself a per-drink-independent-decay approximation — the same kind Step 5 deliberately moved away from — applied only to decide absorb-vs-discard for orphans considered one at a time. With two or more overlapping orphans (e.g. logged close together, each below the discard threshold alone but still summing to residual BAC in the now-canonical pooled model), this check can discard an orphan whose alcohol a pooled read of the pre-session drinks would still count. Known, accepted approximation for Phase 1, not something Step 5's pooling fix addresses — revisit if orphan absorption proves to under-count in practice.
 
 #### Implications
 
@@ -437,7 +439,9 @@ For a single drink consumed at time `t_drink`:
 BAC(t) = max(0, BAC_initial − β × (t − t_drink))
 ```
 
-For multiple drinks, sum each drink's contribution at the current time. Drinks consumed earlier may already be fully eliminated and contribute 0.
+For multiple drinks, the body eliminates alcohol at one fixed rate `β` regardless of how many drinks contributed to it — fold every drink into a single running pool rather than summing each drink's independently-decaying contribution. Process drinks in consumption order: decay the pool at `β` for the elapsed time since the previous drink (floored at 0), then add the new drink's own `BAC_initial`; the current estimate is that pool decayed at `β` from the last drink to now (floored at 0).
+
+Summing each drink's contribution independently — a natural-looking simplification — over-eliminates: whenever `N` drinks are each still individually above 0, the effective elimination rate becomes `N × β` instead of the fixed `β` the body actually uses, so a dense session (many drinks close together) crashes to an implausible `0 g/L` while drinking is still ongoing. The pooled model avoids this. The two models agree whenever there's no overlap between drinks — either they're logged at the exact same instant (zero elapsed decay to disagree over, as in the two-beer worked example below), or each drink's contribution has already fully decayed to 0 before the next is logged (nothing left to double-eliminate) — and diverge only in between, while more than one drink's contribution is still positive at once.
 
 Phase 1 uses an **immediate-absorption** model: each drink's alcohol is treated as entering the bloodstream at `consumedAt`, with the meal modifier (see "Meals") capturing the bulk of food's effect on peak BAC. A more physiologically accurate delayed-absorption model would require additional inputs per drink (drink type beyond ABV, sipping rate, recent food state) that hurt the fast-logging goal and aren't justified for an estimate that already carries strong disclaimers. Worth revisiting in a later phase if the existing inputs prove insufficient.
 

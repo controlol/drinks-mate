@@ -50,6 +50,7 @@ BacChartSeries? buildBacChartSeries({
     profile: profile,
     alcoholicEntries: alcoholicEntries,
     meals: meals,
+    at: now,
   );
   if (soberTime == null) return null;
 
@@ -113,10 +114,12 @@ List<BacChartPoint> _samplePoints({
 /// consumed by [t] — this must hold for both the actual and projected
 /// segments. An entry's `consumedAt` is not guaranteed to be `<= now`: S9's
 /// edit affordance allows setting a future `consumedAt` (e.g. correcting a
-/// mis-picked time), and [estimateSessionBac] clamps a negative
-/// `hoursSince` to 0 rather than excluding the entry, so an unfiltered call
-/// would let a not-yet-"consumed" entry inflate an earlier sample at its
-/// full undecayed value (mirrors history_bac_service.dart's `_sampleAt`).
+/// mis-picked time). [estimateSessionBac] (via `sessionBacAtTime`) already
+/// excludes entries whose `consumedAt` is after `at`, but this pre-filter is
+/// still applied explicitly so the same entry list can also be folded
+/// through [sessionSoberTime] (which has no such cutoff) without a
+/// future-dated entry ending up counted there but not here (mirrors
+/// history_bac_service.dart's `_sampleAt`).
 double _gPerLAt(
   DateTime t,
   UserProfile profile,

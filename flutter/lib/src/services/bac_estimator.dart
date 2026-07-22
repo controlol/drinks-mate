@@ -6,9 +6,8 @@ import '../models/user_profile.dart';
 
 /// Result of estimating a Party Session's current BAC (party-session.md
 /// §BAC estimation algorithm) — orchestrates the pure `core` functions over
-/// a session's alcoholic entries and meals, mirroring the per-drink loop
-/// already used by [PartySessionRepository.orphanAbsorption] for the same
-/// underlying math.
+/// a session's alcoholic entries and meals, pooling every drink's
+/// contribution into one running elimination total ([sessionBacAtTime]).
 class BacEstimate {
   const BacEstimate({
     required this.gPerL,
@@ -75,24 +74,22 @@ BacEstimate estimateSessionBac({
   final heightCm = profile.heightCm;
   final usedWatson = heightCm != null;
 
-  var totalGPerL = 0.0;
-  for (final entry in alcoholicEntries) {
-    final bacInitial = _bacInitialForEntry(
-      birthDate: birthDate,
-      gender: gender,
-      weightKg: weightKg,
-      heightCm: heightCm,
-      entry: entry,
-      meals: meals,
-    );
-    // Clamp to >=0: a drink logged with a future consumedAt (e.g. a stray
-    // clock skew or a mis-set time picker) must never look "not yet peaked"
-    // and inflate the estimate above its initial value.
-    final hoursSince = (at.difference(entry.consumedAt).inMicroseconds /
-            Duration.microsecondsPerHour)
-        .clamp(0.0, double.infinity);
-    totalGPerL += bacAtTime(bacInitial: bacInitial, hoursSince: hoursSince);
-  }
+  final drinks = alcoholicEntries
+      .map(
+        (entry) => (
+          consumedAt: entry.consumedAt,
+          bacInitial: _bacInitialForEntry(
+            birthDate: birthDate,
+            gender: gender,
+            weightKg: weightKg,
+            heightCm: heightCm,
+            entry: entry,
+            meals: meals,
+          ),
+        ),
+      )
+      .toList();
+  final totalGPerL = sessionBacAtTime(drinks: drinks, at: at);
 
   var bmiWarning = false;
   if (usedWatson) {
@@ -109,17 +106,17 @@ BacEstimate estimateSessionBac({
   );
 }
 
-/// Projected time at which the session's total BAC returns to 0 g/L, or
-/// `null` if there are no alcoholic entries yet.
+/// Projected time at which the session's pooled BAC ([sessionBacAtTime])
+/// returns to 0 g/L, or `null` if there are no alcoholic entries yet.
 ///
-/// Every drink's contribution decays linearly at β and floors at 0
-/// independently ([bacAtTime]); the session-wide estimate is their sum, so it
-/// only reaches 0 once its slowest-decaying (latest `t_zero`) drink does —
-/// hence the `reduce`-by-latest below rather than summing decay times.
-/// Mirrors the per-drink `t_zero` used by
-/// [PartySessionRepository.orphanAbsorption] for the same zero-order
-/// elimination model (notifications.md §Party Mode notifications:
-/// sober-estimate trigger).
+/// [alcoholicEntries] is filtered to entries with `consumedAt <= at` before
+/// folding, same as [estimateSessionBac] — an entry logged with a future
+/// `consumedAt` (S9's edit affordance allows this, e.g. correcting a
+/// mis-picked time) must not be pooled in before its time, or the projected
+/// sober time would disagree with the current BAC estimate about what has
+/// actually been "consumed" as of [at]. The `birthDate` precondition is
+/// checked against the raw (unfiltered) list, so an incomplete profile
+/// still throws even when every entry happens to be future-dated.
 ///
 /// Requires [profile.birthDate] to be set — same precondition as
 /// [estimateSessionBac].
@@ -127,6 +124,7 @@ DateTime? projectedSoberTime({
   required UserProfile profile,
   required List<DrinkEntry> alcoholicEntries,
   required List<Meal> meals,
+  required DateTime at,
 }) {
   if (alcoholicEntries.isEmpty) return null;
 
@@ -134,32 +132,32 @@ DateTime? projectedSoberTime({
   if (birthDateString == null) {
     throw StateError('UserProfile.birthDate is required to estimate BAC.');
   }
+
+  final consumedByAt =
+      alcoholicEntries.where((e) => !e.consumedAt.isAfter(at)).toList();
+  if (consumedByAt.isEmpty) return null;
+
   final birthDate = DateTime.parse(birthDateString);
   final gender = _genderFromProfile(profile.gender);
   final weightKg = profile.weightKg ?? 70.0;
   final heightCm = profile.heightCm;
 
-  DateTime? latestTZero;
-  for (final entry in alcoholicEntries) {
-    final bacInitial = _bacInitialForEntry(
-      birthDate: birthDate,
-      gender: gender,
-      weightKg: weightKg,
-      heightCm: heightCm,
-      entry: entry,
-      meals: meals,
-    );
-    final tZero = entry.consumedAt.add(
-      Duration(
-        microseconds:
-            (hoursToZero(bacInitial) * Duration.microsecondsPerHour).round(),
-      ),
-    );
-    if (latestTZero == null || tZero.isAfter(latestTZero)) {
-      latestTZero = tZero;
-    }
-  }
-  return latestTZero;
+  final drinks = consumedByAt
+      .map(
+        (entry) => (
+          consumedAt: entry.consumedAt,
+          bacInitial: _bacInitialForEntry(
+            birthDate: birthDate,
+            gender: gender,
+            weightKg: weightKg,
+            heightCm: heightCm,
+            entry: entry,
+            meals: meals,
+          ),
+        ),
+      )
+      .toList();
+  return sessionSoberTime(drinks: drinks);
 }
 
 double _bacInitialForEntry({

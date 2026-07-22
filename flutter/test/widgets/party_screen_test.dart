@@ -28,18 +28,12 @@
 // flutter/packages/core/test/bac_test.dart and
 // flutter/test/party_session_repository_test.dart. The worked example's two
 // simultaneous 250 ml beers are modelled as a single 500 ml entry with the
-// same total alcohol dose — party_session_repository_test.dart's "orphan
-// absorption" group already documents why: bac_estimator.dart's
-// estimateSessionBac() computes each entry's BAC_initial from *that entry's
-// own* alcohol grams and then eliminates each entry's contribution
-// independently (clamped to >=0) before summing. At t=0 this collapses to the
-// same total as the worked example's combined-dose arithmetic (linear in
-// grams), but at t=2h it would NOT: two independent 9.86 g contributions
-// (BAC_initial ≈ 0.180 each) individually reach zero at ≈1.2 h, so summing
-// them at 2h would render 0.00 g/L, not the ≈0.06 g/L the worked example
-// describes for a single combined 19.73 g dose. Using one 500 ml entry avoids
-// that divergence and reproduces the doc's numbers under the real
-// implementation.
+// same total alcohol dose: BAC_initial is linear in alcohol grams, and
+// estimateSessionBac pools same-instant entries into one running total
+// (party-session.md §BAC estimation algorithm Step 5), so two 250 ml entries
+// logged at the same consumedAt produce the exact same series, at every
+// point in time, as one 500 ml entry — the single entry is just the simpler
+// fixture, not a behavioral requirement.
 
 import 'dart:async';
 

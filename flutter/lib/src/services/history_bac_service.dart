@@ -418,14 +418,14 @@ double? _maxBacForWindow({
 /// Samples the estimated BAC at instant [t], counting only entries already
 /// consumed by [t].
 ///
-/// [estimateSessionBac] clamps `hoursSince` to `>= 0` for each entry it's
-/// given (a guard against clock-skew, not "this drink hasn't happened yet")
-/// — so passing it a session's *entire* entry list at an early sample point
-/// would double-count not-yet-consumed drinks at their full undecayed peak,
-/// summing peaks from drinks that never coexisted in the body. Filtering to
-/// `consumedAt <= t` here is what makes sampling at a past instant correct.
-/// Meals need no equivalent filter — `mealModifierSingle` already returns
-/// 1.00 (no effect) for a meal with `deltaHours < 0`.
+/// [estimateSessionBac] (via `sessionBacAtTime`) already excludes entries
+/// whose `consumedAt` is after the `at` it's given, but filtering to
+/// `consumedAt <= t` here first keeps this call and callers of
+/// [sessionSoberTime] (which has no such cutoff of its own) in agreement
+/// about what "already consumed by `t`" means, rather than relying on each
+/// downstream function's own filtering being kept in sync by hand. Meals
+/// need no equivalent filter — `mealModifierSingle` already returns 1.00 (no
+/// effect) for a meal with `deltaHours < 0`.
 double _sampleAt(
   DateTime t,
   UserProfile profile,
