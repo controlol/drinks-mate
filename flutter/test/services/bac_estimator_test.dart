@@ -94,6 +94,7 @@ void main() {
         profile: _profile(),
         alcoholicEntries: const [],
         meals: const [],
+        at: DateTime.utc(2026, 3, 1),
       );
       expect(result, isNull);
     });
@@ -131,6 +132,7 @@ void main() {
             _entry(volumeMl: 500, abvPercent: 5.0, consumedAt: consumedAt),
           ],
           meals: const [],
+          at: consumedAt,
         );
         expect(actual, expected);
         // Human-checkable anchor for the exact value asserted above.
@@ -142,13 +144,15 @@ void main() {
     },
   );
 
-  group('projectedSoberTime — multiple drinks: MAX t_zero wins', () {
+  group('projectedSoberTime — multiple drinks: pooled, not per-drink max', () {
     // Three drinks, same 75 kg male / no-height (Widmark) profile, logged in
     // list order A, B, C (A earliest consumedAt, C latest). B — the *middle*
     // entry, neither first nor last — has by far the largest dose (1000 ml
-    // 40% spirit) and so the latest t_zero, well after both A and C. This
-    // proves the result is a MAX-by-t_zero reduction, not "first" or "last"
-    // in either list-position or consumedAt order.
+    // 40% spirit). Under the pooled model (party-session.md §BAC estimation
+    // algorithm Step 5; core's sessionSoberTime), the session goes sober once
+    // the *shared* pool empties after the last drink, not per-drink — so the
+    // expected value is built the same way projectedSoberTime documents it:
+    // via core's own sessionSoberTime, not a hand-picked per-drink t_zero.
     final consumedAtA = DateTime.utc(2026, 3, 1, 8, 0);
     final consumedAtB = DateTime.utc(2026, 3, 1, 12, 0);
     final consumedAtC = DateTime.utc(2026, 3, 1, 18, 0);
@@ -177,15 +181,26 @@ void main() {
     final tZeroB = _expectedTZero(consumedAt: consumedAtB, bacInitial: bacB);
     final tZeroC = _expectedTZero(consumedAt: consumedAtC, bacInitial: bacC);
 
+    final expectedPooled = sessionSoberTime(
+      drinks: [
+        (consumedAt: consumedAtA, bacInitial: bacA),
+        (consumedAt: consumedAtB, bacInitial: bacB),
+        (consumedAt: consumedAtC, bacInitial: bacC),
+      ],
+    );
+
     test(
-        'sanity: B has the latest t_zero, despite being neither first nor '
-        'last in consumedAt order among the three', () {
-      expect(tZeroB.isAfter(tZeroA), isTrue);
-      expect(tZeroB.isAfter(tZeroC), isTrue);
+        'sanity: the pooled sober time is later than every individual '
+        "drink's own independent t_zero — B's huge dose keeps the shared "
+        'pool going well past when any drink alone would have decayed', () {
+      expect(expectedPooled!.isAfter(tZeroA), isTrue);
+      expect(expectedPooled.isAfter(tZeroB), isTrue);
+      expect(expectedPooled.isAfter(tZeroC), isTrue);
     });
 
-    test('projectedSoberTime returns t_zero(B), not t_zero(A) or t_zero(C)',
-        () {
+    test(
+        'projectedSoberTime matches core\'s sessionSoberTime for the same '
+        'drinks', () {
       final actual = projectedSoberTime(
         profile: _profile(heightCm: null),
         alcoholicEntries: [
@@ -209,10 +224,9 @@ void main() {
           ),
         ],
         meals: const [],
+        at: consumedAtC,
       );
-      expect(actual, tZeroB);
-      expect(actual, isNot(tZeroA));
-      expect(actual, isNot(tZeroC));
+      expect(actual, expectedPooled);
     });
   });
 
@@ -264,6 +278,7 @@ void main() {
           _entry(volumeMl: 500, abvPercent: 5.0, consumedAt: consumedAt),
         ],
         meals: [_meal(size: MealSize.medium, eatenAt: mealEatenAt)],
+        at: consumedAt,
       );
       final actualNoMeal = projectedSoberTime(
         profile: _profile(heightCm: null),
@@ -271,6 +286,7 @@ void main() {
           _entry(volumeMl: 500, abvPercent: 5.0, consumedAt: consumedAt),
         ],
         meals: const [],
+        at: consumedAt,
       );
 
       expect(actualWithMeal, expectedWithMeal);
@@ -294,6 +310,7 @@ void main() {
             ),
           ],
           meals: const [],
+          at: DateTime.utc(2026, 3, 1),
         ),
         throwsStateError,
       );

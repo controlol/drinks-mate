@@ -182,6 +182,7 @@ void main() {
             profile: _profile(),
             alcoholicEntries: entries,
             meals: const [],
+            at: _workedConsumedAt,
           )!;
           expect(
             series!.axisEnd,

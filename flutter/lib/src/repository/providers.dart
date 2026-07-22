@@ -777,13 +777,12 @@ final partyNotificationSyncProvider = Provider<void>((ref) {
     meals: meals,
     at: now,
   );
-  final soberTime = alcoholicEntries.isEmpty
-      ? null
-      : projectedSoberTime(
-          profile: profile,
-          alcoholicEntries: alcoholicEntries,
-          meals: meals,
-        );
+  final soberTime = projectedSoberTime(
+    profile: profile,
+    alcoholicEntries: alcoholicEntries,
+    meals: meals,
+    at: now,
+  );
 
   unawaited(
     service.sync(

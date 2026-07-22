@@ -115,6 +115,78 @@ double gPerLToMmol(double gPerL) => gPerL * gPerLToMmolPerL;
 double hoursToZero(double bacInitial) =>
     bacInitial / eliminationBetaGPerLPerHour;
 
+/// One drink's already meal-modified initial BAC ([bacInitialForDrink]) and
+/// the time it was consumed — the input unit for [sessionBacAtTime] and
+/// [sessionSoberTime].
+typedef SessionDrink = ({DateTime consumedAt, double bacInitial});
+
+/// Steps 4–5 (session total) — current BAC across every drink in a session,
+/// under a single shared elimination pool rather than per-drink independent
+/// decay.
+///
+/// The body eliminates alcohol at one fixed rate β regardless of how many
+/// drinks contributed to it, so [drinks] are folded in consumption order
+/// into one running total: each drink adds its own [bacInitial] to the
+/// pool, and the pool decays at β for the elapsed time between additions,
+/// floored at 0. Summing each drink's own independently-decaying
+/// [bacAtTime] instead over-eliminates by β for every additional drink
+/// still "active" at once — the whole-body rate gets multiplied by however
+/// many separate drinks haven't individually decayed to 0 yet, which is not
+/// how elimination works (party-session.md §BAC estimation algorithm
+/// Step 5).
+///
+/// Drinks after [at] are ignored (a drink consumed exactly at [at] counts in
+/// full), matching "already-consumed drinks only" elsewhere in the session
+/// BAC calculation. [drinks] need not be
+/// pre-sorted.
+double sessionBacAtTime({
+  required Iterable<SessionDrink> drinks,
+  required DateTime at,
+}) {
+  final sorted = drinks.where((d) => !d.consumedAt.isAfter(at)).toList()
+    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
+  if (sorted.isEmpty) return 0.0;
+
+  var pool = 0.0;
+  var last = sorted.first.consumedAt;
+  for (final drink in sorted) {
+    pool = _decay(pool, last, drink.consumedAt);
+    pool += drink.bacInitial;
+    last = drink.consumedAt;
+  }
+  return _decay(pool, last, at);
+}
+
+/// Projected time the session's pooled BAC ([sessionBacAtTime]) returns to
+/// 0 g/L, or `null` if [drinks] is empty. Folds every drink into the same
+/// running pool as [sessionBacAtTime], then projects [hoursToZero] forward
+/// from the final drink's post-fold state — the session goes sober once,
+/// when that shared pool empties, not per-drink.
+DateTime? sessionSoberTime({required Iterable<SessionDrink> drinks}) {
+  final sorted = drinks.toList()
+    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
+  if (sorted.isEmpty) return null;
+
+  var pool = 0.0;
+  var last = sorted.first.consumedAt;
+  for (final drink in sorted) {
+    pool = _decay(pool, last, drink.consumedAt);
+    pool += drink.bacInitial;
+    last = drink.consumedAt;
+  }
+  return last.add(
+    Duration(
+      microseconds: (hoursToZero(pool) * Duration.microsecondsPerHour).round(),
+    ),
+  );
+}
+
+double _decay(double bac, DateTime from, DateTime to) {
+  final hours =
+      to.difference(from).inMicroseconds / Duration.microsecondsPerHour;
+  return math.max(0.0, bac - eliminationBetaGPerLPerHour * hours);
+}
+
 /// Step 2/3 combined — picks Watson (height available) or Widmark (height
 /// missing) and returns that drink's initial BAC, g/L. Model choice is
 /// data-driven, never user-selectable (party-session.md §BAC estimation
