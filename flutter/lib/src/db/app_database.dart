@@ -401,6 +401,20 @@ class AppDatabase extends _$AppDatabase {
     return row?.consumedAt;
   }
 
+  /// Reactive stream of the earliest live entry's [consumedAt], across every
+  /// beverage type. Null if the user has never logged a drink.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3): the
+  /// earliest day-window with any data to show. Reactive (not one-shot) so
+  /// the bound can never go stale relative to a backdated entry — S3 itself
+  /// lets a drink be moved to an earlier calendar day with no lower bound.
+  Stream<DateTime?> watchEarliestDrinkConsumedAt() => (select(drinkEntries)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.consumedAt)])
+        ..limit(1))
+      .watchSingleOrNull()
+      .map((row) => row?.consumedAt);
+
   /// One-shot sum of [volumeMl] for live entries within [startUtc, endUtc)
   /// whose [beverageType] is in [allowedTypes]. Same filter as
   /// [watchTotalMlInWindow], but a single read for scheduling-time queries
@@ -771,6 +785,19 @@ class AppDatabase extends _$AppDatabase {
         ..where((t) => t.endedAt.isNotNull() & t.deletedAt.isNull())
         ..orderBy([(t) => OrderingTerm.desc(t.endedAt)]))
       .watch();
+
+  /// Reactive stream of the earliest live session's [startedAt], regardless
+  /// of ended state. Null if no session has ever been started.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3): the
+  /// earliest day-window with any data to show. Reactive (not one-shot) for
+  /// the same staleness reason as [watchEarliestDrinkConsumedAt].
+  Stream<DateTime?> watchEarliestSessionStartedAt() => (select(partySessions)
+        ..where((t) => t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.asc(t.startedAt)])
+        ..limit(1))
+      .watchSingleOrNull()
+      .map((row) => row?.startedAt);
 
   Future<void> insertPartySession(PartySessionsCompanion companion) =>
       into(partySessions).insert(companion);

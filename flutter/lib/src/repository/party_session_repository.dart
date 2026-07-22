@@ -903,6 +903,13 @@ class PartySessionRepository {
     );
   }
 
+  /// Reactive stream of the earliest session's `startedAt`, regardless of
+  /// ended state, or null if no session has ever been started.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3).
+  Stream<DateTime?> watchEarliestSessionStartedAt() =>
+      _db.watchEarliestSessionStartedAt();
+
   /// Resolves the price to snapshot onto a [DrinkEntry] for [preset] within
   /// [session], applying both pricing rules in one place so callers never
   /// duplicate this logic:

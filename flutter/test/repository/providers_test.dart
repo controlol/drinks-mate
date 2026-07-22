@@ -17,14 +17,30 @@
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/beverage_type.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 import 'package:drinks_mate/src/services/notification_service.dart';
 import 'package:drinks_mate/src/services/reminder_scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+// A minimal non-alcoholic water preset for use with logDrink() below —
+// mirrors the _waterPreset fixture used throughout drinks_repository_test.dart.
+const _waterPreset = DrinkPreset(
+  id: 'test-water-preset',
+  name: 'Test Water',
+  beverageType: BeverageType.water,
+  volumeMl: 300,
+  iconKey: 'glass',
+  iconColor: '#3b82f6',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 99,
+);
 
 /// Counts [reschedule] calls instead of exercising real scheduling logic —
 /// the provider-rebuild count is what this test cares about, not
@@ -48,7 +64,7 @@ class _CountingReminderScheduler extends ReminderScheduler {
   }
 }
 
-UserPreferences _prefs() {
+UserPreferences _prefs({DateTime? installedAt}) {
   final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   return UserPreferences(
     id: kUserPreferencesId,
@@ -67,7 +83,7 @@ UserPreferences _prefs() {
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
     alcoholicPresetsAlwaysVisible: true,
-    installedAt: epoch,
+    installedAt: installedAt ?? epoch,
     createdAt: epoch,
     updatedAt: epoch,
   );
@@ -190,6 +206,190 @@ void main() {
       reason: 'a genuine day-boundary rollover must re-run reschedule() '
           'even when the total happens to repeat, or the once-daily '
           'inactivity reminder never gets placed for the new day',
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // historyEarliestDayBoundProvider (#128) — the History day drill-down's
+  // backward swipe bound: the earliest of DrinkEntry.consumedAt,
+  // PartySession.startedAt, and UserPreferences.installedAt, always local.
+  // ---------------------------------------------------------------------------
+
+  group('historyEarliestDayBoundProvider', () {
+    /// Builds a container wired to real in-memory repositories (so the
+    /// provider exercises its actual DB round trips, not fakes) and a fixed
+    /// [installedAt]. Callers seed drinks/sessions directly against [db]'s
+    /// repositories before reading the provider.
+    ({
+      ProviderContainer container,
+      DrinksRepository drinksRepo,
+      PartySessionRepository partySessionRepo,
+    }) build(DateTime installedAt) {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final partySessionRepo = PartySessionRepository(db);
+      final drinksRepo = DrinksRepository(
+        db,
+        partySessionRepository: partySessionRepo,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          userPreferencesProvider.overrideWith(
+            (ref) => Stream.value(_prefs(installedAt: installedAt)),
+          ),
+          drinksRepositoryProvider.overrideWithValue(drinksRepo),
+          partySessionRepositoryProvider.overrideWithValue(partySessionRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return (
+        container: container,
+        drinksRepo: drinksRepo,
+        partySessionRepo: partySessionRepo,
+      );
+    }
+
+    test(
+      'returns installedAt when there is no drink or session data',
+      () async {
+        final installedAt = DateTime.utc(2026, 6, 15, 12, 0);
+        final built = build(installedAt);
+
+        final result = await built.container.read(
+          historyEarliestDayBoundProvider.future,
+        );
+
+        expect(result.isAtSameMomentAs(installedAt), isTrue);
+      },
+    );
+
+    test('a drink earlier than installedAt wins', () async {
+      final installedAt = DateTime.utc(2026, 6, 15, 12, 0);
+      final earlierDrink = DateTime.utc(2026, 6, 1, 9, 0);
+      final built = build(installedAt);
+
+      await built.drinksRepo.logDrink(
+        preset: _waterPreset,
+        consumedAt: earlierDrink,
+      );
+
+      final result = await built.container.read(
+        historyEarliestDayBoundProvider.future,
+      );
+
+      expect(result.isAtSameMomentAs(earlierDrink), isTrue);
+    });
+
+    test(
+      'a session earlier than both installedAt and any drink wins',
+      () async {
+        final installedAt = DateTime.utc(2026, 6, 15, 12, 0);
+        final drink = DateTime.utc(2026, 6, 10, 9, 0);
+        final earliestSession = DateTime.utc(2026, 6, 1, 9, 0);
+        final built = build(installedAt);
+
+        await built.drinksRepo
+            .logDrink(preset: _waterPreset, consumedAt: drink);
+        await built.partySessionRepo.startSession(
+          now: earliestSession,
+          startedAt: earliestSession,
+        );
+
+        final result = await built.container.read(
+          historyEarliestDayBoundProvider.future,
+        );
+
+        expect(result.isAtSameMomentAs(earliestSession), isTrue);
+      },
+    );
+
+    test(
+      'ties/ordering across all three: whichever of installedAt / drink / '
+      'session is chronologically earliest wins, regardless of which one '
+      'it is',
+      () async {
+        // Here the drink is earliest, installedAt is latest, and the
+        // session sits in between — proves the provider compares all three
+        // pairwise rather than assuming a fixed precedence order.
+        final drink = DateTime.utc(2026, 5, 1, 9, 0);
+        final session = DateTime.utc(2026, 5, 15, 9, 0);
+        final installedAt = DateTime.utc(2026, 6, 1, 9, 0);
+        final built = build(installedAt);
+
+        await built.drinksRepo
+            .logDrink(preset: _waterPreset, consumedAt: drink);
+        await built.partySessionRepo.startSession(
+          now: session,
+          startedAt: session,
+        );
+
+        final result = await built.container.read(
+          historyEarliestDayBoundProvider.future,
+        );
+
+        expect(result.isAtSameMomentAs(drink), isTrue);
+      },
+    );
+
+    test('the returned value is local time, not UTC', () async {
+      final installedAt = DateTime.utc(2026, 6, 15, 12, 0);
+      final built = build(installedAt);
+
+      final result = await built.container.read(
+        historyEarliestDayBoundProvider.future,
+      );
+
+      expect(result.isUtc, isFalse);
+    });
+
+    test(
+      'is reactive: backdating a drink AFTER the bound has already been '
+      'read moves the bound on the next read, without recreating the '
+      'container — proves this isn\'t a one-shot snapshot that could go '
+      'stale relative to S3\'s no-lower-bound date edit',
+      () async {
+        final installedAt = DateTime.utc(2026, 6, 15, 12, 0);
+        final built = build(installedAt);
+
+        // Keep the provider's subscription alive across both reads, exactly
+        // as ref.watch in HistoryDayScreen.build does in production.
+        built.container.listen(historyEarliestDayBoundProvider, (_, __) {});
+
+        final before = await built.container.read(
+          historyEarliestDayBoundProvider.future,
+        );
+        expect(before.isAtSameMomentAs(installedAt), isTrue);
+
+        final backdated = DateTime.utc(2026, 5, 1, 9, 0);
+        await built.drinksRepo.logDrink(
+          preset: _waterPreset,
+          consumedAt: backdated,
+        );
+
+        // Drift's watch stream re-emits asynchronously after the write
+        // completes — poll briefly for the provider to pick it up, rather
+        // than assuming a single re-read lands after the emission.
+        DateTime? after;
+        for (var i = 0; i < 50; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          final current =
+              built.container.read(historyEarliestDayBoundProvider).valueOrNull;
+          if (current != null && !current.isAtSameMomentAs(before)) {
+            after = current;
+            break;
+          }
+        }
+
+        expect(
+          after,
+          isNotNull,
+          reason: 'the bound never moved off installedAt after the '
+              'backdated write — historyEarliestDayBoundProvider is not '
+              'reactive',
+        );
+        expect(after!.isAtSameMomentAs(backdated), isTrue);
+      },
     );
   });
 }

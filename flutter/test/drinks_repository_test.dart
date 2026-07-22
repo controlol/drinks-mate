@@ -2219,6 +2219,92 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // S3 — watchEarliestDrinkConsumedAt (backward swipe bound for History day
+  // drill-down, #128)
+  // ---------------------------------------------------------------------------
+
+  group('DrinksRepository.watchEarliestDrinkConsumedAt', () {
+    late AppDatabase db;
+    late DrinksRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = DrinksRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns null when no entries exist', () async {
+      expect(await repo.watchEarliestDrinkConsumedAt().first, isNull);
+    });
+
+    test(
+        'returns the min consumedAt across mixed alcoholic/non-alcoholic '
+        'entries — every type counts here, same as getLatestDrinkConsumedAt '
+        '(feeds the History day drill-down\'s backward swipe bound, S3)',
+        () async {
+      const beerPreset = DrinkPreset(
+        id: 'test-beer-preset-earliest',
+        name: 'Test Beer',
+        beverageType: BeverageType.beer,
+        volumeMl: 250,
+        iconKey: 'beer_glass',
+        iconColor: '#d97706',
+        isUserCreated: false,
+        isHidden: false,
+        sortOrder: 99,
+      );
+
+      final earliest = DateTime(2026, 6, 20, 9, 0); // the alcoholic one
+      final later = DateTime(2026, 6, 23, 18, 0);
+
+      await repo.logDrink(preset: beerPreset, consumedAt: earliest);
+      await repo.logDrink(preset: _waterPreset, consumedAt: later);
+
+      final result = await repo.watchEarliestDrinkConsumedAt().first;
+      expect(result, isNotNull);
+      expect(result!.isAtSameMomentAs(earliest.toUtc()), isTrue);
+    });
+
+    test('picks the correct one among several entries', () async {
+      final middle = DateTime(2026, 6, 21, 9, 0);
+      final earliest = DateTime(2026, 6, 20, 9, 0);
+      final latest = DateTime(2026, 6, 23, 18, 0);
+
+      await repo.logDrink(preset: _waterPreset, consumedAt: middle);
+      await repo.logDrink(preset: _waterPreset, consumedAt: latest);
+      await repo.logDrink(preset: _waterPreset, consumedAt: earliest);
+
+      final result = await repo.watchEarliestDrinkConsumedAt().first;
+      expect(result, isNotNull);
+      expect(result!.isAtSameMomentAs(earliest.toUtc()), isTrue);
+    });
+
+    test('ignores soft-deleted entries', () async {
+      final earliest = DateTime(2026, 6, 20, 9, 0);
+      final later = DateTime(2026, 6, 23, 18, 0);
+
+      await repo.logDrink(preset: _waterPreset, consumedAt: earliest);
+      await repo.logDrink(preset: _waterPreset, consumedAt: later);
+
+      // Find and soft-delete the earliest entry.
+      final entries = await db.select(db.drinkEntries).get();
+      final earliestRow = entries.firstWhere(
+        (e) => e.consumedAt.isAtSameMomentAs(earliest.toUtc()),
+      );
+      await repo.deleteDrinkEntry(earliestRow.id);
+
+      final result = await repo.watchEarliestDrinkConsumedAt().first;
+      expect(
+        result!.isAtSameMomentAs(later.toUtc()),
+        isTrue,
+        reason: 'The soft-deleted (earlier) entry must be excluded, so the '
+            'later surviving entry is the min.',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // F5 — getTodayTotalMl (one-shot equivalent of watchTodayTotalMl)
   // ---------------------------------------------------------------------------
 

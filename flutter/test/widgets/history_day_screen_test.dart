@@ -39,6 +39,16 @@
 //      the pill's/button's own rendering rules lives in
 //      session_summary_card_test.dart; this file only checks the two real
 //      production wirings flow through correctly end-to-end.
+//  11. Swipe-to-change-day (#128, design/user-experience.md §S3 "Swipe to
+//      change day"): a decisive left/right swipe (past the velocity OR
+//      distance commit threshold) navigates to the next/previous day —
+//      AppBar title and the day's content (entries/session summaries) both
+//      update; a swipe that clears neither threshold is a no-op; swiping
+//      forward past "today" or backward past historyEarliestDayBoundProvider
+//      is blocked (no day change); a dataless adjacent day still renders the
+//      empty state rather than being skipped; and a multi-day Party Session
+//      summary card shows the correct per-day "Day N of M" pill/grams on
+//      each day as the user swipes between them.
 //
 // Provider override pattern mirrors history_screen_test.dart: the two #26
 // day-drilldown family providers (historyDayEntriesProvider,
@@ -52,6 +62,19 @@
 // partySessionSummaryProvider, nowTickerProvider) — unconditionally, in
 // every test in this file, since they cost nothing when unused (lazy
 // Riverpod providers) and keep _buildScreen a single shared helper.
+//
+// Point 11's tests need genuinely DIFFERENT data per day (to prove a swipe
+// actually navigated), unlike every other test above (which ignore the
+// family `key` and return the same fixture regardless of which day is
+// requested) — those tests pass `entriesByKey`/`summariesByKey` maps keyed
+// by `HistoryDayKey` instead of the flat `entries`/`summaries` lists.
+// IMPORTANT: `core`'s `pagedDayWindow` (which the screen calls on every
+// swipe) always constructs its start/end via the non-UTC `DateTime(...)`
+// constructor, regardless of the "now" instant's own UTC-ness — so the
+// adjacent-day keys below (`_dayBeforeKey`/`_dayAfterKey`) are built with
+// `DateTime(...)`, NOT `DateTime.utc(...)` like `_dayStart`/`_dayEnd`
+// themselves, since Dart's `DateTime.==` (and therefore this record-typed
+// map's key lookup) compares the `isUtc` flag as well as the instant.
 
 import 'package:core/core.dart';
 import 'package:drift/native.dart';
@@ -73,6 +96,7 @@ import 'package:drinks_mate/src/widgets/session_lifetime_bac_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 
 // ---------------------------------------------------------------------------
 // Fake repository — records delete calls; never touches the real DB.
@@ -127,6 +151,22 @@ class _FakeRepo extends DrinksRepository {
 final _dayStart = DateTime.utc(2026, 6, 22, 5, 0);
 final _dayEnd = DateTime.utc(2026, 6, 23, 5, 0);
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+// ---------------------------------------------------------------------------
+// Section 11 (swipe-to-change-day) HistoryDayKey fixtures — see the
+// IMPORTANT note in the file-level comment above re: DateTime(...) vs
+// DateTime.utc(...) construction.
+// ---------------------------------------------------------------------------
+
+final HistoryDayKey _dayKey = (dayStart: _dayStart, dayEnd: _dayEnd);
+final HistoryDayKey _dayBeforeKey = (
+  dayStart: DateTime(2026, 6, 21, 5, 0),
+  dayEnd: DateTime(2026, 6, 22, 5, 0),
+);
+final HistoryDayKey _dayAfterKey = (
+  dayStart: DateTime(2026, 6, 23, 5, 0),
+  dayEnd: DateTime(2026, 6, 24, 5, 0),
+);
 
 UserPreferences _makePrefs({int dailyGoalMl = 2000}) {
   return UserPreferences(
@@ -229,9 +269,20 @@ BacChartSeries _chartSeries({DateTime? axisStart, DateTime? axisEnd}) {
 Widget _buildScreen({
   List<DrinkEntry> entries = const [],
   List<SessionDaySummary> summaries = const [],
+  // Section 11 (swipe-to-change-day) only: per-day data, keyed by
+  // HistoryDayKey. When null, falls back to the flat entries/summaries
+  // lists above (ignoring which day is requested), matching every
+  // pre-#128 test's behavior.
+  Map<HistoryDayKey, List<DrinkEntry>>? entriesByKey,
+  Map<HistoryDayKey, List<SessionDaySummary>>? summariesByKey,
   UserPreferences? prefs,
   bool alwaysUse24HourFormat = false,
   _FakeRepo? repo,
+  DateTime? earliestBound,
+  // Section 11 only: overrides the day initially shown — defaults to the
+  // fixed _dayStart/_dayEnd fixture every other test in this file uses.
+  DateTime? screenDayStart,
+  DateTime? screenDayEnd,
 }) {
   return ProviderScope(
     overrides: [
@@ -241,10 +292,19 @@ Widget _buildScreen({
       // Deterministic, locale-independent raw-value fallback strings.
       formatServiceProvider.overrideWithValue(null),
       historyDayEntriesProvider.overrideWith(
-        (ref, key) => Stream.value(entries),
+        (ref, key) => Stream.value(
+            entriesByKey != null ? (entriesByKey[key] ?? []) : entries),
       ),
       historyDaySessionSummariesProvider.overrideWith(
-        (ref, key) => Future.value(summaries),
+        (ref, key) => Future.value(
+          summariesByKey != null ? (summariesByKey[key] ?? []) : summaries,
+        ),
+      ),
+      // Overridden directly (rather than left to fall through to the real
+      // AppDatabase-backed repositories it composes) so tests never touch a
+      // real database — defaults to _epoch, an unconstrained backward bound.
+      historyEarliestDayBoundProvider.overrideWith(
+        (ref) => Future.value(earliestBound ?? _epoch),
       ),
       if (repo != null) drinksRepositoryProvider.overrideWithValue(repo),
       // Only exercised by the "View full session" navigation test (point
@@ -270,7 +330,10 @@ Widget _buildScreen({
             .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
         child: child!,
       ),
-      home: HistoryDayScreen(dayStart: _dayStart, dayEnd: _dayEnd),
+      home: HistoryDayScreen(
+        dayStart: screenDayStart ?? _dayStart,
+        dayEnd: screenDayEnd ?? _dayEnd,
+      ),
     ),
   );
 }
@@ -1354,4 +1417,308 @@ void main() {
       expect(pushed.sessionId, 's-nav');
     },
   );
+
+  // -------------------------------------------------------------------------
+  // 11. Swipe-to-change-day (#128, design/user-experience.md §S3 "Swipe to
+  //     change day")
+  // -------------------------------------------------------------------------
+
+  group('11. swipe-to-change-day (#128)', () {
+    // Decisive swipes: well past both the velocity (250 px/s) and distance
+    // (60 logical px) commit thresholds — 300 px over 100 ms = 3000 px/s.
+    Future<void> swipeLeft(WidgetTester tester) => tester.timedDrag(
+          find.byType(Scaffold),
+          const Offset(-300, 0),
+          const Duration(milliseconds: 100),
+        );
+    Future<void> swipeRight(WidgetTester tester) => tester.timedDrag(
+          find.byType(Scaffold),
+          const Offset(300, 0),
+          const Duration(milliseconds: 100),
+        );
+
+    testWidgets(
+      'a decisive left swipe navigates to the next day: AppBar title and '
+      'content both update to the next day\'s data',
+      (tester) async {
+        final today = _entry(
+          id: 'today',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: _dayStart.add(const Duration(hours: 3)),
+          name: 'Today Drink',
+        );
+        final tomorrow = _entry(
+          id: 'tomorrow',
+          beverageType: BeverageType.water,
+          volumeMl: 250,
+          consumedAt: _dayAfterKey.dayStart.add(const Duration(hours: 3)),
+          name: 'Tomorrow Drink',
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            entriesByKey: {
+              _dayKey: [today],
+              _dayAfterKey: [tomorrow],
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Monday, Jun 22'), findsOneWidget);
+        expect(find.text('Today Drink'), findsOneWidget);
+        expect(find.text('Tomorrow Drink'), findsNothing);
+
+        await swipeLeft(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Tuesday, Jun 23'), findsOneWidget);
+        expect(find.text('Tomorrow Drink'), findsOneWidget);
+        expect(find.text('Today Drink'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a decisive right swipe navigates to the previous day, symmetric to '
+      'the left-swipe case above',
+      (tester) async {
+        final today = _entry(
+          id: 'today',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: _dayStart.add(const Duration(hours: 3)),
+          name: 'Today Drink',
+        );
+        final yesterday = _entry(
+          id: 'yesterday',
+          beverageType: BeverageType.water,
+          volumeMl: 250,
+          consumedAt: _dayBeforeKey.dayStart.add(const Duration(hours: 3)),
+          name: 'Yesterday Drink',
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            entriesByKey: {
+              _dayKey: [today],
+              _dayBeforeKey: [yesterday],
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Monday, Jun 22'), findsOneWidget);
+        expect(find.text('Today Drink'), findsOneWidget);
+
+        await swipeRight(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sunday, Jun 21'), findsOneWidget);
+        expect(find.text('Yesterday Drink'), findsOneWidget);
+        expect(find.text('Today Drink'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a swipe that clears neither the velocity nor the distance commit '
+      'threshold is a no-op: AppBar title and content are unchanged',
+      (tester) async {
+        final today = _entry(
+          id: 'today',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: _dayStart.add(const Duration(hours: 3)),
+          name: 'Stays Put',
+        );
+
+        await tester.pumpWidget(_buildScreen(entries: [today]));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Monday, Jun 22'), findsOneWidget);
+
+        // 20 px over 500 ms = 40 px/s: both distance (< 60 px) and velocity
+        // (< 250 px/s) stay under the commit thresholds.
+        await tester.timedDrag(
+          find.byType(Scaffold),
+          const Offset(-20, 0),
+          const Duration(milliseconds: 500),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Monday, Jun 22'), findsOneWidget);
+        expect(find.text('Stays Put'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'forward bound: cannot swipe left past "today" — a decisive left '
+      'swipe from today\'s own day-window is a no-op',
+      (tester) async {
+        // The screen calls DateTime.now() directly for the forward bound —
+        // resolve "today's" own day-window the same way (core's dayWindow)
+        // so this test's fixture day IS today, and assert the exact
+        // resulting title text via the same DateFormat the screen uses.
+        final today = dayWindow(now: DateTime.now(), boundaryHour: 5);
+        final todayLabel = DateFormat('EEEE, MMM d').format(today.$1);
+        final marker = _entry(
+          id: 'today-marker',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: today.$1.add(const Duration(hours: 1)),
+          name: 'Today Marker',
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            entries: [marker],
+            screenDayStart: today.$1,
+            screenDayEnd: today.$2,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(todayLabel), findsOneWidget);
+
+        await swipeLeft(tester);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(todayLabel),
+          findsOneWidget,
+          reason: 'swiping forward past today must be blocked (no-op)',
+        );
+        expect(find.text('Today Marker'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'backward bound: cannot swipe right past historyEarliestDayBoundProvider '
+      '— blocked exactly at the earliest allowed day',
+      (tester) async {
+        final marker = _entry(
+          id: 'earliest-marker',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: _dayStart.add(const Duration(hours: 1)),
+          name: 'Earliest Marker',
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            entries: [marker],
+            // The earliest bound IS the currently-shown day — one more
+            // backward step must be refused.
+            earliestBound: _dayStart,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Monday, Jun 22'), findsOneWidget);
+
+        await swipeRight(tester);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Monday, Jun 22'),
+          findsOneWidget,
+          reason: 'swiping backward past the earliest bound must be blocked '
+              '(no-op)',
+        );
+        expect(find.text('Earliest Marker'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a dataless adjacent day still renders the empty state after '
+      'swiping to it, rather than being skipped',
+      (tester) async {
+        final today = _entry(
+          id: 'today',
+          beverageType: BeverageType.water,
+          volumeMl: 300,
+          consumedAt: _dayStart.add(const Duration(hours: 3)),
+          name: 'Only Today',
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            entriesByKey: {
+              _dayKey: [today],
+              // _dayAfterKey deliberately omitted -> falls back to [].
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Only Today'), findsOneWidget);
+        expect(find.text('No drinks logged this day'), findsNothing);
+
+        await swipeLeft(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Tuesday, Jun 23'), findsOneWidget);
+        expect(find.text('Only Today'), findsNothing);
+        expect(find.text('No drinks logged this day'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a multi-day Party Session summary card shows the correct per-day '
+      '"Day N of M" pill and grams on each day as the user swipes between '
+      'them (mirrors the existing "Day 1 of 2" pill fixture in section 10)',
+      (tester) async {
+        // A 2-day session spanning _dayKey and _dayAfterKey, exactly like
+        // section 10's "Day 1 of 2" fixture.
+        final session = _session(
+          id: 's-multiday',
+          endedAt: _dayStart.add(const Duration(days: 1, hours: 3)),
+        );
+        final day0Summary = SessionDaySummary(
+          session: session,
+          duration: const Duration(hours: 3),
+          totalAlcoholicDrinks: 1,
+          mealsLoggedCount: 0,
+          peakBacGPerL: 0.1,
+          totalAlcoholGrams: 10,
+        );
+        final dayAfterSummary = SessionDaySummary(
+          session: session,
+          duration: const Duration(hours: 8),
+          totalAlcoholicDrinks: 2,
+          mealsLoggedCount: 0,
+          peakBacGPerL: 0.05,
+          totalAlcoholGrams: 25,
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            summariesByKey: {
+              _dayKey: [day0Summary],
+              _dayAfterKey: [dayAfterSummary],
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Day 1 of 2'), findsOneWidget);
+        expect(find.text('Duration: 3h 0m'), findsOneWidget);
+
+        await swipeLeft(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Tuesday, Jun 23'), findsOneWidget);
+        expect(find.text('Day 2 of 2'), findsOneWidget);
+        expect(find.text('Duration: 8h 0m'), findsOneWidget);
+        expect(find.text('Day 1 of 2'), findsNothing);
+      },
+    );
+  });
 }
