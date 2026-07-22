@@ -488,6 +488,13 @@ class DrinksRepository {
   Future<DateTime?> getLatestDrinkConsumedAt() =>
       _db.getLatestDrinkConsumedAt();
 
+  /// Reactive stream of the earliest drink's `consumedAt`, across every
+  /// beverage type, or null if the user has never logged a drink.
+  ///
+  /// Feeds the History day drill-down's backward swipe bound (S3).
+  Stream<DateTime?> watchEarliestDrinkConsumedAt() =>
+      _db.watchEarliestDrinkConsumedAt();
+
   /// Reactive stream of the 7-day daily average hydration intake in ml.
   ///
   /// Covers the last 7 completed day windows before today (today is excluded).

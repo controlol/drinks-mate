@@ -3605,6 +3605,130 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // 10b. watchEarliestSessionStartedAt (backward swipe bound for History day
+  // drill-down, #128)
+  // ---------------------------------------------------------------------------
+
+  group('PartySessionRepository.watchEarliestSessionStartedAt', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('returns null when no sessions exist', () async {
+      expect(await repo.watchEarliestSessionStartedAt().first, isNull);
+    });
+
+    test(
+      'returns the earliest startedAt among several sessions, including '
+      'one that is still active (not ended) — unlike getLastSessionPricing, '
+      'this selects ANY live session regardless of ended state '
+      '(feeds the History day drill-down\'s backward swipe bound, S3)',
+      () async {
+        final earliestStart = DateTime.utc(2026, 6, 1, 10, 0);
+        final middleStart = DateTime.utc(2026, 6, 10, 10, 0);
+        final latestStart = DateTime.utc(2026, 6, 20, 10, 0);
+
+        final earliestSession = await repo.startSession(
+          now: earliestStart,
+          startedAt: earliestStart,
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: earliestSession.id,
+          consumedAt: earliestStart.add(const Duration(minutes: 5)),
+          now: earliestStart.add(const Duration(minutes: 5)),
+        );
+        await repo.endSession(
+          earliestSession.id,
+          PartySessionEndReason.manual,
+          now: earliestStart.add(const Duration(hours: 1)),
+        );
+
+        final middleSession = await repo.startSession(
+          now: middleStart,
+          startedAt: middleStart,
+        );
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: middleSession.id,
+          consumedAt: middleStart.add(const Duration(minutes: 5)),
+          now: middleStart.add(const Duration(minutes: 5)),
+        );
+        await repo.endSession(
+          middleSession.id,
+          PartySessionEndReason.manual,
+          now: middleStart.add(const Duration(hours: 1)),
+        );
+
+        // Still active (not ended) — must still count.
+        await repo.startSession(now: latestStart, startedAt: latestStart);
+
+        final result = await repo.watchEarliestSessionStartedAt().first;
+        expect(result, isNotNull);
+        expect(result!.isAtSameMomentAs(earliestStart), isTrue);
+      },
+    );
+
+    test('excludes soft-deleted sessions', () async {
+      final earliestStart = DateTime.utc(2026, 6, 1, 10, 0);
+      final laterStart = DateTime.utc(2026, 6, 10, 10, 0);
+
+      final earliestSession = await repo.startSession(
+        now: earliestStart,
+        startedAt: earliestStart,
+      );
+      await repo.logAlcoholicDrink(
+        preset: _beerPreset,
+        sessionId: earliestSession.id,
+        consumedAt: earliestStart.add(const Duration(minutes: 5)),
+        now: earliestStart.add(const Duration(minutes: 5)),
+      );
+      await repo.endSession(
+        earliestSession.id,
+        PartySessionEndReason.manual,
+        now: earliestStart.add(const Duration(hours: 1)),
+      );
+
+      final laterSession = await repo.startSession(
+        now: laterStart,
+        startedAt: laterStart,
+      );
+      await repo.logAlcoholicDrink(
+        preset: _beerPreset,
+        sessionId: laterSession.id,
+        consumedAt: laterStart.add(const Duration(minutes: 5)),
+        now: laterStart.add(const Duration(minutes: 5)),
+      );
+      await repo.endSession(
+        laterSession.id,
+        PartySessionEndReason.manual,
+        now: laterStart.add(const Duration(hours: 1)),
+      );
+
+      // Delete the earliest (ended) session — only ended sessions can be
+      // deleted (see deleteSession's StateError guard above).
+      await repo.deleteSession(
+        earliestSession.id,
+        now: earliestStart.add(const Duration(hours: 2)),
+      );
+
+      final result = await repo.watchEarliestSessionStartedAt().first;
+      expect(
+        result!.isAtSameMomentAs(laterStart),
+        isTrue,
+        reason: 'The soft-deleted (earlier) session must be excluded, so '
+            'the later surviving session is the min.',
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // 11. setUseSessionPrices
   // ---------------------------------------------------------------------------
 

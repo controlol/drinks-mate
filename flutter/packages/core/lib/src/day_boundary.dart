@@ -159,6 +159,43 @@ library;
   return (start, end);
 }
 
+/// Returns the `[start, end)` day window [offset] whole days before the day
+/// window containing [now] (`offset = 0` → today's window, `offset = 1` →
+/// yesterday's window, etc.) — feeds the History day drill-down's
+/// swipe-to-change-day navigation (S3).
+///
+/// Mirrors [pagedIsoWeekWindow]/[pagedMonthWindow]: built from [dayWindow]
+/// plus explicit `DateTime` field arithmetic (not `Duration` subtraction), so
+/// DST transitions and month/year rollovers are resolved by the platform's
+/// own calendar arithmetic rather than fixed-length day offsets.
+(DateTime start, DateTime end) pagedDayWindow({
+  required DateTime now,
+  required int offset,
+  int boundaryHour = 5,
+  int boundaryMinute = 0,
+}) {
+  final current = dayWindow(
+    now: now,
+    boundaryHour: boundaryHour,
+    boundaryMinute: boundaryMinute,
+  );
+  final start = DateTime(
+    current.$1.year,
+    current.$1.month,
+    current.$1.day - offset,
+    boundaryHour,
+    boundaryMinute,
+  );
+  final end = DateTime(
+    current.$2.year,
+    current.$2.month,
+    current.$2.day - offset,
+    boundaryHour,
+    boundaryMinute,
+  );
+  return (start, end);
+}
+
 /// Returns the `[start, end)` calendar-month window [offset] whole months
 /// before the month containing [now] (`offset = 0` → the current month,
 /// `offset = 1` → last month, etc.) — feeds the History screen's monthly

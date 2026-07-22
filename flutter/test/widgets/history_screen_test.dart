@@ -222,6 +222,12 @@ Widget _buildScreen({
       historyDaySessionSummariesProvider.overrideWith(
         (ref, key) => Future.value([]),
       ),
+      // Same rationale — the day drill-down's swipe-to-change-day bound
+      // (#128) also resolves to a real AppDatabase by default.
+      historyEarliestDayBoundProvider.overrideWith(
+        (ref) =>
+            Future.value(DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)),
+      ),
     ],
     child: const MaterialApp(home: HistoryScreen()),
   );

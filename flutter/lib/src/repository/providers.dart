@@ -556,6 +556,50 @@ final historyDaySessionSummariesProvider =
   ];
 });
 
+/// Reactive stream of the earliest live [DrinkEntry.consumedAt] — package-
+/// private, feeds [historyEarliestDayBoundProvider] only.
+final _earliestDrinkConsumedAtProvider = StreamProvider<DateTime?>((ref) {
+  return ref.watch(drinksRepositoryProvider).watchEarliestDrinkConsumedAt();
+});
+
+/// Reactive stream of the earliest live [PartySession.startedAt] — package-
+/// private, feeds [historyEarliestDayBoundProvider] only.
+final _earliestSessionStartedAtProvider = StreamProvider<DateTime?>((ref) {
+  return ref
+      .watch(partySessionRepositoryProvider)
+      .watchEarliestSessionStartedAt();
+});
+
+/// The earliest local instant with anything to show in History — the
+/// earliest of any [DrinkEntry.consumedAt], [PartySession.startedAt], or
+/// [UserPreferences.installedAt] — feeds the History day drill-down's
+/// backward swipe bound (S3): paging can never run off into an indefinite
+/// run of days that could not possibly have data.
+///
+/// Recomputes automatically whenever the reactive streams it watches emit a
+/// new value (same "FutureProvider watches a StreamProvider" pattern as
+/// [historyDaySessionSummariesProvider] above), so the bound can never go
+/// stale relative to a backdated entry — S3 itself lets a drink be moved to
+/// an earlier calendar day with no lower bound.
+final historyEarliestDayBoundProvider = FutureProvider<DateTime>((ref) async {
+  final prefs = await ref.watch(userPreferencesProvider.future);
+  final earliestDrinkUtc =
+      await ref.watch(_earliestDrinkConsumedAtProvider.future);
+  final earliestSessionUtc =
+      await ref.watch(_earliestSessionStartedAtProvider.future);
+  final earliestDrink = earliestDrinkUtc?.toLocal();
+  final earliestSession = earliestSessionUtc?.toLocal();
+
+  var earliest = prefs.installedAt.toLocal();
+  if (earliestDrink != null && earliestDrink.isBefore(earliest)) {
+    earliest = earliestDrink;
+  }
+  if (earliestSession != null && earliestSession.isBefore(earliest)) {
+    earliest = earliestSession;
+  }
+  return earliest;
+});
+
 // ---------------------------------------------------------------------------
 // Party Session repository (issue #21)
 // ---------------------------------------------------------------------------

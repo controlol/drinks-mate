@@ -587,4 +587,117 @@ void main() {
       }
     });
   });
+
+  // Source: Parity Rulebook → "Day boundary"; design/user-experience.md S3 —
+  // History day drill-down swipe-to-change-day paging (#128). Steps back by
+  // `offset` whole days from the day-window containing `now`, mirroring
+  // pagedIsoWeekWindow/pagedMonthWindow's construction.
+  group('pagedDayWindow (day paging, S3 swipe-to-change-day)', () {
+    // Anchor: 2026-06-22 10:00 is well after the 05:00 boundary, so
+    // dayWindow(anchor) = [2026-06-22 05:00, 2026-06-23 05:00).
+    final anchor = DateTime(2026, 6, 22, 10, 0);
+
+    test('offset=0 matches plain dayWindow for the same now', () {
+      final paged = pagedDayWindow(now: anchor, offset: 0);
+      final plain = dayWindow(now: anchor);
+
+      expect(paged, equals(plain));
+      expect(paged.$1, DateTime(2026, 6, 22, 5, 0));
+      expect(paged.$2, DateTime(2026, 6, 23, 5, 0));
+    });
+
+    test('offset=1 lands on the previous calendar day\'s window', () {
+      final (start, end) = pagedDayWindow(now: anchor, offset: 1);
+
+      expect(start, DateTime(2026, 6, 21, 5, 0));
+      expect(end, DateTime(2026, 6, 22, 5, 0));
+    });
+
+    test(
+      'offset=-1 lands on the NEXT calendar day\'s window — negative '
+      'offsets go forward, the sign convention the swipe-forward case relies '
+      'on',
+      () {
+        final (start, end) = pagedDayWindow(now: anchor, offset: -1);
+
+        expect(start, DateTime(2026, 6, 23, 5, 0));
+        expect(end, DateTime(2026, 6, 24, 5, 0));
+      },
+    );
+
+    test(
+      'month-boundary crossing: anchor on the 1st, offset=1 lands on the '
+      'last day of the previous (non-leap) month',
+      () {
+        // dayWindow(March 1 10:00, boundary 5) = [March 1 05:00, March 2 05:00).
+        // 2026 is not a leap year; Feb has 28 days.
+        final monthAnchor = DateTime(2026, 3, 1, 10, 0);
+        final (start, end) = pagedDayWindow(now: monthAnchor, offset: 1);
+
+        expect(start, DateTime(2026, 2, 28, 5, 0));
+        expect(end, DateTime(2026, 3, 1, 5, 0));
+      },
+    );
+
+    test(
+      'year-boundary crossing: anchor Jan 1st, offset=1 lands on Dec 31st '
+      'of the previous year',
+      () {
+        // dayWindow(Jan 1 10:00, boundary 5) = [Jan 1 05:00, Jan 2 05:00).
+        final yearAnchor = DateTime(2026, 1, 1, 10, 0);
+        final (start, end) = pagedDayWindow(now: yearAnchor, offset: 1);
+
+        expect(start, DateTime(2025, 12, 31, 5, 0));
+        expect(end, DateTime(2026, 1, 1, 5, 0));
+      },
+    );
+
+    test(
+      'custom boundary hour (0 = midnight) is respected when paging back',
+      () {
+        // dayWindow(anchor, boundary 0) = [2026-06-22 00:00, 2026-06-23 00:00).
+        final (start, end) = pagedDayWindow(
+          now: anchor,
+          offset: 1,
+          boundaryHour: 0,
+          boundaryMinute: 0,
+        );
+
+        expect(start, DateTime(2026, 6, 21, 0, 0));
+        expect(end, DateTime(2026, 6, 22, 0, 0));
+      },
+    );
+
+    // Note: unlike pagedIsoWeekWindow/pagedMonthWindow's fixed-width
+    // invariant tests, we do NOT assert `end - start == Duration(days: 1)`
+    // here — on a DST wall-clock transition day that difference is 23h or
+    // 25h, which is correct (see the `dayWindow` group's identical rationale
+    // above). Instead we assert the boundary-aligned relationship directly
+    // via DateTime field construction, which is robust across DST.
+    test(
+      'every window: start is boundary-aligned, and end is exactly the '
+      'next calendar day at the same boundary',
+      () {
+        for (var offset = -3; offset <= 3; offset++) {
+          final (start, end) = pagedDayWindow(now: anchor, offset: offset);
+          expect(
+            start.hour,
+            5,
+            reason: 'offset=$offset window start must be at boundary hour',
+          );
+          expect(
+            start.minute,
+            0,
+            reason: 'offset=$offset window start must be at boundary minute',
+          );
+          expect(
+            end,
+            DateTime(start.year, start.month, start.day + 1, 5, 0),
+            reason: 'offset=$offset window end must be the next calendar '
+                'day\'s boundary-aligned instant after start',
+          );
+        }
+      },
+    );
+  });
 }
