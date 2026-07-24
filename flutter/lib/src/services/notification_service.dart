@@ -133,11 +133,7 @@ abstract interface class NotificationService {
 /// where the plugin is not initialised or in headless tests) never crashes the
 /// app.
 class FlutterNotificationService implements NotificationService {
-  /// [plugin] is injectable so tests can exercise this class's scheduling
-  /// logic (e.g. per-slot failure resilience) against a fake plugin instead
-  /// of the real platform channel, which is unavailable headless.
-  FlutterNotificationService({FlutterLocalNotificationsPlugin? plugin})
-      : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+  FlutterNotificationService() : _plugin = FlutterLocalNotificationsPlugin();
 
   final FlutterLocalNotificationsPlugin _plugin;
   bool _initialised = false;
