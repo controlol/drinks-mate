@@ -169,3 +169,28 @@ List<DateTime> buildScheduleSlots({
   }
   return slots;
 }
+
+/// Default buffer applied by [clampForSchedulingLatency] — see its doc for
+/// why 30s was chosen.
+const Duration kSchedulingLatencyMargin = Duration(seconds: 30);
+
+/// Pushes [from] forward so it sits at least [margin] past [now].
+///
+/// `scheduleRepeating`'s first slot may equal a `startTime` snapshot taken
+/// before several `await`s (DB queries, plugin init). By the time the
+/// platform channel call actually runs, wall-clock time can have drifted
+/// past that frozen instant, and the OS notification plugin rejects a
+/// scheduled time that is no longer in the future — aborting the whole
+/// batch if the caller doesn't handle it per-slot. Clamping the batch's
+/// start forward by a margin absorbs that drift so slot 0 is never
+/// scheduled right at the wire. Only ever pushes [from] later, never
+/// earlier — a [from] already comfortably in the future is returned
+/// unchanged.
+DateTime clampForSchedulingLatency({
+  required DateTime from,
+  required DateTime now,
+  Duration margin = kSchedulingLatencyMargin,
+}) {
+  final earliestAllowed = now.add(margin);
+  return from.isBefore(earliestAllowed) ? earliestAllowed : from;
+}
