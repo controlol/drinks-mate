@@ -65,6 +65,8 @@ class _FakePartySessionRepo extends PartySessionRepository {
 
   final List<String> deleteSessionCalls = [];
   final List<({String sessionId, String? name})> updateSessionNameCalls = [];
+  final List<({String id, MealSize size})> updateMealCalls = [];
+  final List<String> deleteMealCalls = [];
 
   /// Optional side effect run after recording an `updateSessionName` call —
   /// lets a test simulate what the real repository/DB stream would do
@@ -108,6 +110,20 @@ class _FakePartySessionRepo extends PartySessionRepository {
       priceMinor: priceMinor,
       currency: currency,
     ));
+  }
+
+  @override
+  Future<void> updateMeal({
+    required String id,
+    required MealSize size,
+    DateTime? now,
+  }) async {
+    updateMealCalls.add((id: id, size: size));
+  }
+
+  @override
+  Future<void> deleteMeal(String id, {DateTime? now}) async {
+    deleteMealCalls.add(id);
   }
 }
 
@@ -719,7 +735,7 @@ void main() {
       'a meal is merged into the active-mode entry list at its correct '
       'chronological position (interleaved by time, not grouped '
       'separately), showing "<Size> meal" + relative-time text; the meal '
-      'row has no delete button and is not tappable, unlike drink rows',
+      'row is tappable and carries a delete button, same as drink rows',
       (tester) async {
         final session = _makeSession(startedAt: startedAt);
         final drink1 = _alcoholicEntry(
@@ -773,24 +789,118 @@ void main() {
           lessThan(dy(find.text('Early Beer'))),
         );
 
-        // The meal row is read-only: no delete button, no tap target —
-        // contrast with the two drink rows, which have both.
+        // Editing and deleting a meal both happen here now
+        // (user-experience.md §S9), not via the Party tab's meal indicator —
+        // so the row is tappable and carries a delete button, same as the
+        // two drink rows.
         final mealTile = tester
             .widget<ListTile>(find.widgetWithText(ListTile, 'Medium meal'));
-        expect(mealTile.onTap, isNull);
+        expect(mealTile.onTap, isNotNull);
         expect(
           find.descendant(
             of: find.widgetWithText(ListTile, 'Medium meal'),
             matching: find.byTooltip('Delete'),
           ),
-          findsNothing,
+          findsOneWidget,
         );
-        // Exactly two Delete buttons total — one per drink row, none for
-        // the meal row.
-        expect(find.byTooltip('Delete'), findsNWidgets(2));
+        // Three Delete buttons total — one per drink row, plus the meal row.
+        expect(find.byTooltip('Delete'), findsNWidgets(3));
         final drinkTile = tester
             .widget<ListTile>(find.widgetWithText(ListTile, 'Later Beer'));
         expect(drinkTile.onTap, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'tapping a meal row in active mode opens the meal-size picker and '
+      'selecting a new size calls PartySessionRepository.updateMeal with '
+      'the meal\'s id',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final meal = _meal(
+          id: 'm1',
+          partySessionId: session.id,
+          eatenAt: startedAt,
+        );
+        final partyRepo = _FakePartySessionRepo();
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: const [],
+            meals: [meal],
+            profile: _makeProfile(),
+            now: startedAt.add(const Duration(hours: 1)),
+            partyRepo: partyRepo,
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Medium meal'));
+        await tester.pumpAndSettle();
+
+        // No intermediate action menu, no "Did you eat recently?" prompt
+        // (that one is only for logging a brand-new meal) — just the
+        // size picker, defaulted to the meal's current size.
+        expect(find.text('Edit meal'), findsOneWidget);
+        expect(find.text('Did you eat recently?'), findsNothing);
+        expect(
+          find.descendant(
+            of: find.widgetWithText(ListTile, 'Medium'),
+            matching: find.byIcon(Icons.check),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('Large'));
+        await tester.pumpAndSettle();
+
+        expect(partyRepo.updateMealCalls, hasLength(1));
+        expect(partyRepo.updateMealCalls.single.id, 'm1');
+        expect(partyRepo.updateMealCalls.single.size, MealSize.large);
+      },
+    );
+
+    testWidgets(
+      'tapping a meal row\'s Delete button then confirming calls '
+      'PartySessionRepository.deleteMeal with the meal\'s id',
+      (tester) async {
+        final session = _makeSession(startedAt: startedAt);
+        final meal = _meal(
+          id: 'meal-to-delete',
+          partySessionId: session.id,
+          eatenAt: startedAt,
+        );
+        final partyRepo = _FakePartySessionRepo();
+
+        await tester.pumpWidget(
+          _buildScreen(
+            sessionId: session.id,
+            activeSession: session,
+            entries: const [],
+            meals: [meal],
+            profile: _makeProfile(),
+            now: startedAt,
+            partyRepo: partyRepo,
+            drinksRepo: _FakeDrinksRepo(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // No intermediate action menu — a Delete button sits directly on
+        // the row, same as a drink row.
+        await tester.tap(find.byTooltip('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete meal?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+        await tester.pumpAndSettle();
+
+        expect(partyRepo.deleteMealCalls, ['meal-to-delete']);
+        // Tapping Delete must not also open the edit-size picker.
+        expect(find.text('Edit meal'), findsNothing);
       },
     );
 

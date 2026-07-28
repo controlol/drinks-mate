@@ -878,6 +878,16 @@ class AppDatabase extends _$AppDatabase {
   Future<int> updateMealFields(String id, MealsCompanion companion) =>
       (update(meals)..where((t) => t.id.equals(id))).write(companion);
 
+  /// Soft-deletes a [MealRow] — same semantics as [softDeleteDrinkEntry]
+  /// (data-model.md §Meal: "same semantics as DrinkEntry").
+  Future<void> softDeleteMeal(String id, DateTime deletedAtUtc) {
+    final companion = MealsCompanion(
+      deletedAt: Value(deletedAtUtc),
+      updatedAt: Value(deletedAtUtc),
+    );
+    return (update(meals)..where((t) => t.id.equals(id))).write(companion);
+  }
+
   // ---------------------------------------------------------------------------
   // DrinkEntry — Party Session queries (issue #21)
   // ---------------------------------------------------------------------------

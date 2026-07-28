@@ -304,10 +304,10 @@ class PartySessionRepository {
       .watchSessionMeals(sessionId)
       .map((rows) => rows.map(_rowToMeal).toList());
 
-  /// Edits the last-logged meal's [size] (Party tab's meal indicator: "edit
-  /// the last one" — party-session.md §Party tab during a session). Leaves
-  /// [Meal.eatenAt] untouched — editing corrects a mis-picked size, not when
-  /// the meal happened.
+  /// Edits a logged meal's [size] (S9's meal row — user-experience.md §S9:
+  /// "the only place a logged meal can be edited"). Leaves [Meal.eatenAt]
+  /// untouched — editing corrects a mis-picked size, not when the meal
+  /// happened.
   ///
   /// Throws [StateError] if [id] does not exist.
   Future<void> updateMeal({
@@ -321,6 +321,14 @@ class PartySessionRepository {
       MealsCompanion(size: Value(size.stored), updatedAt: Value(nowUtc)),
     );
     if (rows == 0) throw StateError('Meal $id not found.');
+  }
+
+  /// Deletes a logged meal — same soft-delete semantics as
+  /// [DrinksRepository.deleteDrinkEntry] (data-model.md §Meal: "same
+  /// semantics as DrinkEntry").
+  Future<void> deleteMeal(String id, {DateTime? now}) {
+    final nowUtc = (now ?? DateTime.now()).toUtc();
+    return _db.softDeleteMeal(id, nowUtc);
   }
 
   // ---------------------------------------------------------------------------

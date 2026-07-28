@@ -1462,6 +1462,105 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  // 3b-2. Persistent meal indicator (party-session.md §Party tab during a
+  // session) — add-only: tapping goes straight to the meal-size prompt to
+  // log a new meal, whether or not one already exists. Meal editing is
+  // covered in party_session_log_screen_test.dart (S9).
+  // -------------------------------------------------------------------------
+
+  group('Persistent meal indicator (party-session.md §Party tab)', () {
+    testWidgets(
+      'tapping "Add meal" with no meal logged yet opens the meal-size '
+      'prompt directly, without an intermediate action menu',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Add meal'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Add meal'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Log new meal'), findsNothing);
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+
+        await tester.tap(find.text('Medium'));
+        await tester.pumpAndSettle();
+
+        expect(repo.addMealCalls, hasLength(1));
+        expect(repo.addMealCalls.single.sessionId, session.id);
+        expect(repo.addMealCalls.single.size, MealSize.medium);
+      },
+    );
+
+    testWidgets(
+      'tapping the indicator when a meal already exists still opens the '
+      'meal-size prompt directly — the label carries a trailing "Add" to '
+      'signal that',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        final meal = Meal(
+          id: 'meal-1',
+          partySessionId: session.id,
+          size: MealSize.small,
+          eatenAt: _workedConsumedAt,
+          createdAt: _workedConsumedAt,
+          updatedAt: _workedConsumedAt,
+        );
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            meals: [meal],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.textContaining('Small meal'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+        expect(find.textContaining('Small meal'), findsOneWidget);
+        expect(find.textContaining('· Add'), findsOneWidget);
+
+        await tester.tap(find.textContaining('Small meal'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Log new meal'), findsNothing);
+        expect(find.text('Edit last meal'), findsNothing);
+        expect(find.text('Did you eat recently?'), findsOneWidget);
+
+        await tester.tap(find.text('Large'));
+        await tester.pumpAndSettle();
+
+        expect(repo.addMealCalls, hasLength(1));
+        expect(repo.addMealCalls.single.size, MealSize.large);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
   // 3c. Name prompt — data-model.md §PartySession → name / party-session.md
   // §Starting a session: "an optional, skippable name field", sitting
   // between the meal prompt and the pricing prompt (issue #102).

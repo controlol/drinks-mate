@@ -83,6 +83,7 @@ abstract final class SemanticsLabels {
   static const String partySessionEntryList = "This session's alcoholic drinks";
   static const String partySessionEmptyState =
       'No alcoholic drinks logged in this session yet';
+  static const String deleteMealButton = 'Delete meal';
 
   // ---------------------------------------------------------------------------
   // History screen (S3)

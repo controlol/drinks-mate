@@ -1753,8 +1753,8 @@ void main() {
   });
 
   group(
-    'PartySessionRepository.updateMeal (party-session.md §Party tab during '
-    'a session: meal indicator "edit the last one")',
+    'PartySessionRepository.updateMeal (user-experience.md §S9: "the only '
+    'place a logged meal can be edited")',
     () {
       late AppDatabase db;
       late PartySessionRepository repo;
@@ -1802,6 +1802,55 @@ void main() {
           throwsA(isA<StateError>()),
         );
       });
+    },
+  );
+
+  group(
+    'PartySessionRepository.deleteMeal (data-model.md §Meal: "same '
+    'semantics as DrinkEntry")',
+    () {
+      late AppDatabase db;
+      late PartySessionRepository repo;
+
+      setUp(() {
+        db = _memDb();
+        repo = PartySessionRepository(db);
+      });
+
+      tearDown(() => db.close());
+
+      test(
+        'soft-deletes a meal — it drops out of watchSessionMeals',
+        () async {
+          final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+          final session = await repo.startSession(
+            now: startedAt,
+            startedAt: startedAt,
+          );
+          final meal = await repo.addMeal(
+            sessionId: session.id,
+            size: MealSize.small,
+            now: startedAt,
+          );
+
+          expect(await repo.watchSessionMeals(session.id).first, hasLength(1));
+
+          await repo.deleteMeal(meal.id, now: startedAt);
+
+          expect(await repo.watchSessionMeals(session.id).first, isEmpty);
+        },
+      );
+
+      test(
+        'deleting an unknown meal id returns normally — lenient, unlike '
+        'updateMeal',
+        () async {
+          await expectLater(
+            repo.deleteMeal('no-such-meal'),
+            completes,
+          );
+        },
+      );
     },
   );
 

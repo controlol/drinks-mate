@@ -6,6 +6,7 @@ import '../models/party_session.dart';
 import '../models/user_profile.dart';
 import '../repository/party_session_repository.dart';
 import '../repository/providers.dart';
+import '../services/meal_format.dart';
 import 'party_log_drink_sheet.dart';
 import 'party_pricing_sheet.dart';
 
@@ -246,6 +247,39 @@ Future<MealSize?> showMealPrompt(BuildContext context) {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Skip'),
             ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Edit-meal-size prompt for S9's meal row (user-experience.md §S9: "a meal
+/// row is tappable and opens the meal-size picker to change its size").
+/// Returns null on dismiss without a selection.
+Future<MealSize?> showEditMealSizePrompt(
+  BuildContext context, {
+  required MealSize initial,
+}) {
+  return showModalBottomSheet<MealSize>(
+    context: context,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Edit meal',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            for (final size in MealSize.values)
+              ListTile(
+                title: Text(mealSizeLabel(size)),
+                trailing: size == initial ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(context).pop(size),
+              ),
           ],
         ),
       ),
