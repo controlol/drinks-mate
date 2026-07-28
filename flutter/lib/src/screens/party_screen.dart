@@ -1120,10 +1120,12 @@ class _DrinksCountLine extends StatelessWidget {
 }
 
 /// Persistent meal indicator (party-session.md §Party tab during a session):
-/// shows the most recent meal ("Medium meal · 2 h ago") or "Add meal" when
-/// none has been logged. Add-only — tapping goes straight to the meal-size
-/// prompt to log a new meal. A logged meal is edited from S9 Party Session
-/// Log (party_session_log_screen.dart's `_MealRow`).
+/// label always reads "Add meal", whether or not a meal has been logged —
+/// tapping always goes straight to the meal-size prompt to log a new meal.
+/// Once at least one meal exists, the count and time since the last one
+/// (e.g. "2 meals · 45 min ago") appears right-aligned on the same row. A
+/// logged meal is edited or deleted from S9 Party Session Log
+/// (party_session_log_screen.dart's `_MealRow`).
 class _MealIndicator extends ConsumerWidget {
   const _MealIndicator({
     required this.sessionId,
@@ -1143,11 +1145,6 @@ class _MealIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final last = _lastMeal;
-    // The "· Add" suffix clarifies that tapping logs a new meal — only
-    // needed once a meal already exists ("Add meal" alone already says so).
-    final label = last == null
-        ? 'Add meal'
-        : '${mealSizeLabel(last.size)} meal · ${relativeTimeAgo(last.eatenAt, now)} · Add';
 
     return Semantics(
       label: SemanticsLabels.mealIndicator,
@@ -1168,10 +1165,18 @@ class _MealIndicator extends ConsumerWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  label,
+                  'Add meal',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
+              if (last != null)
+                Text(
+                  '${meals.length} ${meals.length == 1 ? 'meal' : 'meals'} · '
+                  '${relativeTimeAgo(last.eatenAt, now)}',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
             ],
           ),
         ),

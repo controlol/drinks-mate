@@ -872,9 +872,9 @@ class AppDatabase extends _$AppDatabase {
         ..orderBy([(t) => OrderingTerm.asc(t.eatenAt)]))
       .watch();
 
-  /// Partial update of a [MealRow] (Party tab's meal indicator: "edit the
-  /// last one", party-session.md §Party tab during a session). Returns the
-  /// number of rows affected (0 if [id] not found).
+  /// Partial update of a [MealRow] (S9's meal row — user-experience.md §S9:
+  /// "opens the meal-size picker to change its size"). Returns the number
+  /// of rows affected (0 if [id] not found).
   Future<int> updateMealFields(String id, MealsCompanion companion) =>
       (update(meals)..where((t) => t.id.equals(id))).write(companion);
 

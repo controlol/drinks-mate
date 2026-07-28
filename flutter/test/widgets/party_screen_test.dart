@@ -1509,8 +1509,8 @@ void main() {
 
     testWidgets(
       'tapping the indicator when a meal already exists still opens the '
-      'meal-size prompt directly — the label carries a trailing "Add" to '
-      'signal that',
+      'meal-size prompt directly — the label stays "Add meal" and the '
+      'count + time since the last meal appears on the right',
       (tester) async {
         final repo = _FakePartySessionRepo();
         final session = _makeSession(startedAt: _workedConsumedAt);
@@ -1536,15 +1536,16 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.scrollUntilVisible(
-          find.textContaining('Small meal'),
+          find.text('Add meal'),
           300.0,
           scrollable: find.byType(Scrollable).first,
         );
 
-        expect(find.textContaining('Small meal'), findsOneWidget);
-        expect(find.textContaining('· Add'), findsOneWidget);
+        expect(find.text('Add meal'), findsOneWidget);
+        expect(find.textContaining('Small meal'), findsNothing);
+        expect(find.textContaining('1 meal ·'), findsOneWidget);
 
-        await tester.tap(find.textContaining('Small meal'));
+        await tester.tap(find.text('Add meal'));
         await tester.pumpAndSettle();
 
         expect(find.text('Log new meal'), findsNothing);
@@ -1556,6 +1557,55 @@ void main() {
 
         expect(repo.addMealCalls, hasLength(1));
         expect(repo.addMealCalls.single.size, MealSize.large);
+      },
+    );
+
+    testWidgets(
+      'with more than one meal logged, the right-hand label pluralises '
+      '"meals" and reflects the total count',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(startedAt: _workedConsumedAt);
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+        final earlier = _workedConsumedAt.subtract(const Duration(hours: 1));
+        final meals = [
+          Meal(
+            id: 'meal-1',
+            partySessionId: session.id,
+            size: MealSize.small,
+            eatenAt: earlier,
+            createdAt: earlier,
+            updatedAt: earlier,
+          ),
+          Meal(
+            id: 'meal-2',
+            partySessionId: session.id,
+            size: MealSize.large,
+            eatenAt: _workedConsumedAt,
+            createdAt: _workedConsumedAt,
+            updatedAt: _workedConsumedAt,
+          ),
+        ];
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+            meals: meals,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Add meal'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+        expect(find.text('Add meal'), findsOneWidget);
+        expect(find.textContaining('2 meals ·'), findsOneWidget);
       },
     );
   });

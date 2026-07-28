@@ -1,9 +1,9 @@
 import 'package:core/core.dart';
 
-/// Shared "size" label for a logged [MealSize] — the Party tab's meal
-/// indicator and the History day drill-down's expanded session summary
-/// card's full meals list (user-experience.md §S3 expand) both render
-/// meals as "<size> meal · <relative time>".
+/// Shared "size" label for a logged [MealSize] — used by S9's meal rows and
+/// the History day drill-down's expanded session summary card's full meals
+/// list (user-experience.md §S3 expand), both of which render meals as
+/// "<size> meal · <relative time>".
 String mealSizeLabel(MealSize size) => switch (size) {
       MealSize.small => 'Small',
       MealSize.medium => 'Medium',
