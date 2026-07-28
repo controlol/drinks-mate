@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -258,8 +259,15 @@ class FlutterNotificationService implements NotificationService {
     String? quickLogActionLabel,
   }) async {
     try {
+      // startTime is typically a `DateTime.now()`-derived snapshot taken
+      // before this call's own awaits (DB queries, plugin init). Clamp it
+      // forward so slot 0 isn't scheduled right at the wire — otherwise
+      // wall-clock drift across those awaits can push it into the past by
+      // the time zonedSchedule below actually runs, and the plugin rejects
+      // it as "not in the future" (observed live on-device: a cold-start
+      // reschedule produced zero hydration reminders for the whole batch).
       final slots = buildScheduleSlots(
-        from: startTime,
+        from: clampForSchedulingLatency(from: startTime, now: clock.now()),
         intervalMin: intervalMin,
         activeStartHour: activeStartHour,
         activeEndHour: activeEndHour,
@@ -288,17 +296,29 @@ class FlutterNotificationService implements NotificationService {
       for (var i = 0; i < slots.length; i++) {
         final slotId = id * 1000 + i;
         final tzTime = tz.TZDateTime.from(slots[i], tz.local);
-        await _plugin.zonedSchedule(
-          slotId,
-          title,
-          body,
-          tzTime,
-          details,
-          payload: payload,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-        );
+        // Per-slot try/catch: one rejected slot (e.g. it drifted into the
+        // past despite the clamp above) must not abort the rest of the
+        // batch — see the class-level failure mode this guards against.
+        try {
+          await _plugin.zonedSchedule(
+            slotId,
+            title,
+            body,
+            tzTime,
+            details,
+            payload: payload,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+          );
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint(
+              '[NotificationService] scheduleRepeating slot $i (id '
+              '$slotId) failed: $e',
+            );
+          }
+        }
       }
     } catch (e) {
       // Swallow; callers must not crash when the plugin is unavailable.

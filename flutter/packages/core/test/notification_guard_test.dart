@@ -506,4 +506,59 @@ void main() {
       },
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // clampForSchedulingLatency
+  // ---------------------------------------------------------------------------
+  group('clampForSchedulingLatency', () {
+    final now = DateTime(2026, 6, 24, 12, 0, 0);
+
+    // Regression: scheduleRepeating's slot 0 can equal a `startTime`
+    // snapshot taken before several `await`s (DB queries, plugin init). If
+    // wall-clock time drifts past that frozen instant before the platform
+    // channel call runs, the OS plugin rejects the whole batch as
+    // "not in the future" (observed live on-device: reminder_scheduler's
+    // cold-start reschedule produced zero hydration reminders). Clamping
+    // the batch start forward absorbs that drift.
+    test('from equal to now → pushed forward by the margin', () {
+      final result = clampForSchedulingLatency(from: now, now: now);
+      expect(result, equals(now.add(kSchedulingLatencyMargin)));
+    });
+
+    test(
+        'from already in the past (drift already happened) → clamped up '
+        'to now + margin, not left in the past', () {
+      final from = now.subtract(const Duration(seconds: 5));
+      final result = clampForSchedulingLatency(from: from, now: now);
+      expect(result, equals(now.add(kSchedulingLatencyMargin)));
+    });
+
+    test('from within the margin window → pushed out to now + margin', () {
+      final from = now.add(const Duration(seconds: 10));
+      final result = clampForSchedulingLatency(from: from, now: now);
+      expect(result, equals(now.add(kSchedulingLatencyMargin)));
+    });
+
+    test('from already comfortably in the future → returned unchanged', () {
+      final from = now.add(const Duration(hours: 1));
+      final result = clampForSchedulingLatency(from: from, now: now);
+      expect(result, same(from));
+    });
+
+    test('from exactly at now + margin (boundary) → returned unchanged', () {
+      final from = now.add(kSchedulingLatencyMargin);
+      final result = clampForSchedulingLatency(from: from, now: now);
+      expect(result, same(from));
+    });
+
+    test('custom margin is honoured', () {
+      final from = now.add(const Duration(seconds: 5));
+      final result = clampForSchedulingLatency(
+        from: from,
+        now: now,
+        margin: const Duration(minutes: 2),
+      );
+      expect(result, equals(now.add(const Duration(minutes: 2))));
+    });
+  });
 }
