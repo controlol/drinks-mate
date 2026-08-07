@@ -160,7 +160,7 @@ be applied manually to greenlight a third-party PR for the review workflows
 (see [Trust & triggers](#trust--triggers)).
 The dispatcher is **event-driven** — labelling an issue `agent-ready` (or a PR
 merging, which frees a slot) kicks it off within seconds, with a low-frequency
-cron (`7,37 * * * *`) as a backstop since GitHub throttles short schedules. Like
+cron (`49 7 * * *`) as a backstop since GitHub throttles short schedules. Like
 all workflows it only runs from the **default branch**, so this takes effect
 once merged to `main`.
 

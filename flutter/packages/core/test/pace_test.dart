@@ -154,4 +154,128 @@ void main() {
       );
     });
   });
+
+  // Source: notifications.md §Recommended volume per reminder — the full
+  // formula chaining expectedIntakeMl → deficit → glasses_raw →
+  // recommendedVolumeGlasses. Fixture: goal=2100 ml, active hours 08:00–22:00
+  // (840 min window) — the design doc's own worked example values.
+  group(
+      'recommendedReminderVolumeGlasses (notifications.md §Recommended '
+      'volume per reminder)', () {
+    final activeStart = DateTime(2026, 1, 1, 8, 0);
+    final activeEnd = DateTime(2026, 1, 1, 22, 0);
+
+    // (a) Worked-example-style case: 360 min elapsed of the 840 min window →
+    // expected = 2100 * 360/840 = 900 ml. actual=300 ml → deficit=600 ml.
+    // 200 ml default drink → glasses_raw = 3.0 → clamped to the 2.0 maximum.
+    test('deficit far behind pace clamps to the 2.0 maximum', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: DateTime(2026, 1, 1, 14, 0),
+        actualIntakeMl: 300,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(2.0, 0.001));
+    });
+
+    // (b) Same elapsed point (expected=900 ml), actual=600 ml → deficit=300 ml
+    // → glasses_raw = 300/200 = 1.5 exactly. No clamping needed.
+    test('mid-range deficit lands on 1.5 glasses without clamping', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: DateTime(2026, 1, 1, 14, 0),
+        actualIntakeMl: 600,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(1.5, 0.001));
+    });
+
+    // (c) Ahead of pace: expected=900 ml, actual=1500 ml → deficit=-600 ml →
+    // glasses_raw = -3.0 → clamps to the 0.5 minimum (never below, even far
+    // ahead of pace — "the reminder still recommends half a glass").
+    test('ahead of pace (negative deficit) clamps to the 0.5 minimum', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: DateTime(2026, 1, 1, 14, 0),
+        actualIntakeMl: 1500,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(0.5, 0.001));
+    });
+
+    // (d) now == activeStart → elapsed=0 → expected=0 ml. actual=0 →
+    // deficit=0 → glasses_raw=0 → rounds to 0, clamps up to the 0.5 minimum.
+    test('now at active-window start (elapsed=0) clamps to 0.5', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: activeStart,
+        actualIntakeMl: 0,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(0.5, 0.001));
+    });
+
+    // (e) now == activeEnd → elapsed = full 840 min window → expected = goal
+    // = 2100 ml exactly (elapsed/window ratio is exactly 1.0, no clamp
+    // needed to reach it). actual=2000 → deficit=100 → glasses_raw=0.5.
+    test(
+        'now at active-window end (elapsed=full window) reaches the goal '
+        'exactly, no elapsed-clamp needed', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: activeEnd,
+        actualIntakeMl: 2000,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(0.5, 0.001));
+    });
+
+    // (f) now after activeEnd → elapsed_active_min clamps to the window
+    // (max 840 min per the formula's min(active_window_min, …)), so the
+    // expected fraction never exceeds 1.0 — identical result to (e) despite
+    // "now" being an hour later.
+    test(
+        'now after active-window end clamps elapsed to the window (same '
+        'result as at activeEnd)', () {
+      final glasses = recommendedReminderVolumeGlasses(
+        goalMl: 2100,
+        activeStart: activeStart,
+        activeEnd: activeEnd,
+        now: DateTime(2026, 1, 1, 23, 0),
+        actualIntakeMl: 2000,
+        defaultDrinkVolumeMl: 200,
+      );
+      expect(glasses, closeTo(0.5, 0.001));
+    });
+  });
+
+  // Source: Parity Rulebook → "Glass-count copy formatting"; notifications.md
+  // §Glass formatting table.
+  group('formatGlassCount (Parity Rulebook — Glass-count copy formatting)', () {
+    test('0.5 → "half a glass"', () {
+      expect(formatGlassCount(0.5), 'half a glass');
+    });
+
+    test('1.0 → "a glass"', () {
+      expect(formatGlassCount(1.0), 'a glass');
+    });
+
+    test('1.5 → "1.5 glasses"', () {
+      expect(formatGlassCount(1.5), '1.5 glasses');
+    });
+
+    test('2.0 → "2 glasses"', () {
+      expect(formatGlassCount(2.0), '2 glasses');
+    });
+  });
 }

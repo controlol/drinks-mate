@@ -1,10 +1,15 @@
+import 'package:core/core.dart';
 import 'package:drift/native.dart';
 import 'package:drinks_mate/app.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/bac_daily_bucket.dart';
+import 'package:drinks_mate/src/models/daily_bucket.dart';
 import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/repository/drinks_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
+import 'package:drinks_mate/src/services/app_info_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +42,7 @@ Widget _appWithFakeStreams() {
     bacOnLockScreenEnabled: false,
     approachingCapNotifEnabled: false,
     soberEstimateNotifEnabled: false,
+    alcoholicPresetsAlwaysVisible: true,
     installedAt: epoch,
     createdAt: epoch,
     updatedAt: epoch,
@@ -50,6 +56,9 @@ Widget _appWithFakeStreams() {
       visiblePresetsProvider.overrideWith(
         (_) => Stream.value(const <DrinkPreset>[]),
       ),
+      presetUsageStatsProvider.overrideWith(
+        (_) => Stream.value(const <String, PresetUsageStats>{}),
+      ),
       todayTotalMlProvider.overrideWith((_) => Stream.value(0)),
       sevenDayAverageMlProvider.overrideWith((_) => Stream.value(0.0)),
       sevenDayDaysOnGoalProvider.overrideWith((_) => Stream.value(0)),
@@ -58,6 +67,38 @@ Widget _appWithFakeStreams() {
       userPreferencesProvider.overrideWith(
         (_) => Stream.value(preOnboardedPrefs),
       ),
+      // Settings (S4) reads these too — override so its Drift/plugin-backed
+      // providers never touch the real file system or a platform channel.
+      userProfileProvider.overrideWith((_) => Stream.value(null)),
+      visibleNonAlcoholicPresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
+      allPresetsProvider.overrideWith(
+        (_) => Stream.value(const <DrinkPreset>[]),
+      ),
+      // IndexedStack builds every tab eagerly, so PartyScreen's providers
+      // resolve immediately regardless of which tab is selected — override
+      // them for the same QueryStream-cleanup reason as the others above.
+      activePartySessionProvider.overrideWith((_) => Stream.value(null)),
+      // HistoryScreen (issue #25/#26) is also built eagerly by the
+      // IndexedStack — override its family providers for the same
+      // QueryStream-cleanup reason as the others above.
+      historyDailyTotalsProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historyDrinksPerDayProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historyAlcoholicDrinksPerDayProvider.overrideWith(
+        (_, __) => Stream.value(const <DailyBucket>[]),
+      ),
+      historySessionsInRangeProvider.overrideWith(
+        (_, __) => Stream.value(const <PartySession>[]),
+      ),
+      historyMaxBacPerDayProvider.overrideWith(
+        (_, __) => Future.value(const <BacDailyBucket>[]),
+      ),
+      appInfoServiceProvider.overrideWithValue(const FakeAppInfoService()),
     ],
     child: const DrinksMateApp(),
   );
@@ -91,7 +132,7 @@ void main() {
   ) async {
     await tester.pumpWidget(_appWithFakeStreams());
     await tester.pump(); // let StreamProvider emit the first value
-    expect(find.text('Quick log'), findsOneWidget);
+    expect(find.text('Quick Log'), findsOneWidget);
     expect(find.text('Log drink'), findsOneWidget);
   });
 
@@ -101,7 +142,7 @@ void main() {
         .pump(); // let userPreferencesProvider emit → _AppGate routes to AppShell
 
     // Today screen is initially visible.
-    expect(find.text('Quick log'), findsOneWidget);
+    expect(find.text('Quick Log'), findsOneWidget);
 
     // Tap the History tab.
     final navBar = find.byType(NavigationBar);
@@ -110,9 +151,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // History placeholder visible; Today content gone.
-    expect(find.text('Past intake and sessions coming soon.'), findsOneWidget);
-    expect(find.text('Quick log'), findsNothing);
+    // History screen visible (empty state — the overridden providers above
+    // emit an empty bucket list); Today content gone.
+    expect(find.text('No drinks logged in this period'), findsOneWidget);
+    expect(find.text('Quick Log'), findsNothing);
   });
 
   testWidgets('tapping Party tab switches screen', (tester) async {
@@ -124,7 +166,9 @@ void main() {
     await tester.tap(find.descendant(of: navBar, matching: find.text('Party')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Party Session feature coming soon.'), findsOneWidget);
+    // No active session (overridden to null above) → the Party tab shows
+    // the no-session explainer / start CTA (issue #22).
+    expect(find.text('Start party session'), findsOneWidget);
   });
 
   testWidgets('gear icon navigates to Settings full-screen', (tester) async {
@@ -135,7 +179,7 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.text('App settings coming soon.'), findsOneWidget);
+    expect(find.text('Hydration'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
 }

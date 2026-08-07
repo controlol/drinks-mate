@@ -1,4 +1,4 @@
-package com.example.drinks_mate
+package nl.controlol.drinksmate
 
 import io.flutter.embedding.android.FlutterActivity
 

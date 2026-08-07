@@ -29,6 +29,48 @@ double recommendedVolumeGlasses(double glassesRaw) {
   return rounded.clamp(0.5, 2.0).toDouble();
 }
 
+/// Full per-reminder recommended-volume formula.
+///
+/// Ties together [expectedIntakeMl] and [recommendedVolumeGlasses]:
+/// `deficit_ml = expected_intake_ml − actual_intake_ml`,
+/// `glasses_raw = deficit_ml / default_drink_volume_ml`.
+///
+/// Source: notifications.md §Recommended volume per reminder.
+double recommendedReminderVolumeGlasses({
+  required double goalMl,
+  required DateTime activeStart,
+  required DateTime activeEnd,
+  required DateTime now,
+  required double actualIntakeMl,
+  required double defaultDrinkVolumeMl,
+}) {
+  assert(defaultDrinkVolumeMl > 0, 'default drink volume must be positive');
+  final activeWindowMin = activeEnd.difference(activeStart).inMinutes;
+  final elapsedActiveMin = now.difference(activeStart).inMinutes;
+  final expectedMl = expectedIntakeMl(
+    goalMl: goalMl,
+    elapsedActiveMin: elapsedActiveMin,
+    activeWindowMin: activeWindowMin,
+  );
+  final deficitMl = expectedMl - actualIntakeMl;
+  final glassesRaw = deficitMl / defaultDrinkVolumeMl;
+  return recommendedVolumeGlasses(glassesRaw);
+}
+
+/// Renders a glasses value as the natural-language phrase used in reminder
+/// copy. Does not include the beverage noun ("of water") — callers append it.
+///
+/// Source: Parity Rulebook → "Glass-count copy formatting"; notifications.md
+/// §Glass formatting.
+String formatGlassCount(double glasses) {
+  return switch (glasses) {
+    0.5 => 'half a glass',
+    1.0 => 'a glass',
+    2.0 => '2 glasses',
+    _ => '$glasses glasses',
+  };
+}
+
 /// Status-pill states for the Today progress card.
 ///
 /// Source: designer-brief §S1; user-experience S1; Parity Rulebook

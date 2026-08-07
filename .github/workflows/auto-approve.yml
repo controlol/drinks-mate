@@ -1,8 +1,10 @@
-name: Auto-Approve Agent PRs
+name: Auto-Approve Trusted PRs
 
-# Automatically approves a claude/* PR once CI, code review, and security review
-# all pass. Each of those workflows fires this on completion; whichever finishes
-# last with all three checks green triggers the actual approval.
+# Automatically approves a PR from a trusted author (app/claude,
+# app/controlol-auth, or repo owner controlol) once the CI workflow's four
+# required jobs (core, app, review, security) all pass. CI runs review/
+# security as jobs within itself, so a single workflow_run completion of
+# "CI" already reflects the outcome of all four.
 #
 # Prerequisites (one-time setup):
 #   Settings → Actions → General → "Allow GitHub Actions to create and approve
@@ -14,16 +16,13 @@ name: Auto-Approve Agent PRs
 
 on:
   workflow_run:
-    workflows: ["CI", "Claude PR Review", "Security Review"]
+    workflows: ["CI"]
     types: [completed]
 
 jobs:
   approve:
-    # Only run for same-repo PRs. The claude[bot] author check inside the step
-    # is the real gate; the branch prefix here is a cheap pre-filter only.
-    if: |
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      startsWith(github.event.workflow_run.head_branch, 'claude/')
+    # Only run for same-repo PRs; the author check below is the real gate.
+    if: github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: read      # needed to query workflow run results
@@ -32,7 +31,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
     steps:
       - name: Find PR
         id: pr
@@ -47,15 +46,18 @@ jobs:
             exit 0
           fi
 
-          # Only auto-approve PRs opened by the claude bot.
-          # gh uses GraphQL which returns the app slug as "app/claude".
+          # Only auto-approve PRs from trusted authors (app bots return
+          # "app/<slug>"; human accounts return their bare login).
           pr_author=$(gh pr view "$pr_number" --repo "$REPO" \
             --json author --jq '.author.login')
-          if [ "$pr_author" != "app/claude" ]; then
-            echo "PR #$pr_number not authored by app/claude (got: $pr_author) — skipping."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          case "$pr_author" in
+            app/claude|app/controlol-auth|controlol) ;;
+            *)
+              echo "PR #$pr_number not authored by a trusted identity (got: $pr_author) — skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
 
           # Skip if the bot already approved to avoid duplicate approvals.
           already=$(gh api "repos/$REPO/pulls/$pr_number/reviews" \
@@ -69,39 +71,32 @@ jobs:
           echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for runs to stabilise
-        if: steps.pr.outputs.skip != 'true'
-        run: sleep 45
-
-      - name: Check all three required workflows passed
+      - name: Check all required CI jobs passed
         if: steps.pr.outputs.skip != 'true'
         id: checks
         run: |
           set -euo pipefail
 
-          # Fetch the latest run of each required workflow at this commit SHA.
-          # group_by(.name) + sort_by(.created_at) | last picks the most recent
-          # run per workflow, so retries don't block the approval.
-          results=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA" \
+          # This run (RUN_ID) is the exact CI run that just completed, so its
+          # jobs already reflect the final state of core, app, review, and
+          # security — no need to search across other runs at this SHA.
+          results=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" \
             --jq '
-              .workflow_runs
-              | map(select(.name | IN("CI", "Claude PR Review", "Security Review")))
-              | group_by(.name)
-              | map(sort_by(.created_at) | last)
+              [.jobs[] | select(.name | IN("core package (pure Dart)", "flutter app", "review", "security"))]
               | map({name: .name, status: .status, conclusion: .conclusion})')
 
           found=$(echo "$results" | jq 'length')
           not_green=$(echo "$results" | jq \
             '[.[] | select(.status != "completed" or .conclusion != "success")] | length')
 
-          echo "Required workflows at $HEAD_SHA: found=$found/3, not-green=$not_green"
+          echo "Required jobs in CI run $RUN_ID: found=$found/4, not-green=$not_green"
           echo "$results" | jq .
 
-          if [ "$found" -lt 3 ] || [ "$not_green" -gt 0 ]; then
-            echo "Not all required workflows completed successfully — not approving yet."
+          if [ "$found" -lt 4 ] || [ "$not_green" -gt 0 ]; then
+            echo "Not all required jobs completed successfully — not approving yet."
             echo "approve=false" >> "$GITHUB_OUTPUT"
           else
-            echo "All three workflows passed — will approve."
+            echo "All four jobs passed — will approve."
             echo "approve=true" >> "$GITHUB_OUTPUT"
           fi
 

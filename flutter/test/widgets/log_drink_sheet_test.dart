@@ -1,0 +1,1546 @@
+// Widget tests for S2 "Advanced editor" — LogDrinkSheet (issue #68).
+//
+// Coverage:
+//  1. Phase 1 -> phase 2 navigation (sanity check; this file previously had
+//     no coverage of LogDrinkSheet at all).
+//  2. Advanced button opens the Advanced editor, prefilled from the selected
+//     preset.
+//  3. Advanced editor Confirm button: disabled for an invalid name, enabled
+//     once valid (user-experience.md §S2 / Parity Rulebook DrinkPreset-name
+//     validation, same `validatePresetName` used by preset_editor_screen.dart
+//     — see preset_editor_screen_test.dart's "Name validation" group for the
+//     exact error strings this reuses).
+//  4. ABV field presence: only rendered for an alcoholic preset.
+//  5. Path discrimination (the three S2 Advanced exit paths — user-
+//     experience.md §S2, mirrored by log_drink_sheet.dart's own
+//     `_applyAdvancedResult` doc comment):
+//       - Advanced -> Confirm: logDrink only, preset row untouched.
+//       - Advanced -> menu -> "Save and confirm": updatePreset then logDrink.
+//       - Advanced -> menu -> "Save as copy and confirm" -> confirm the
+//         copy-name dialog: createPreset then logDrink against the new
+//         preset; updatePreset never called.
+//  6. Back button discards edits, returns to phase 2 with original values,
+//     no repo writes.
+//  7. Cancelling the copy-name dialog aborts the whole save-as-copy flow.
+//
+// Fake-repo pattern mirrors party_screen_test.dart's _FakeDrinksRepo: a real
+// AppDatabase(NativeDatabase.memory()) is passed to the super constructor,
+// but every method LogDrinkSheet can call is overridden to *record* its
+// arguments instead of touching the DB.
+//
+// allPresetsProvider warming mirrors preset_editor_screen_test.dart: the
+// Advanced editor's "Save as copy and confirm" path reads
+// `ref.read(allPresetsProvider).valueOrNull` synchronously inside
+// _applyAdvancedResult, so the provider must already be warm before the tap
+// that triggers it, or it would observe AsyncLoading and compute sortOrder
+// from an empty list regardless of the fixture.
+
+import 'package:core/core.dart';
+import 'package:drift/native.dart';
+import 'package:drinks_mate/src/db/app_database.dart';
+import 'package:drinks_mate/src/models/beverage_type.dart';
+import 'package:drinks_mate/src/models/drink_entry.dart';
+import 'package:drinks_mate/src/models/drink_preset.dart';
+import 'package:drinks_mate/src/models/optional.dart';
+import 'package:drinks_mate/src/models/party_session.dart';
+import 'package:drinks_mate/src/models/user_preferences.dart';
+import 'package:drinks_mate/src/repository/drinks_repository.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
+import 'package:drinks_mate/src/repository/preferences_repository.dart';
+import 'package:drinks_mate/src/repository/providers.dart';
+import 'package:drinks_mate/src/screens/log_drink_sheet.dart';
+import 'package:drinks_mate/src/screens/preset_editor_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+// ---------------------------------------------------------------------------
+// Fake repository — records createPreset/updatePreset/logDrink/getPresetById
+// calls; never touches the real DB.
+// ---------------------------------------------------------------------------
+
+typedef _LogDrinkCall = ({
+  DrinkPreset preset,
+  String? id,
+  String? name,
+  int? volumeMl,
+  double? abvPercent,
+  Optional<int?> priceMinor,
+  Optional<String?> currency,
+});
+
+typedef _UpdatePresetCall = ({
+  String id,
+  String? name,
+  Optional<double?> abvPercent,
+  Optional<int?> regularPriceMinor,
+  Optional<String?> regularCurrency,
+});
+
+typedef _CreatePresetCall = ({
+  String name,
+  BeverageType beverageType,
+  int volumeMl,
+  double? abvPercent,
+  int? regularPriceMinor,
+  String? regularCurrency,
+  String iconKey,
+  String iconColor,
+  int sortOrder,
+});
+
+class _FakeDrinksRepo extends DrinksRepository {
+  _FakeDrinksRepo({
+    this.existingPresets = const [],
+    this.nextSortOrderValue = 1,
+  }) : super(AppDatabase(NativeDatabase.memory()));
+
+  /// Feeds allPresetsProvider (via watchAllPresets).
+  final List<DrinkPreset> existingPresets;
+
+  /// Stubbed [nextSortOrder] return value — the real implementation queries
+  /// `MAX(sortOrder)` against the DB this fake never populates, so it can't
+  /// be exercised through the real method here.
+  final int nextSortOrderValue;
+
+  @override
+  Future<int> nextSortOrder() async => nextSortOrderValue;
+
+  /// What getPresetById returns after updatePreset — simulates the refetch
+  /// in the "Save and confirm" path (log_drink_sheet.dart:
+  /// `getPresetById(preset.id) ?? preset`). Defaults to null (falls back to
+  /// the original, un-refetched preset) unless a test sets it.
+  DrinkPreset? refetchResult;
+
+  final List<_LogDrinkCall> logDrinkCalls = [];
+  final List<_UpdatePresetCall> updatePresetCalls = [];
+  final List<_CreatePresetCall> createPresetCalls = [];
+
+  @override
+  Stream<List<DrinkPreset>> watchAllPresets() => Stream.value(existingPresets);
+
+  @override
+  Future<String> logDrink({
+    required DrinkPreset preset,
+    String? id,
+    String? name,
+    int? volumeMl,
+    double? abvPercent,
+    Optional<int?> priceMinor = const Optional.absent(),
+    Optional<String?> currency = const Optional.absent(),
+    DateTime? consumedAt,
+  }) async {
+    logDrinkCalls.add((
+      preset: preset,
+      id: id,
+      name: name,
+      volumeMl: volumeMl,
+      abvPercent: abvPercent,
+      priceMinor: priceMinor,
+      currency: currency,
+    ));
+    return id ?? 'fake-entry-id';
+  }
+
+  @override
+  Future<void> updatePreset({
+    required String id,
+    String? name,
+    int? volumeMl,
+    Optional<double?> abvPercent = const Optional.absent(),
+    Optional<int?> regularPriceMinor = const Optional.absent(),
+    Optional<String?> regularCurrency = const Optional.absent(),
+    String? iconKey,
+    String? iconColor,
+  }) async {
+    updatePresetCalls.add((
+      id: id,
+      name: name,
+      abvPercent: abvPercent,
+      regularPriceMinor: regularPriceMinor,
+      regularCurrency: regularCurrency,
+    ));
+  }
+
+  @override
+  Future<DrinkPreset?> getPresetById(String id) async => refetchResult;
+
+  @override
+  Future<DrinkPreset> createPreset({
+    required String name,
+    required BeverageType beverageType,
+    required int volumeMl,
+    double? abvPercent,
+    int? regularPriceMinor,
+    String? regularCurrency,
+    required String iconKey,
+    required String iconColor,
+    required int sortOrder,
+  }) async {
+    createPresetCalls.add((
+      name: name,
+      beverageType: beverageType,
+      volumeMl: volumeMl,
+      abvPercent: abvPercent,
+      regularPriceMinor: regularPriceMinor,
+      regularCurrency: regularCurrency,
+      iconKey: iconKey,
+      iconColor: iconColor,
+      sortOrder: sortOrder,
+    ));
+    return DrinkPreset(
+      id: 'created-preset',
+      name: name,
+      beverageType: beverageType,
+      volumeMl: volumeMl,
+      abvPercent: abvPercent,
+      regularPriceMinor: regularPriceMinor,
+      regularCurrency: regularCurrency,
+      iconKey: iconKey,
+      iconColor: iconColor,
+      isUserCreated: true,
+      isHidden: false,
+      sortOrder: sortOrder,
+    );
+  }
+}
+
+/// Records [updateDrinkSortMode] calls instead of touching the DB — same
+/// pattern as [_FakeDrinksRepo] above.
+class _FakePreferencesRepo extends PreferencesRepository {
+  _FakePreferencesRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<PresetSortMode> updateDrinkSortModeCalls = [];
+
+  @override
+  Future<void> updateDrinkSortMode(PresetSortMode mode) async {
+    updateDrinkSortModeCalls.add(mode);
+  }
+}
+
+typedef _LogAlcoholicDrinkCall = ({
+  DrinkPreset preset,
+  String sessionId,
+  String? id,
+  String? name,
+  int? volumeMl,
+  double? abvPercent,
+  int? priceMinor,
+  String? currency,
+});
+
+/// Records [logAlcoholicDrink] calls instead of touching the DB — mirrors
+/// [_FakeDrinksRepo] above (issue #85: LogDrinkSheet attaches an alcoholic
+/// entry to an active Party Session instead of logging it as an orphan).
+class _FakePartySessionRepo extends PartySessionRepository {
+  _FakePartySessionRepo() : super(AppDatabase(NativeDatabase.memory()));
+
+  final List<_LogAlcoholicDrinkCall> logAlcoholicDrinkCalls = [];
+
+  /// Sentinel resolved price — deliberately distinct from any preset's
+  /// regularPriceMinor fixture in this file, so a test asserting the logged
+  /// price came from `resolvePrice` (not some other source) can't pass by
+  /// coincidence.
+  @override
+  Future<ResolvedDrinkPrice> resolvePrice({
+    required PartySession session,
+    required DrinkPreset preset,
+  }) async =>
+      const ResolvedDrinkPrice(priceMinor: 777, currency: 'GBP');
+
+  @override
+  Future<DrinkEntry> logAlcoholicDrink({
+    required DrinkPreset preset,
+    required String sessionId,
+    String? id,
+    String? name,
+    int? volumeMl,
+    double? abvPercent,
+    DateTime? consumedAt,
+    int? priceMinor,
+    String? currency,
+    int? priceTokens,
+    int? tokenValueMinor,
+    String? tokenValueCurrency,
+    bool isManualPriceOverride = false,
+    DateTime? now,
+  }) async {
+    logAlcoholicDrinkCalls.add((
+      preset: preset,
+      sessionId: sessionId,
+      id: id,
+      name: name,
+      volumeMl: volumeMl,
+      abvPercent: abvPercent,
+      priceMinor: priceMinor,
+      currency: currency,
+    ));
+    final at = now ?? DateTime.now();
+    return DrinkEntry(
+      id: id ?? 'fake-party-entry-id',
+      name: name ?? preset.name,
+      beverageType: preset.beverageType,
+      volumeMl: volumeMl ?? preset.volumeMl,
+      abvPercent: abvPercent ?? preset.abvPercent,
+      partySessionId: sessionId,
+      consumedAt: consumedAt ?? at,
+      createdAt: at,
+      updatedAt: at,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+final _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+UserPreferences _prefs({String currency = 'EUR'}) => UserPreferences(
+      id: kUserPreferencesId,
+      username: 'tester',
+      dailyGoalMl: 2000,
+      dayBoundaryHour: 5,
+      units: 'metric',
+      currency: currency,
+      reminderEnabled: false,
+      reminderStartHour: 8,
+      reminderEndHour: 22,
+      reminderIntervalMin: 90,
+      inactivityReminderEnabled: false,
+      weeklySummaryEnabled: false,
+      bacOnLockScreenEnabled: false,
+      approachingCapNotifEnabled: false,
+      soberEstimateNotifEnabled: false,
+      alcoholicPresetsAlwaysVisible: true,
+      installedAt: _epoch,
+      createdAt: _epoch,
+      updatedAt: _epoch,
+    );
+
+/// Alcoholic fixture — used for ABV-field-present / path-discrimination
+/// tests. Already carries a regularCurrency so the Advanced editor's
+/// `_currency` getter (preset.regularCurrency ?? prefs.currency) never needs
+/// to fall back to userPreferencesProvider.
+const _beerPreset = DrinkPreset(
+  id: 'preset-beer',
+  name: 'Craft Lager',
+  beverageType: BeverageType.beer,
+  volumeMl: 330,
+  abvPercent: 5.0,
+  regularPriceMinor: 450,
+  regularCurrency: 'EUR',
+  iconKey: 'bottle',
+  iconColor: '#111111',
+  isUserCreated: true,
+  isHidden: false,
+  sortOrder: 1,
+);
+
+/// Non-alcoholic fixture — used for the "ABV field absent" case.
+const _waterPreset = DrinkPreset(
+  id: 'preset-water',
+  name: 'Glass of water',
+  beverageType: BeverageType.water,
+  volumeMl: 250,
+  iconKey: 'glass',
+  iconColor: '#3b82f6',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 1,
+);
+
+/// A second non-alcoholic fixture — used alongside [_waterPreset] for the
+/// search-filtering tests below (distinct, non-overlapping names).
+const _winePreset = DrinkPreset(
+  id: 'preset-wine',
+  name: 'Glass of wine',
+  beverageType: BeverageType.wine,
+  volumeMl: 175,
+  abvPercent: 12.0,
+  iconKey: 'wine_glass',
+  iconColor: '#be185d',
+  isUserCreated: false,
+  isHidden: false,
+  sortOrder: 2,
+);
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+/// Builds a [ProviderContainer] wired to [repo], with [visiblePresets] fixed
+/// (deterministic phase-1 list) and allPresetsProvider/userPreferencesProvider/
+/// activePartySessionProvider pre-warmed (see file header). [preferencesRepo]
+/// defaults to a recording fake (never a real [PreferencesRepository], which
+/// would open a real on-disk [AppDatabase] via `_appDatabaseProvider`).
+///
+/// activePartySessionProvider defaults to `Stream.value(null)` (no active
+/// session) and is always warmed — even for tests that never touch Party
+/// Session state — because `_confirm`/`_applyAdvancedResult` now
+/// `ref.read(activePartySessionProvider)` for ANY alcoholic preset
+/// (issue #85), including every existing `_beerPreset`-based test in this
+/// file. Without pre-warming, that first `ref.read` on a freshly-created
+/// StreamProvider observes `AsyncLoading` (same trap documented in
+/// today_screen_test.dart's `_buildWarmContainer`) instead of an
+/// unoverridden provider reaching for a real on-disk database — either way,
+/// wrong.
+Future<ProviderContainer> _buildContainer({
+  required _FakeDrinksRepo repo,
+  required List<DrinkPreset> visiblePresets,
+  UserPreferences? prefs,
+  PreferencesRepository? preferencesRepo,
+  PartySession? activeSession,
+  PartySessionRepository? partyRepo,
+}) async {
+  final container = ProviderContainer(
+    overrides: [
+      drinksRepositoryProvider.overrideWithValue(repo),
+      preferencesRepositoryProvider.overrideWithValue(
+        preferencesRepo ?? _FakePreferencesRepo(),
+      ),
+      if (partyRepo != null)
+        partySessionRepositoryProvider.overrideWithValue(partyRepo),
+      activePartySessionProvider.overrideWith(
+        (ref) => Stream.value(activeSession),
+      ),
+      visiblePresetsProvider.overrideWith(
+        (ref) => Stream.value(visiblePresets),
+      ),
+      presetUsageStatsProvider.overrideWith(
+        (ref) => Stream.value(const <String, PresetUsageStats>{}),
+      ),
+      userPreferencesProvider.overrideWith(
+        (ref) => Stream.value(prefs ?? _prefs()),
+      ),
+    ],
+  );
+  await container.read(allPresetsProvider.future);
+  await container.read(userPreferencesProvider.future);
+  await container.read(activePartySessionProvider.future);
+  return container;
+}
+
+/// Pumps LogDrinkSheet as plain body content — a modal bottom sheet route
+/// isn't required for testing; DraggableScrollableSheet just needs bounded
+/// height from its ancestor.
+///
+/// [alwaysUse24HourFormat] drives `MediaQuery.alwaysUse24HourFormat`, which
+/// is what `TimeOfDay.format(context)` actually keys off (not [Locale]) —
+/// see the "Time-of-day display format" Parity Rulebook row. Mirrors
+/// today_drinks_screen_test.dart's `_buildScreen` helper.
+Future<void> _pumpSheet(
+  WidgetTester tester,
+  ProviderContainer container, {
+  bool alwaysUse24HourFormat = false,
+}) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+          child: child!,
+        ),
+        home: const Scaffold(
+          body: SizedBox(height: 700, child: LogDrinkSheet()),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// Locates the phase-2 `_TimeButton`'s rendered label text.
+///
+/// `_TimeButton` is a private widget (log_drink_sheet.dart), so it can't be
+/// targeted by type from this test file's separate library — instead this
+/// finds the `OutlinedButton` that contains the `Icons.schedule` icon
+/// (unique among phase 2's buttons; the "Advanced" `OutlinedButton` has no
+/// icon) and reads its `Text` child.
+String _timeButtonLabel(WidgetTester tester) {
+  final button = find.ancestor(
+    of: find.byIcon(Icons.schedule),
+    matching: find.byType(OutlinedButton),
+  );
+  expect(button, findsOneWidget);
+  final text = tester.widget<Text>(
+    find.descendant(of: button, matching: find.byType(Text)),
+  );
+  return text.data!;
+}
+
+Future<void> _pickPreset(WidgetTester tester, String name) async {
+  await tester.tap(find.text(name));
+  await tester.pumpAndSettle();
+}
+
+/// Mutable holder for the [LoggedDrinkResult] popped by [_pushSheet] — a
+/// plain closure-captured local can't be reassigned from inside the pumped
+/// widget tree's `onPressed` callback and read back out afterwards, so tests
+/// pass one of these in instead (mirrors the inline pattern from "plain
+/// Confirm pops a non-null LoggedDrinkResult" above, factored out so the
+/// attachedToSession tests below don't have to repeat the whole
+/// push-a-MaterialPageRoute boilerplate).
+class _ResultBox {
+  LoggedDrinkResult? value;
+}
+
+/// Pushes [LogDrinkSheet] via `Navigator.push` (not a bare pump, like
+/// [_pumpSheet]) so the popped [LoggedDrinkResult] can be captured into
+/// [box].
+Future<void> _pushSheet(
+  WidgetTester tester,
+  ProviderContainer container,
+  _ResultBox box,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  box.value =
+                      await Navigator.of(context).push<LoggedDrinkResult>(
+                    MaterialPageRoute<LoggedDrinkResult>(
+                      builder: (_) => const Scaffold(
+                        body: SizedBox(height: 700, child: LogDrinkSheet()),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openAdvanced(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('log_drink_advanced_button')));
+  await tester.pumpAndSettle();
+}
+
+/// Edits the phase-2 volume field (the only TextFormField in that phase —
+/// it has no key of its own) to [volume]. Used to distinguish the *edited*
+/// volume from the preset default in the path-discrimination tests below;
+/// without this, a regression that swapped the edited volume for the
+/// preset's own volumeMl would pass silently whenever the two happened to
+/// be equal.
+Future<void> _editVolume(WidgetTester tester, String volume) async {
+  await tester.enterText(find.byType(TextFormField), volume);
+  await tester.pump();
+}
+
+Future<void> _fillAdvanced(
+  WidgetTester tester, {
+  String? name,
+  String? abv,
+}) async {
+  if (name != null) {
+    await tester.enterText(
+      find.byKey(const Key('advanced_editor_name_field')),
+      name,
+    );
+  }
+  if (abv != null) {
+    await tester.enterText(
+      find.byKey(const Key('advanced_editor_abv_field')),
+      abv,
+    );
+  }
+  await tester.pump();
+}
+
+/// Opens the Advanced editor's overflow menu and taps the item with [label]
+/// text (exact match against the PopupMenuItem's Text child).
+Future<void> _selectMenuAction(WidgetTester tester, String label) async {
+  await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  // -------------------------------------------------------------------------
+  // 1. Phase 1 -> phase 2 navigation
+  // -------------------------------------------------------------------------
+
+  testWidgets('tapping a preset in phase 1 moves to phase 2', (tester) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_beerPreset],
+    );
+    addTearDown(container.dispose);
+    await _pumpSheet(tester, container);
+
+    // Phase 1: preset list.
+    expect(find.text('Log a drink'), findsOneWidget);
+    expect(find.text('Craft Lager'), findsOneWidget);
+
+    await _pickPreset(tester, 'Craft Lager');
+
+    // Phase 2: confirm screen with the Advanced/Confirm buttons.
+    expect(find.text('Log a drink'), findsNothing);
+    expect(find.byKey(const Key('log_drink_advanced_button')), findsOneWidget);
+    expect(find.byKey(const Key('log_drink_confirm_button')), findsOneWidget);
+    // Volume field prefilled from the preset.
+    expect(find.text('330'), findsOneWidget);
+  });
+
+  // -------------------------------------------------------------------------
+  // 1b. Plain (non-Advanced) Confirm path — no test file existed for this
+  // screen before, so this path (unchanged by #68) is covered here too.
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+      'plain Confirm calls logDrink with the edited volume and no '
+      'name/abv/price overrides, and never touches the preset row', (
+    tester,
+  ) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_beerPreset],
+    );
+    addTearDown(container.dispose);
+    await _pumpSheet(tester, container);
+    await _pickPreset(tester, 'Craft Lager');
+    await _editVolume(tester, '500');
+
+    await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(repo.logDrinkCalls, hasLength(1));
+    final call = repo.logDrinkCalls.single;
+    expect(call.preset.id, _beerPreset.id);
+    expect(call.volumeMl, 500);
+    // Plain _confirm() passes no name/abv/price overrides — the repo falls
+    // back to the preset's own values (log_drink_sheet.dart _confirm).
+    expect(call.name, isNull);
+    expect(call.abvPercent, isNull);
+    expect(call.priceMinor, const Optional<int?>.absent());
+    expect(call.currency, const Optional<String?>.absent());
+
+    expect(repo.updatePresetCalls, isEmpty);
+    expect(repo.createPresetCalls, isEmpty);
+  });
+
+  testWidgets(
+      'plain Confirm pops a non-null LoggedDrinkResult carrying the logged '
+      'entry\'s id and name (regression: the sheet used to call '
+      'Navigator.pop() with no value, so the S1/S2 caller\'s '
+      '`if (result != null)` toast check was always false and the '
+      '"Drink logged" toast never appeared)', (
+    tester,
+  ) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_beerPreset],
+    );
+    addTearDown(container.dispose);
+
+    LoggedDrinkResult? poppedResult;
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    poppedResult =
+                        await Navigator.of(context).push<LoggedDrinkResult>(
+                      MaterialPageRoute<LoggedDrinkResult>(
+                        // Bounded height mirrors _pumpSheet — LogDrinkSheet's
+                        // DraggableScrollableSheet needs a finite height,
+                        // which a real showModalBottomSheet call always
+                        // provides but a bare full-page route doesn't.
+                        builder: (_) => const Scaffold(
+                          body: SizedBox(height: 700, child: LogDrinkSheet()),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await _pickPreset(tester, 'Craft Lager');
+    await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+    await tester.pumpAndSettle();
+
+    expect(poppedResult, isNotNull);
+    expect(poppedResult!.name, 'Craft Lager');
+    expect(repo.logDrinkCalls, hasLength(1));
+    expect(poppedResult!.id, repo.logDrinkCalls.single.id);
+  });
+
+  // -------------------------------------------------------------------------
+  // 1c. Phase 2 time button honours the device's 12h/24h preference
+  //     (Parity Rulebook: "Time-of-day display format", issue #46).
+  //
+  //     LogDrinkSheet has no edit/existing-entry mode (unlike
+  //     TodayDrinksScreen's edit sheet) — `_consumedAt` always starts from
+  //     `DateTime.now()` when a preset is picked, with no constructor
+  //     parameter to override it for a *new* log. So these tests can't pin
+  //     an exact consumedAt and assert an exact label (e.g. "9:30 AM") the
+  //     way today_drinks_screen_test.dart / history_day_screen_test.dart
+  //     do. Instead they assert the *shape* of the rendered label, which is
+  //     enough to catch a regression to a hardcoded 'HH:mm' format
+  //     regardless of what "now" happens to be when the test runs:
+  //       - 12h (alwaysUse24HourFormat=false): "<1-2 digits>:<2 digits>
+  //         AM|PM".
+  //       - 24h (alwaysUse24HourFormat=true): "<2 digits>:<2 digits>", no
+  //         AM/PM suffix.
+  // -------------------------------------------------------------------------
+
+  group('Phase 2 time button format (issue #46)', () {
+    final twelveHourPattern = RegExp(r'^\d{1,2}:\d{2}\s?(AM|PM)$');
+    final twentyFourHourPattern = RegExp(r'^\d{2}:\d{2}$');
+
+    testWidgets(
+      'renders 12h AM/PM format when alwaysUse24HourFormat=false',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container, alwaysUse24HourFormat: false);
+        await _pickPreset(tester, 'Craft Lager');
+
+        final label = _timeButtonLabel(tester);
+        expect(
+          twelveHourPattern.hasMatch(label),
+          isTrue,
+          reason: 'Expected a 12h AM/PM label like "9:30 AM", got "$label"',
+        );
+      },
+    );
+
+    testWidgets(
+      'renders 24h format (no AM/PM) when alwaysUse24HourFormat=true',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container, alwaysUse24HourFormat: true);
+        await _pickPreset(tester, 'Craft Lager');
+
+        final label = _timeButtonLabel(tester);
+        expect(
+          twentyFourHourPattern.hasMatch(label),
+          isTrue,
+          reason: 'Expected a 24h label like "09:30" with no AM/PM, got '
+              '"$label"',
+        );
+        expect(label, isNot(contains('AM')));
+        expect(label, isNot(contains('PM')));
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 2. Advanced button opens the editor, prefilled from the preset
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Advanced button opens the Advanced editor with fields prefilled from '
+    'the selected preset',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      // Editor is open: its name field key is unique (unlike the "Advanced"
+      // text, which also matches the phase-2 button label underneath).
+      expect(
+        find.byKey(const Key('advanced_editor_name_field')),
+        findsOneWidget,
+      );
+
+      // Source: log_drink_sheet.dart _AdvancedEditorSheetState.initState —
+      // name/ABV controllers seeded from the preset.
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('advanced_editor_name_field')),
+            )
+            .controller!
+            .text,
+        'Craft Lager',
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('advanced_editor_abv_field')),
+            )
+            .controller!
+            .text,
+        '5.0',
+      );
+      // Price is no longer editable in the Advanced editor (issue #85 — set
+      // via S6/S9 per-entry override instead, not at log time).
+      expect(
+        find.byKey(const Key('advanced_editor_price_field')),
+        findsNothing,
+      );
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 3. Confirm button disabled for invalid name, enabled once valid
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Advanced editor Confirm is disabled for an invalid name and enabled '
+    'once the name is valid',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      // Preset name is valid initially -> Confirm enabled.
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('advanced_editor_confirm_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      // Too short (< 3 runes) -> validatePresetName's structural error (same
+      // string as preset_editor_screen_test.dart's "Name validation" group).
+      await _fillAdvanced(tester, name: 'ab');
+      expect(find.text('Must be 3–30 characters.'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('advanced_editor_confirm_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      // A valid name re-enables Confirm.
+      await _fillAdvanced(tester, name: 'Craft Lager Deluxe');
+      expect(find.text('Must be 3–30 characters.'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('advanced_editor_confirm_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 4. ABV field presence
+  // -------------------------------------------------------------------------
+
+  testWidgets('ABV field is present for an alcoholic preset', (tester) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_beerPreset],
+    );
+    addTearDown(container.dispose);
+    await _pumpSheet(tester, container);
+    await _pickPreset(tester, 'Craft Lager');
+    await _openAdvanced(tester);
+
+    expect(find.byKey(const Key('advanced_editor_abv_field')), findsOneWidget);
+  });
+
+  testWidgets('ABV field is absent for a non-alcoholic preset', (tester) async {
+    final repo = _FakeDrinksRepo();
+    final container = await _buildContainer(
+      repo: repo,
+      visiblePresets: const [_waterPreset],
+    );
+    addTearDown(container.dispose);
+    await _pumpSheet(tester, container);
+    await _pickPreset(tester, 'Glass of water');
+    await _openAdvanced(tester);
+
+    expect(find.byKey(const Key('advanced_editor_name_field')), findsOneWidget);
+    expect(find.byKey(const Key('advanced_editor_abv_field')), findsNothing);
+  });
+
+  // -------------------------------------------------------------------------
+  // 4b. Party Session attachment (issue #85): an alcoholic preset logs
+  // through PartySessionRepository.logAlcoholicDrink (attached, not orphan)
+  // when a session is active, both for the plain _confirm() path and the
+  // Advanced editor's confirmOnly exit path — and the popped
+  // LoggedDrinkResult.attachedToSession reflects which happened.
+  // -------------------------------------------------------------------------
+
+  group(
+      'Party Session attachment (party-session.md §Logging from Today / '
+      'issue #85)', () {
+    final sessionFixture = PartySession(
+      id: 'active-session-1',
+      startedAt: _epoch,
+      useSessionPrices: false,
+      createdAt: _epoch,
+      updatedAt: _epoch,
+    );
+
+    testWidgets(
+      'plain Confirm with an active session attaches via '
+      'PartySessionRepository.logAlcoholicDrink, and the popped '
+      'LoggedDrinkResult.attachedToSession is true',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          activeSession: sessionFixture,
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, isEmpty);
+        expect(partyRepo.logAlcoholicDrinkCalls, hasLength(1));
+        expect(
+          partyRepo.logAlcoholicDrinkCalls.single.sessionId,
+          'active-session-1',
+        );
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isTrue);
+      },
+    );
+
+    testWidgets(
+      'plain Confirm with no active session logs an orphan via '
+      'DrinksRepository, and the popped LoggedDrinkResult.attachedToSession '
+      'is false',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await tester.tap(find.byKey(const Key('log_drink_confirm_button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, hasLength(1));
+        expect(partyRepo.logAlcoholicDrinkCalls, isEmpty);
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isFalse);
+      },
+    );
+
+    testWidgets(
+      'Advanced -> Confirm (confirmOnly) with an active session attaches via '
+      'PartySessionRepository.logAlcoholicDrink with the entered name, and '
+      'the popped LoggedDrinkResult.attachedToSession is true',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final partyRepo = _FakePartySessionRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+          activeSession: sessionFixture,
+          partyRepo: partyRepo,
+        );
+        addTearDown(container.dispose);
+        final box = _ResultBox();
+        await _pushSheet(tester, container, box);
+
+        await _pickPreset(tester, 'Craft Lager');
+        await _openAdvanced(tester);
+        await _fillAdvanced(tester, name: 'Craft Lager Deluxe', abv: '6.5');
+        await tester.tap(
+          find.byKey(const Key('advanced_editor_confirm_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repo.logDrinkCalls, isEmpty);
+        expect(partyRepo.logAlcoholicDrinkCalls, hasLength(1));
+        final call = partyRepo.logAlcoholicDrinkCalls.single;
+        expect(call.sessionId, 'active-session-1');
+        expect(call.name, 'Craft Lager Deluxe');
+        expect(call.abvPercent, 6.5);
+        expect(box.value, isNotNull);
+        expect(box.value!.attachedToSession, isTrue);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. Path discrimination — the three S2 Advanced exit paths
+  // -------------------------------------------------------------------------
+
+  group('Path discrimination (user-experience.md §S2 Advanced exit paths)', () {
+    testWidgets(
+        'Advanced -> Confirm calls logDrink with the edited values and '
+        'never touches the preset row', (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _editVolume(tester, '500');
+      await _openAdvanced(tester);
+
+      await _fillAdvanced(
+        tester,
+        name: 'Craft Lager Deluxe',
+        abv: '6.5',
+      );
+
+      await tester.tap(find.byKey(const Key('advanced_editor_confirm_button')));
+      await tester.pumpAndSettle();
+
+      expect(repo.logDrinkCalls, hasLength(1));
+      final call = repo.logDrinkCalls.single;
+      // "Confirm — logs the drink with the entered values for this entry
+      // only. The underlying preset is unchanged."
+      expect(call.preset.id, _beerPreset.id);
+      // Edited phase-2 volume (500), not the preset default (330) — proves
+      // the sheet reads from _volumeCtrl, not preset.volumeMl.
+      expect(call.volumeMl, 500);
+      expect(call.name, 'Craft Lager Deluxe');
+      expect(call.abvPercent, 6.5);
+      // Price is no longer settable in the Advanced editor (issue #85) —
+      // confirmOnly's logEntry() never passes priceMinor/currency, so the
+      // repo falls back to the preset's own stored price (Optional.absent,
+      // not an explicit override or an explicit clear).
+      expect(call.priceMinor, const Optional<int?>.absent());
+      expect(call.currency, const Optional<String?>.absent());
+
+      expect(repo.updatePresetCalls, isEmpty);
+      expect(repo.createPresetCalls, isEmpty);
+    });
+
+    testWidgets(
+      'Advanced -> menu -> "Save and confirm" calls updatePreset with the '
+      'edited fields, then logDrink, and never calls createPreset',
+      (tester) async {
+        final repo = _FakeDrinksRepo()
+          // Simulates the post-update refetch reflecting the edited fields —
+          // log_drink_sheet.dart: `getPresetById(preset.id) ?? preset`.
+          ..refetchResult = const DrinkPreset(
+            id: 'preset-beer',
+            name: 'Craft Lager Deluxe',
+            beverageType: BeverageType.beer,
+            volumeMl: 330,
+            abvPercent: 6.5,
+            regularPriceMinor: 525,
+            regularCurrency: 'EUR',
+            iconKey: 'bottle',
+            iconColor: '#111111',
+            isUserCreated: true,
+            isHidden: false,
+            sortOrder: 1,
+          );
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+        await _pickPreset(tester, 'Craft Lager');
+        await _editVolume(tester, '500');
+        await _openAdvanced(tester);
+
+        await _fillAdvanced(
+          tester,
+          name: 'Craft Lager Deluxe',
+          abv: '6.5',
+        );
+
+        await _selectMenuAction(tester, 'Save and confirm');
+
+        expect(repo.updatePresetCalls, hasLength(1));
+        final update = repo.updatePresetCalls.single;
+        expect(update.id, 'preset-beer');
+        expect(update.name, 'Craft Lager Deluxe');
+        expect(update.abvPercent, const Optional.value(6.5));
+        // Price is no longer editable here (issue #85) — updatePreset is
+        // called with Optional.absent() defaults for both price fields, so
+        // the preset's existing price is left untouched, not nulled out.
+        expect(update.regularPriceMinor, const Optional<int?>.absent());
+        expect(update.regularCurrency, const Optional<String?>.absent());
+
+        expect(repo.logDrinkCalls, hasLength(1));
+        // logDrink is called against the refetched (edited) preset, not raw
+        // name/abv/price overrides — saveAndConfirm passes only volume/time.
+        expect(repo.logDrinkCalls.single.preset.name, 'Craft Lager Deluxe');
+        expect(repo.logDrinkCalls.single.preset.abvPercent, 6.5);
+        expect(repo.logDrinkCalls.single.name, isNull);
+        // Edited phase-2 volume (500), not the preset default (330).
+        expect(repo.logDrinkCalls.single.volumeMl, 500);
+
+        expect(repo.createPresetCalls, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'Advanced -> menu -> "Save as copy and confirm" -> confirm dialog '
+      'calls createPreset then logDrink against the new preset, and '
+      'never calls updatePreset',
+      (tester) async {
+        final repo = _FakeDrinksRepo(
+          existingPresets: const [_beerPreset],
+          nextSortOrderValue: 2,
+        );
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+        await _pickPreset(tester, 'Craft Lager');
+        await _editVolume(tester, '500');
+        await _openAdvanced(tester);
+
+        await _fillAdvanced(
+          tester,
+          name: 'Craft Lager Deluxe',
+          abv: '6.5',
+        );
+
+        await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Save as copy and confirm'));
+        await tester.pumpAndSettle();
+
+        // Copy-name dialog, prefilled '<name> (copy)'.
+        expect(find.text('New preset name'), findsOneWidget);
+        expect(
+          tester
+              .widget<TextField>(
+                find.byKey(const Key('advanced_editor_copy_name_field')),
+              )
+              .controller!
+              .text,
+          'Craft Lager Deluxe (copy)',
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('advanced_editor_copy_name_field')),
+          'Craft Lager Copy',
+        );
+        await tester.tap(
+          find.byKey(const Key('advanced_editor_copy_confirm_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repo.createPresetCalls, hasLength(1));
+        final create = repo.createPresetCalls.single;
+        expect(create.name, 'Craft Lager Copy');
+        expect(create.beverageType, BeverageType.beer);
+        // Icon/colour are not editable in the Advanced editor — copied as-is.
+        expect(create.iconKey, 'bottle');
+        expect(create.iconColor, '#111111');
+        // Edited phase-2 volume (500), not the preset default (330).
+        expect(create.volumeMl, 500);
+        expect(create.abvPercent, 6.5);
+        // Price is no longer editable in the Advanced editor (issue #85) —
+        // the copy inherits the SOURCE preset's existing price (_beerPreset:
+        // 450/EUR), not any entered value (there's no price field to enter
+        // one into anymore).
+        expect(create.regularPriceMinor, _beerPreset.regularPriceMinor);
+        expect(create.regularCurrency, _beerPreset.regularCurrency);
+        // sortOrder = repo.nextSortOrder() (stubbed to 2).
+        expect(create.sortOrder, 2);
+
+        expect(repo.logDrinkCalls, hasLength(1));
+        expect(repo.logDrinkCalls.single.preset.id, 'created-preset');
+
+        expect(repo.updatePresetCalls, isEmpty);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Back button discards edits
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Back button in the Advanced editor discards edits and returns to '
+    'phase 2 with the original values, with no repo writes',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      await _fillAdvanced(tester, name: 'Something Else', abv: '9.9');
+
+      await tester.tap(find.byKey(const Key('advanced_editor_back_button')));
+      await tester.pumpAndSettle();
+
+      // Back in phase 2 — LogDrinkSheet itself was never popped.
+      expect(
+        find.byKey(const Key('log_drink_advanced_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('log_drink_confirm_button')), findsOneWidget);
+      // Original preset name still shown (phase 2's title uses preset.name,
+      // never mutated by the discarded Advanced edit).
+      expect(find.text('Craft Lager'), findsOneWidget);
+      // Volume field still shows the preset default (330), unedited.
+      expect(find.text('330'), findsOneWidget);
+
+      expect(repo.logDrinkCalls, isEmpty);
+      expect(repo.updatePresetCalls, isEmpty);
+      expect(repo.createPresetCalls, isEmpty);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 7. Cancelling the copy-name dialog aborts the whole save-as-copy flow
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Cancelling the copy-name dialog aborts the save-as-copy flow: no '
+    'createPreset/logDrink call, Advanced editor stays open',
+    (tester) async {
+      final repo = _FakeDrinksRepo(existingPresets: const [_beerPreset]);
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      await _fillAdvanced(tester, name: 'Craft Lager Deluxe');
+
+      await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save as copy and confirm'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('New preset name'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('advanced_editor_copy_cancel_button')),
+      );
+      await tester.pumpAndSettle();
+
+      // Dialog dismissed; _finish returns early (newPresetName == null), so
+      // the Advanced editor sheet is never popped and stays visible.
+      expect(find.text('New preset name'), findsNothing);
+      // Editor still open — its name field key is unique (unlike the
+      // "Advanced" text, which also matches the phase-2 button label
+      // underneath).
+      expect(
+        find.byKey(const Key('advanced_editor_name_field')),
+        findsOneWidget,
+      );
+
+      expect(repo.createPresetCalls, isEmpty);
+      expect(repo.logDrinkCalls, isEmpty);
+      expect(repo.updatePresetCalls, isEmpty);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 8. Copy-name dialog validates the name (its "(copy)" default can overflow
+  //    the 30-rune limit on its own for a long-enough base name).
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'Copy-name dialog disables Create for an over-length default name and '
+    're-enables it once edited to a valid name',
+    (tester) async {
+      final repo = _FakeDrinksRepo(existingPresets: const [_beerPreset]);
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+      await _pickPreset(tester, 'Craft Lager');
+      await _openAdvanced(tester);
+
+      // 24-char base name + ' (copy)' (7 chars) = 31 runes, over the 30 max.
+      await _fillAdvanced(tester, name: 'Craft Lager Super Deluxe');
+
+      await tester.tap(find.byKey(const Key('advanced_editor_menu_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save as copy and confirm'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('advanced_editor_copy_name_field')),
+            )
+            .controller!
+            .text,
+        'Craft Lager Super Deluxe (copy)',
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const Key('advanced_editor_copy_confirm_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('advanced_editor_copy_name_field')),
+        'Craft Lager Copy',
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const Key('advanced_editor_copy_confirm_button')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('advanced_editor_copy_confirm_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(repo.createPresetCalls.single.name, 'Craft Lager Copy');
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 9. Phase 1 search field (issue #78)
+  // -------------------------------------------------------------------------
+
+  group('Phase 1 search field (issue #78)', () {
+    testWidgets(
+      'typing in the search field filters tiles to matching names only, '
+      'case-insensitively',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset, _winePreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        expect(find.text('Craft Lager'), findsOneWidget);
+        expect(find.text('Glass of water'), findsOneWidget);
+        expect(find.text('Glass of wine'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'WINE', // uppercase — must still match 'Glass of wine'
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsNothing);
+        expect(find.text('Glass of water'), findsNothing);
+        expect(find.text('Glass of wine'), findsOneWidget);
+        // "Create new preset" tile always stays, regardless of the filter.
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'clearing the search field restores the full preset list',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset, _winePreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'wine',
+        );
+        await tester.pump();
+        expect(find.text('Craft Lager'), findsNothing);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          '',
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsOneWidget);
+        expect(find.text('Glass of water'), findsOneWidget);
+        expect(find.text('Glass of wine'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a query matching nothing leaves only the "Create new preset" tile',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset, _waterPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.enterText(
+          find.byKey(const Key('log_drink_search_field')),
+          'nonexistent drink name',
+        );
+        await tester.pump();
+
+        expect(find.text('Craft Lager'), findsNothing);
+        expect(find.text('Glass of water'), findsNothing);
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. "Create new preset" entry (issue #78)
+  // -------------------------------------------------------------------------
+
+  group('"Create new preset" entry (issue #78)', () {
+    testWidgets(
+      'the tile is present as the first phase-1 list item',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        expect(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+          findsOneWidget,
+        );
+        expect(find.text('Create new preset'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping the tile pushes a route containing PresetEditorScreen',
+      (tester) async {
+        final repo = _FakeDrinksRepo();
+        final container = await _buildContainer(
+          repo: repo,
+          visiblePresets: const [_beerPreset],
+        );
+        addTearDown(container.dispose);
+        await _pumpSheet(tester, container);
+
+        await tester.tap(
+          find.byKey(const Key('log_drink_create_preset_tile')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PresetEditorScreen), findsOneWidget);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Phase 1 sort-mode dropdown (issue #78)
+  // -------------------------------------------------------------------------
+
+  testWidgets(
+    'changing the phase-1 sort-mode dropdown calls updateDrinkSortMode with '
+    'the selected mode',
+    (tester) async {
+      final repo = _FakeDrinksRepo();
+      final preferencesRepo = _FakePreferencesRepo();
+      final container = await _buildContainer(
+        repo: repo,
+        visiblePresets: const [_beerPreset],
+        preferencesRepo: preferencesRepo,
+      );
+      addTearDown(container.dispose);
+      await _pumpSheet(tester, container);
+
+      await tester.tap(find.byType(DropdownButton<PresetSortMode>));
+      await tester.pumpAndSettle();
+      // The closed dropdown already renders the current selection's label
+      // ("Recently used"), and DropdownButton pre-builds every item off
+      // stage for layout — use `.last` to hit the open overlay's item.
+      await tester.tap(find.text('Most used').last);
+      await tester.pumpAndSettle();
+
+      expect(preferencesRepo.updateDrinkSortModeCalls, [
+        PresetSortMode.mostUsed,
+      ]);
+    },
+  );
+}

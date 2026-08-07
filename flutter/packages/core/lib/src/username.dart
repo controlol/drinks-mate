@@ -11,10 +11,12 @@
 ///  - whitespace, control/format/surrogate/private-use/unassigned, emoji and
 ///    symbols are all rejected by the whitelist.
 ///
-/// [validatePresetName] rules (same as username except ASCII space is allowed):
+/// [validatePresetName] rules (same as username except ASCII space and
+/// parentheses are allowed):
 ///  - length 3–30,
-///  - allowed chars: same as username **plus ASCII space**,
-///  - must start AND end with a letter or digit (leading/trailing spaces rejected).
+///  - allowed chars: same as username **plus ASCII space and `( )`**,
+///  - must start AND end with a letter, digit, `(`, or `)` (leading/trailing
+///    spaces rejected).
 library;
 
 import 'package:unorm_dart/unorm_dart.dart' as unorm;
@@ -70,18 +72,19 @@ UsernameValidation validateUsername(
   return const UsernameValidation.valid();
 }
 
-/// Like [_usernamePattern] but also permits ASCII space between words.
-/// Leading/trailing spaces are rejected because the pattern requires the first
-/// and last character to be a letter or digit.
+/// Like [_usernamePattern] but also permits ASCII space between words and
+/// parentheses `( )` (e.g. "Beer (0.33L)"). Leading/trailing spaces are still
+/// rejected, but a name may start or end with `(` or `)`.
 final RegExp _presetNamePattern = RegExp(
-  r'^[\p{L}0-9]([\p{L}0-9_.\- ]*[\p{L}0-9])?$',
+  r'^[\p{L}0-9()]([\p{L}0-9_.\-() ]*[\p{L}0-9()])?$',
   unicode: true,
 );
 
 /// Validates a [DrinkPreset] name against the Parity Rulebook rules.
 ///
-/// Same structural rules as [validateUsername] except ASCII space is allowed
-/// between words (e.g. "Glass of water" is valid).
+/// Same structural rules as [validateUsername] except ASCII space and
+/// parentheses are allowed (e.g. "Glass of water" and "Beer (0.33L)" are
+/// both valid).
 UsernameValidation validatePresetName(String input) {
   final normalized = unorm.nfc(input);
   final length = normalized.runes.length;
@@ -90,7 +93,8 @@ UsernameValidation validatePresetName(String input) {
   }
   if (!_presetNamePattern.hasMatch(normalized)) {
     return const UsernameValidation.invalid(
-      'Use letters, digits, spaces, and _ - . — must start and end with a letter or digit.',
+      'Use letters, digits, spaces, ( ), and _ - . — must start and end with '
+      'a letter, digit, or parenthesis.',
     );
   }
   return const UsernameValidation.valid();

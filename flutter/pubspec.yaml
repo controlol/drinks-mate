@@ -21,6 +21,7 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.0
   flutter_local_notifications: ^17.0.0  # D4 — local notifications
   timezone: ^0.9.3            # D4 — correct local zonedSchedule
+  clock: ^1.1.1               # overridable now() for scheduling-latency tests
   fl_chart: ^0.68.0           # D5 — History bars + BAC line chart
   flutter_svg: ^2.0.10        # D6 — two-shade tinted drink icons
   path_provider: ^2.1.0      # DB file location for Drift (D3)
@@ -29,6 +30,7 @@ dependencies:
   intl: ^0.20.0             # Locale-aware number/currency formatting (F6)
   confetti: ^0.8.0
   shared_preferences: ^2.5.5
+  package_info_plus: ^8.0.0  # App version string for Settings → About (F6)
 
 dev_dependencies:
   flutter_test:

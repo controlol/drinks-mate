@@ -35,6 +35,16 @@ class _AppGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Initializes the notification plugin (timezones, platform init, Android
+    // channels) before any scheduling can occur — see
+    // notificationInitializerProvider's doc in repository/providers.dart.
+    ref.watch(notificationInitializerProvider);
+    // Keeps the reminder scheduler alive for the app's lifetime — see
+    // reminderReschedulerProvider's doc in repository/providers.dart.
+    ref.watch(reminderReschedulerProvider);
+    // Keeps Party Mode's approaching-cap/sober-estimate notifications synced
+    // for the app's lifetime — see partyNotificationSyncProvider's doc.
+    ref.watch(partyNotificationSyncProvider);
     final prefsAsync = ref.watch(userPreferencesProvider);
     return prefsAsync.when(
       loading: () =>

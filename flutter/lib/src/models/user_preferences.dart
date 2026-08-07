@@ -1,3 +1,5 @@
+import 'package:core/core.dart';
+
 /// Pure-Dart domain model for per-device user preferences (singleton).
 ///
 /// All time-of-day values are integer hours (0–23). installedAt is a [DateTime]
@@ -22,6 +24,9 @@ class UserPreferences {
     required this.bacOnLockScreenEnabled,
     required this.approachingCapNotifEnabled,
     required this.soberEstimateNotifEnabled,
+    required this.alcoholicPresetsAlwaysVisible,
+    this.drinkSortMode = PresetSortMode.recentlyUsed,
+    this.drinkConsumeMinutes = 20,
     required this.installedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -71,6 +76,25 @@ class UserPreferences {
   final bool approachingCapNotifEnabled;
   final bool soberEstimateNotifEnabled;
 
+  /// When `true` (default), alcoholic presets are always shown in the Manage
+  /// Drinks screen. When `false`, they're shown only while a party session
+  /// is active — see `ManageDrinksScreen`'s doc comment (features.md F14).
+  final bool alcoholicPresetsAlwaysVisible;
+
+  /// Sort mode shared by the Today "Log a drink" grid and the S2 log-drink
+  /// picker (features.md F14 §Sort modes). Default `recentlyUsed`.
+  final PresetSortMode drinkSortMode;
+
+  /// How long, in minutes, the user typically takes to consume one drink —
+  /// data-model.md §UserPreferences, party-session.md §Drink consumption
+  /// time. Range 0–60 (UI enforces 5-min steps). Mirrored onto the active
+  /// [PartySession] at start and live while active; frozen there at
+  /// `endedAt`. Defaults to 20, matching the DB column default — the
+  /// default here only matters for in-memory fixtures that don't round-trip
+  /// through the repository, since every persisted read supplies it
+  /// explicitly.
+  final int drinkConsumeMinutes;
+
   /// When the local database was first created on this device.
   final DateTime installedAt;
 
@@ -95,6 +119,9 @@ class UserPreferences {
     bool? bacOnLockScreenEnabled,
     bool? approachingCapNotifEnabled,
     bool? soberEstimateNotifEnabled,
+    bool? alcoholicPresetsAlwaysVisible,
+    PresetSortMode? drinkSortMode,
+    int? drinkConsumeMinutes,
     DateTime? installedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -125,6 +152,10 @@ class UserPreferences {
           approachingCapNotifEnabled ?? this.approachingCapNotifEnabled,
       soberEstimateNotifEnabled:
           soberEstimateNotifEnabled ?? this.soberEstimateNotifEnabled,
+      alcoholicPresetsAlwaysVisible:
+          alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
+      drinkSortMode: drinkSortMode ?? this.drinkSortMode,
+      drinkConsumeMinutes: drinkConsumeMinutes ?? this.drinkConsumeMinutes,
       installedAt: installedAt ?? this.installedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

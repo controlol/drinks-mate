@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../a11y/semantics_labels.dart';
+import '../models/beverage_type.dart';
 import '../models/drink_preset.dart';
 import '../repository/providers.dart';
 import '../services/format_service.dart';
@@ -12,16 +13,29 @@ import '../theme/app_theme.dart';
 import '../utils/color_utils.dart';
 import '../widgets/goal_celebration_overlay.dart';
 import 'log_drink_sheet.dart';
+import 'party_session_flows.dart';
 import 'settings_screen.dart';
 import 'today_drinks_screen.dart';
 
-/// Today tab — F3 home screen (issue #13).
+/// Today tab — F3 home screen (issue #13; Log-a-drink grid: issue #78).
 ///
-/// Layout (top to bottom):
+/// The whole page scrolls as a single vertical scroll (user-experience.md
+/// §S1: "The whole page scrolls as a single vertical scroll") — below
+/// [kTabletBreakpointWidth] (top to bottom):
 ///   1. Progress card — intake vs goal, pace tick, status pill (taps → S6 log).
 ///   2. Stat card pair — 7-day daily average and days-on-goal n/7.
-///   3. Quick-log row — horizontally scrollable preset shortcuts.
-///   4. "Log drink" button — full-width, opens S2 sheet.
+///   3. Log-a-drink section — sort-mode dropdown + a grid (shrink-wrapped,
+///      laid out at full height within the page scroll) of the top
+///      [kLogADrinkGridSize] presets by the selected mode (Manual /
+///      Recently used / Most used — F14 §Sort modes).
+///
+/// The full-width "Log drink" button sits outside that scroll, pinned at the
+/// bottom regardless of scroll position.
+///
+/// At or above [kTabletBreakpointWidth], 1–2 sit in a left column beside the
+/// Log-a-drink section on the right, both participating in the same page
+/// scroll, with the "Log drink" button still pinned full-width at the bottom
+/// (user-experience.md §Responsive layout).
 ///
 /// Also listens for the first intake-crosses-goal event each day and shows
 /// the full-screen [GoalCelebrationOverlay] (issue #14).
@@ -88,29 +102,64 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today'),
-        actions: [_settingsButton(context)],
+        actions: [_settingsButton(context, ref)],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _ProgressCard(),
-          const SizedBox(height: 12),
-          _StatCardRow(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'Quick log',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          _QuickLogRow(),
-          const Spacer(),
-          _LogDrinkButton(),
-        ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Tablet/desktop: the Log-a-drink section sits beside the progress
+          // + stat cards instead of below them (user-experience.md
+          // §Responsive layout; breakpoint chosen to match Material's
+          // "expanded" window-size class, ≥840dp — see the PR description
+          // for the full breakpoint table).
+          final isWide = constraints.maxWidth >= kTabletBreakpointWidth;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: isWide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _ProgressCard(),
+                                  const SizedBox(height: 12),
+                                  _StatCardRow(),
+                                ],
+                              ),
+                            ),
+                            Expanded(child: _LogADrinkSection()),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _ProgressCard(),
+                            const SizedBox(height: 12),
+                            _StatCardRow(),
+                            _LogADrinkSection(),
+                          ],
+                        ),
+                ),
+              ),
+              _LogDrinkButton(),
+            ],
+          );
+        },
       ),
     );
   }
 }
+
+/// Below this width, the Today screen stacks the Log-a-drink section under
+/// the progress/stat cards; at or above it, they sit side by side. Matches
+/// Material's "expanded" window-size-class threshold (≥840dp) — a
+/// reasonable, documented choice per the issue's `[OPEN]` breakpoint note,
+/// not a value pinned by the design docs.
+const double kTabletBreakpointWidth = 840;
 
 // ---------------------------------------------------------------------------
 // Progress card
@@ -498,35 +547,121 @@ class _StatCard extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Quick-log row
+// Log-a-drink section — responsive grid + sort-mode dropdown (F3/F14 §Sort
+// modes, issue #78). Replaces the old horizontally-scrolling quick-log row.
 // ---------------------------------------------------------------------------
 
-class _QuickLogRow extends ConsumerWidget {
+/// Number of grid columns for a given *available width* (not necessarily the
+/// full screen width — on the tablet/desktop split layout this section gets
+/// roughly half the screen). The 600dp tier matches Material's "compact"
+/// window-size-class threshold (the same family [kTabletBreakpointWidth]'s
+/// 840dp "expanded" threshold is drawn from); 900dp has no such source —
+/// see that constant's doc comment:
+///   < 600dp  -> 2 columns (phone)
+///   600–899  -> 3 columns (wide phone / the tablet-desktop side panel)
+///   >= 900dp -> 4 columns (a full-width tablet/desktop grid)
+int _gridColumnsForWidth(double width) {
+  if (width >= 900) return 4;
+  if (width >= 600) return 3;
+  return 2;
+}
+
+/// How many top-ranked presets the grid shows (features.md F14 §Sort modes).
+const int kLogADrinkGridSize = 8;
+
+class _LogADrinkSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final presetsAsync = ref.watch(visiblePresetsProvider);
-    return SizedBox(
-      height: 96,
-      child: presetsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => const SizedBox.shrink(),
-        data: (presets) {
-          final shown = presets.take(5).toList();
-          return ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: shown.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, i) => _QuickLogTile(preset: shown[i]),
-          );
+    final presets = ref.watch(rankedVisiblePresetsProvider);
+    final mode =
+        ref.watch(userPreferencesProvider).valueOrNull?.drinkSortMode ??
+            PresetSortMode.recentlyUsed;
+    final shown = presets.take(kLogADrinkGridSize).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Quick Log',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              _SortModeDropdown(
+                mode: mode,
+                onChanged: (newMode) => ref
+                    .read(preferencesRepositoryProvider)
+                    .updateDrinkSortMode(newMode),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = _gridColumnsForWidth(constraints.maxWidth);
+              // Shrink-wrapped and non-scrolling: the grid lays out at its
+              // full height within the page's single scroll view rather than
+              // scrolling independently (user-experience.md §S1).
+              return GridView.builder(
+                padding: const EdgeInsets.only(bottom: 8),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.1,
+                ),
+                itemCount: shown.length,
+                itemBuilder: (context, i) => _LogADrinkTile(preset: shown[i]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SortModeDropdown extends StatelessWidget {
+  const _SortModeDropdown({required this.mode, required this.onChanged});
+
+  final PresetSortMode mode;
+  final ValueChanged<PresetSortMode> onChanged;
+
+  static const _labels = {
+    PresetSortMode.manual: 'Manual',
+    PresetSortMode.recentlyUsed: 'Recently used',
+    PresetSortMode.mostUsed: 'Most used',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: SemanticsLabels.sortModeSelector,
+      child: DropdownButton<PresetSortMode>(
+        value: mode,
+        underline: const SizedBox.shrink(),
+        onChanged: (value) {
+          if (value != null) onChanged(value);
         },
+        items: [
+          for (final entry in _labels.entries)
+            DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+        ],
       ),
     );
   }
 }
 
-class _QuickLogTile extends ConsumerWidget {
-  const _QuickLogTile({required this.preset});
+class _LogADrinkTile extends ConsumerWidget {
+  const _LogADrinkTile({required this.preset});
 
   final DrinkPreset preset;
 
@@ -539,7 +674,6 @@ class _QuickLogTile extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: () => _quickLog(context, ref),
         child: Container(
-          width: 80,
           decoration: BoxDecoration(
             border: Border.all(
               color: Theme.of(context).colorScheme.outlineVariant,
@@ -571,14 +705,44 @@ class _QuickLogTile extends ConsumerWidget {
   }
 
   Future<void> _quickLog(BuildContext context, WidgetRef ref) async {
+    // party-session.md §Logging from Today: an alcoholic drink attaches to
+    // an already-active session directly, instead of logging as an orphan.
+    final activeSession = preset.beverageType.isAlcoholic
+        ? ref.read(activePartySessionProvider).valueOrNull
+        : null;
     try {
-      await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
+      final String entryId;
+      if (activeSession != null) {
+        final partyRepo = ref.read(partySessionRepositoryProvider);
+        final resolved = await partyRepo.resolvePrice(
+          session: activeSession,
+          preset: preset,
+        );
+        final entry = await partyRepo.logAlcoholicDrink(
+          preset: preset,
+          sessionId: activeSession.id,
+          priceMinor: resolved.priceMinor,
+          currency: resolved.currency,
+          priceTokens: resolved.priceTokens,
+          tokenValueMinor: resolved.tokenValueMinor,
+          tokenValueCurrency: resolved.tokenValueCurrency,
+        );
+        entryId = entry.id;
+      } else {
+        entryId =
+            await ref.read(drinksRepositoryProvider).logDrink(preset: preset);
+      }
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logged ${preset.name}'),
-            duration: const Duration(seconds: 4),
-          ),
+        _showLoggedSnackBar(
+          context,
+          ref,
+          entryId: entryId,
+          name: preset.name,
+          beverageType: preset.beverageType,
+          // Already awaited above — nothing left to race an Undo tap
+          // against.
+          pendingWrite: Future.value(),
+          hasActiveSession: activeSession != null,
         );
       }
     } catch (e) {
@@ -595,9 +759,9 @@ class _QuickLogTile extends ConsumerWidget {
 // Log drink button
 // ---------------------------------------------------------------------------
 
-class _LogDrinkButton extends StatelessWidget {
+class _LogDrinkButton extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -612,25 +776,28 @@ class _LogDrinkButton extends StatelessWidget {
         child: FilledButton.icon(
           icon: const Icon(Icons.add),
           label: const Text('Log drink'),
-          onPressed: () => _openSheet(context),
+          onPressed: () => _openSheet(context, ref),
         ),
       ),
     );
   }
 
-  Future<void> _openSheet(BuildContext context) async {
-    final logged = await showModalBottomSheet<bool>(
+  Future<void> _openSheet(BuildContext context, WidgetRef ref) async {
+    final logged = await showModalBottomSheet<LoggedDrinkResult>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const LogDrinkSheet(),
     );
-    if (logged == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Drink logged'),
-          duration: Duration(seconds: 4),
-        ),
+    if (logged != null && context.mounted) {
+      _showLoggedSnackBar(
+        context,
+        ref,
+        entryId: logged.id,
+        name: logged.name,
+        beverageType: logged.beverageType,
+        pendingWrite: logged.pendingWrite,
+        hasActiveSession: logged.attachedToSession,
       );
     }
   }
@@ -640,11 +807,63 @@ class _LogDrinkButton extends StatelessWidget {
 // Helpers
 // ---------------------------------------------------------------------------
 
-Widget _settingsButton(BuildContext context) => IconButton(
+/// Shared "Logged {name}" toast for both the grid-tile tap and the S2
+/// confirm path (user-experience.md §S1: "The `Logged` toast ... after any
+/// preset-tile tap in the 'Quick Log' grid or successful S2 confirm").
+///
+/// Non-alcoholic entries, and alcoholic entries attached to an already-active
+/// Party Session, get an inline Undo that soft-deletes the entry — after
+/// [pendingWrite] settles, since C6 shows this toast before the write lands
+/// and an instant Undo tap could otherwise race the insert. An alcoholic
+/// entry logged with **no** active session (an orphan) gets a "Start
+/// session" action in that slot instead — a toast only cleanly fits one
+/// action (party-session.md §Logging from Today).
+void _showLoggedSnackBar(
+  BuildContext context,
+  WidgetRef ref, {
+  required String entryId,
+  required String name,
+  required BeverageType beverageType,
+  required Future<void> pendingWrite,
+  required bool hasActiveSession,
+}) {
+  final offerStartSession = beverageType.isAlcoholic && !hasActiveSession;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Logged $name'),
+      duration: const Duration(seconds: 4),
+      // SnackBar.persist defaults to (action != null) when omitted, which
+      // makes ScaffoldMessenger's auto-hide timer no-op for every call site
+      // here since they all attach an action. Force it false so the 4s
+      // auto-dismiss (user-experience.md §S1) always applies.
+      persist: false,
+      action: offerStartSession
+          ? SnackBarAction(
+              label: 'Start session',
+              onPressed: () => startPartySessionFlow(context, ref),
+            )
+          : SnackBarAction(
+              label: 'Undo',
+              onPressed: () async {
+                await pendingWrite;
+                await ref
+                    .read(drinksRepositoryProvider)
+                    .deleteDrinkEntry(entryId);
+              },
+            ),
+    ),
+  );
+}
+
+Widget _settingsButton(BuildContext context, WidgetRef ref) => IconButton(
       icon: const Icon(Icons.settings_outlined),
       tooltip: 'Settings',
-      onPressed: () => Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-      ),
+      onPressed: () {
+        unawaited(
+            ref.read(partySessionRepositoryProvider).checkAndApplyAutoEnd());
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+        );
+      },
     );
