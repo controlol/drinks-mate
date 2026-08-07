@@ -127,7 +127,14 @@ class AppDatabase extends _$AppDatabase {
           if (from >= 4 && from < 8) {
             await m.addColumn(partySessions, partySessions.name);
           }
-          if (from < 9) {
+          // Lower-bounded at 3 (not just `from < 9`): `createTable` in the
+          // `if (from < 3)` block above builds `userPreferencesTable` from
+          // today's Dart schema — which already includes
+          // `drinkConsumeMinutes` — so an upgrade starting below v3 already
+          // has the column by the time this runs; adding it again would
+          // throw "duplicate column name" (same failure mode as `name` and
+          // `partySessions.drinkConsumeMinutes` below).
+          if (from >= 3 && from < 9) {
             await m.addColumn(
               userPreferencesTable,
               userPreferencesTable.drinkConsumeMinutes,

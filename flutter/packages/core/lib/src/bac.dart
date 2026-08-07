@@ -245,18 +245,38 @@ double sessionBacAtTime({
 /// Projected time the session's pooled BAC ([sessionBacAtTime]) returns to
 /// 0 g/L for good, or `null` if [drinks] is empty.
 ///
-/// Walks the same [_sessionBreakpoints] as [sessionBacAtTime] and reads off
-/// only the *last* breakpoint's `(pool, rate)` — deliberately not the first
-/// zero-crossing found while scanning: a session can have a genuine sober
-/// gap (one drink's contribution fully decays before a later drink starts
-/// absorbing), and the pool rising again after such a gap means an earlier
-/// crossing is not the projected sober time. By construction every drink's
-/// absorption window is finite, so every `+r`/`−r` pair has been applied by
-/// the last breakpoint — its `rate` has always settled back to exactly `−β`
-/// by then, with nothing left to rise again. [_sessionBreakpoints]'s own
-/// walk already floors at 0 at every step (correctly handling any
-/// intermediate dip-then-rise), so the last breakpoint's `pool` is already
-/// the correct starting point for a final, uninterrupted `−β` decay.
+/// Walks the same [_sessionBreakpoints] as [sessionBacAtTime], scanning
+/// *backward* from the end for the last breakpoint with a strictly
+/// positive pool. That breakpoint's segment is the last one during which
+/// BAC is actually declining from a positive value: every later breakpoint
+/// already reads 0, and within a single segment a floored pool can only
+/// rise again if the segment's rate is positive — which would itself make
+/// the *next* breakpoint's pool positive too, contradicting that none of
+/// the later breakpoints do. So the segment found this way never has
+/// anything left to rise again, and its rate is guaranteed negative (same
+/// contradiction argument, or — for the very last breakpoint — the `−β`
+/// guarantee below).
+///
+/// This is deliberately not "the first zero-crossing found while
+/// scanning forward", nor "just the last breakpoint's own segment":
+/// - A session can have a genuine sober gap (one drink's contribution
+///   fully decays before a later drink starts absorbing) — stopping at the
+///   first crossing would report a time before the later drink is even
+///   accounted for.
+/// - The pool can also floor to 0 *before* the final breakpoint's own
+///   time — e.g. a trailing drink whose absorption rate is at or below β
+///   layered on an already-decaying pool, so its own segment is negative
+///   for its entire length. Assuming the crossing lands exactly at the
+///   last breakpoint (rather than finding the exact prior breakpoint whose
+///   segment actually floors) overshoots by up to the full absorption
+///   window.
+///
+/// By construction every drink's absorption window is finite, so every
+/// `+r`/`−r` pair has been applied by the last breakpoint — its `rate` has
+/// always settled back to exactly `−β` by then. If no breakpoint ever has
+/// a positive pool (every drink's absorption rate is at or below β — see
+/// [hoursToZero]'s own r ≤ β case — so BAC never accumulates at all), the
+/// session was sober from the very first event.
 DateTime? sessionSoberTime({
   required Iterable<SessionDrink> drinks,
   required int drinkConsumeMinutes,
@@ -267,15 +287,18 @@ DateTime? sessionSoberTime({
   );
   if (breakpoints.isEmpty) return null;
 
-  final last = breakpoints.last;
-  if (last.pool <= 0) return last.time;
+  for (var i = breakpoints.length - 1; i >= 0; i--) {
+    final bp = breakpoints[i];
+    if (bp.pool <= 0) continue;
 
-  final hoursToFloor = last.pool / -last.rate;
-  return last.time.add(
-    Duration(
-      microseconds: (hoursToFloor * Duration.microsecondsPerHour).round(),
-    ),
-  );
+    final hoursToFloor = bp.pool / -bp.rate;
+    return bp.time.add(
+      Duration(
+        microseconds: (hoursToFloor * Duration.microsecondsPerHour).round(),
+      ),
+    );
+  }
+  return breakpoints.first.time;
 }
 
 /// Step 2/3 combined — picks Watson (height available) or Widmark (height

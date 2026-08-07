@@ -839,6 +839,77 @@ void main() {
           });
         },
       );
+
+      group(
+        'sessionSoberTime — trailing r <= β drink floors before its own '
+        'window closes',
+        () {
+          // A = 0.30 g/L @ t0, B = 0.05 g/L @ t0+90min, drinkConsumeMinutes
+          // = 30 (T_hours = 1h for both). r_B = 0.05/1 = 0.05 < β = 0.15, so
+          // B's own segment (net rate r_B-β = -0.10) is negative for its
+          // entire [90,150)min window — the pool floors to 0 partway
+          // through that window, not at its close. Regression for a bug
+          // where sessionSoberTime assumed the crossing always lands
+          // exactly at the last breakpoint's own time.
+          const localDrinkConsumeMinutes = 30;
+          final drinkA = (consumedAt: t0, bacInitial: 0.30);
+          final bConsumedAt = t0.add(const Duration(minutes: 90));
+          final drinkB = (consumedAt: bConsumedAt, bacInitial: 0.05);
+          final drinks = [drinkA, drinkB];
+
+          final tHours = absorptionWindowHours(localDrinkConsumeMinutes);
+          final rB = 0.05 / tHours;
+
+          test('confirms the floor is reached before B\'s window closes', () {
+            // rB < β is the whole premise of this fixture — B's segment
+            // must be negative for its entire window, not just partially.
+            expect(rB, lessThan(eliminationBetaGPerLPerHour));
+            // Pool at B's own window-close (t0+150min) must already read
+            // 0 — otherwise this fixture doesn't actually exercise the bug.
+            expect(
+              sessionBacAtTime(
+                drinks: drinks,
+                at: t0.add(const Duration(minutes: 150)),
+                drinkConsumeMinutes: localDrinkConsumeMinutes,
+              ),
+              0.0,
+            );
+          });
+
+          test('reports the true mid-window crossing, not the window close',
+              () {
+            // Pool entering B's segment (at t0+90min) is A's own remaining
+            // decay: A absorbed over [0,60min) at r_A=0.30/1=0.30, net
+            // 0.30-0.15=0.15, peak 0.15 at 60min, then pure -β decay for
+            // 30 more minutes to 90min: 0.15 - 0.15*0.5 = 0.075.
+            const poolEnteringB = 0.075;
+            final netInB = rB - eliminationBetaGPerLPerHour;
+            final hoursToFloor = poolEnteringB / -netInB;
+            final expected = bConsumedAt.add(
+              Duration(
+                microseconds:
+                    (hoursToFloor * Duration.microsecondsPerHour).round(),
+              ),
+            );
+            final actual = sessionSoberTime(
+              drinks: drinks,
+              drinkConsumeMinutes: localDrinkConsumeMinutes,
+            );
+            expect(actual, isNotNull);
+            expect(
+              actual!.difference(expected).inSeconds.abs(),
+              lessThanOrEqualTo(1),
+            );
+            // Regression guard: the bug this test catches returned B's
+            // window-close time (t0+150min) instead of the true ~t0+135min
+            // crossing — a 15-minute overshoot.
+            expect(
+              actual.isBefore(t0.add(const Duration(minutes: 150))),
+              isTrue,
+            );
+          });
+        },
+      );
     },
   );
 
