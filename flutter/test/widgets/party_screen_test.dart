@@ -239,6 +239,16 @@ class _FakePartySessionRepo extends PartySessionRepository {
       updatedAt: at,
     );
   }
+
+  final List<int> updateDrinkConsumeMinutesCalls = [];
+
+  @override
+  Future<void> updateDrinkConsumeMinutes(int minutes) async {
+    if (minutes < 0 || minutes > 60) {
+      throw ArgumentError.value(minutes, 'minutes', 'must be within 0-60');
+    }
+    updateDrinkConsumeMinutesCalls.add(minutes);
+  }
 }
 
 class _FakeDrinksRepo extends DrinksRepository {
@@ -343,12 +353,14 @@ PartySession _makeSession({
   required DateTime startedAt,
   String id = 's1',
   String? name,
+  int drinkConsumeMinutes = 20,
 }) {
   return PartySession(
     id: id,
     name: name,
     startedAt: startedAt,
     useSessionPrices: false,
+    drinkConsumeMinutes: drinkConsumeMinutes,
     createdAt: startedAt,
     updatedAt: startedAt,
   );
@@ -636,6 +648,30 @@ final _workedBacAfter2h = bacAtTime(
   hoursSince: 2,
 );
 
+/// Elapsed time from `consumedAt` to this worked example's absorption peak
+/// (party-session.md §Drink consumption time: `T_hours = (drinkConsumeMinutes
+/// + ABSORPTION_DELAY_MINUTES) / 60`), at the session-default
+/// `drinkConsumeMinutes = 20` every `_makeSession` call below uses unless
+/// overridden. Step 6's pool peaks exactly when a solo drink's absorption
+/// window closes, at `consumedAt + T_hours`.
+final _workedPeakElapsed =
+    Duration(minutes: (absorptionWindowHours(20) * 60).round());
+
+/// The worked example's session-pooled BAC at [elapsed] since `consumedAt`
+/// (a single drink, no meal), computed via the same `sessionBacAtTime` core
+/// function `estimateSessionBac`/`buildBacChartSeries` actually call —
+/// mirrors this file's existing "verified via the sanity test below, not
+/// hand-derived" convention rather than re-deriving the absorption-window
+/// arithmetic in test code.
+double _workedBacAt(Duration elapsed, {int drinkConsumeMinutes = 20}) =>
+    sessionBacAtTime(
+      drinks: [
+        (consumedAt: _workedConsumedAt, bacInitial: _workedBacInitial),
+      ],
+      at: _workedConsumedAt.add(elapsed),
+      drinkConsumeMinutes: drinkConsumeMinutes,
+    );
+
 void main() {
   // -------------------------------------------------------------------------
   // 1. BAC card with known inputs
@@ -643,16 +679,33 @@ void main() {
 
   group('BAC card — known inputs (party-session.md §Worked example)', () {
     test('sanity: matches the formula-correct worked-example vectors', () {
-      // Cross-checked against flutter/packages/core/test/bac_test.dart lines
-      // 37-49 (same total alcohol dose, same profile).
+      // Cross-checked against flutter/packages/core/test/bac_test.dart's
+      // Watson worked-example vectors (same total alcohol dose, same
+      // profile) — not line-numbered, since that file is being rewritten by
+      // a parallel phase for the absorption-window model.
       expect(_workedBacInitial, closeTo(0.360, 0.001));
       expect(gPerLToMmol(_workedBacInitial), closeTo(7.82, 0.02));
       expect(_workedBacAfter2h, closeTo(0.060, 0.001));
+      // At consumedAt itself the drink hasn't absorbed at all yet
+      // (party-session.md §Drink consumption time / §Step 4 — the pool
+      // ramps up from 0 across the absorption window rather than jumping
+      // instantly, unlike the old instant-absorption model this worked
+      // example predates).
+      expect(_workedBacAt(Duration.zero), 0.0);
+      // Peak lands when the sole drink's absorption window closes, lower
+      // than the old instant-absorption peak of _workedBacInitial itself
+      // (party-session.md §Worked example: "lower than ... the
+      // pre-absorption-window model's instant peak").
+      expect(
+        _workedBacAt(_workedPeakElapsed),
+        closeTo(0.235, 0.001),
+      );
+      expect(_workedBacAt(_workedPeakElapsed), lessThan(_workedBacInitial));
     });
 
-    testWidgets('renders the initial BAC in g/L and mmol/L, 2 dp, no cap bar', (
-      tester,
-    ) async {
+    testWidgets(
+        'renders the peak BAC (absorption-window close) in g/L and mmol/L, '
+        '2 dp, no cap bar', (tester) async {
       final repo = _FakePartySessionRepo();
       final session = _makeSession(startedAt: _workedConsumedAt);
       final profile = _makeProfile(birthDate: _workedBirthDate);
@@ -663,6 +716,7 @@ void main() {
           consumedAt: _workedConsumedAt,
         ),
       ];
+      final peakBac = _workedBacAt(_workedPeakElapsed);
 
       await tester.pumpWidget(
         _buildScreen(
@@ -670,13 +724,13 @@ void main() {
           entries: entries,
           profile: profile,
           partyRepo: repo,
-          now: _workedConsumedAt, // elapsed = 0
+          now: _workedConsumedAt.add(_workedPeakElapsed),
         ),
       );
       await tester.pumpAndSettle();
 
-      final gPerLText = _workedBacInitial.toStringAsFixed(2);
-      final mmolText = gPerLToMmol(_workedBacInitial).toStringAsFixed(2);
+      final gPerLText = peakBac.toStringAsFixed(2);
+      final mmolText = gPerLToMmol(peakBac).toStringAsFixed(2);
 
       // Source: party_screen.dart _BacCard.build — '$gPerLText g/L' and
       // '≈ $mmolText mmol/L' as separate Text widgets.
@@ -742,6 +796,16 @@ void main() {
         weightKg: 75,
         r: widmarkR(Gender.male),
       );
+      // Peak (not the initial dose) is what's actually displayed at a given
+      // "now" under the absorption-window model — see the module-level
+      // `_workedBacAt` doc comment.
+      final widmarkPeakBac = sessionBacAtTime(
+        drinks: [
+          (consumedAt: _workedConsumedAt, bacInitial: widmarkBacInitial),
+        ],
+        at: _workedConsumedAt.add(_workedPeakElapsed),
+        drinkConsumeMinutes: 20,
+      );
 
       await tester.pumpWidget(
         _buildScreen(
@@ -749,14 +813,14 @@ void main() {
           entries: entries,
           profile: profile,
           partyRepo: repo,
-          now: _workedConsumedAt,
+          now: _workedConsumedAt.add(_workedPeakElapsed),
         ),
       );
       await tester.pumpAndSettle();
 
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(
-        find.text('${widmarkBacInitial.toStringAsFixed(2)} g/L'),
+        find.text('${widmarkPeakBac.toStringAsFixed(2)} g/L'),
         findsOneWidget,
       );
     });
@@ -910,7 +974,13 @@ void main() {
             entries: entries,
             profile: profile,
             partyRepo: repo,
-            now: _workedConsumedAt, // elapsed = 0
+            // "now" is moved to the worked example's absorption-window
+            // peak (party-session.md §Drink consumption time), not
+            // elapsed = 0: under the absorption-window model the actual
+            // segment ramps up from 0 at consumedAt rather than jumping
+            // there instantly, so elapsed = 0 alone would show only a
+            // single flat 0.00 g/L actual point.
+            now: _workedConsumedAt.add(_workedPeakElapsed),
           ),
         );
         await tester.pumpAndSettle();
@@ -923,11 +993,18 @@ void main() {
         expect(chart.data.lineBarsData, hasLength(2));
         final actualSpots = chart.data.lineBarsData.first.spots;
         expect(actualSpots, isNotEmpty);
-        // At elapsed = 0 the only actual point is the worked example's
-        // initial BAC (party-session.md §Worked example: 0.362 g/L,
-        // cross-checked via core's own bacInitialWatson above).
-        expect(actualSpots.first.y, closeTo(_workedBacInitial, 0.001));
-        expect(actualSpots.first.y, greaterThan(0));
+        // The actual segment's first sample, at consumedAt itself, is still
+        // 0 — absorption hasn't started ramping yet (party-session.md §Step
+        // 4).
+        expect(actualSpots.first.y, 0);
+        // By the peak instant ("now"), the last actual sample is clearly
+        // non-zero, confirming the ramp away from the empty state's flat
+        // line.
+        expect(
+          actualSpots.last.y,
+          closeTo(_workedBacAt(_workedPeakElapsed), 0.001),
+        );
+        expect(actualSpots.last.y, greaterThan(0));
       },
     );
 
@@ -1213,12 +1290,18 @@ void main() {
       'Approaching-cap banner (party-session.md §BAC goal (cap) / '
       'isApproachingCap: bac >= 80% of cap)', () {
     testWidgets(
-      'cap 0.4 g/L — worked-example BAC (0.360) is >=80% (0.32) — banner '
-      'shown',
+      'cap 0.29 g/L — worked-example peak BAC (≈0.235) is >=80% (0.232) — '
+      'banner shown',
       (tester) async {
-        // Source: flutter/packages/core/test/bac_test.dart line 320-324
-        // ("worked-example BAC (0.360 g/L) against a 0.4 g/L cap is
-        // approaching").
+        // The live approaching-cap banner reads the *instant* estimate
+        // (party_screen.dart's own isApproachingCap(bacGPerL: estimate.gPerL)
+        // call, unchanged by the absorption-window revision — only the
+        // separate background notification switched to a projected-peak
+        // read). Under the absorption-window model the instant estimate
+        // never exceeds the peak (party-session.md §Worked example), so
+        // "now" is set to the peak instant and the cap is chosen just below
+        // it, rather than reusing the pre-absorption-window model's
+        // consumedAt-instant peak of 0.360.
         final repo = _FakePartySessionRepo();
         final session = _makeSession(startedAt: _workedConsumedAt);
         final profile = _makeProfile(birthDate: _workedBirthDate);
@@ -1235,9 +1318,9 @@ void main() {
             session: session,
             entries: entries,
             profile: profile,
-            prefs: _makePrefs(bacCapGramsPerL: 0.4),
+            prefs: _makePrefs(bacCapGramsPerL: 0.29),
             partyRepo: repo,
-            now: _workedConsumedAt,
+            now: _workedConsumedAt.add(_workedPeakElapsed),
           ),
         );
         await tester.pumpAndSettle();
@@ -1252,8 +1335,8 @@ void main() {
     );
 
     testWidgets(
-        'cap 1.0 g/L — worked-example BAC (0.360) is below 80% (0.8) — '
-        'banner absent', (tester) async {
+        'cap 1.0 g/L — worked-example peak BAC (≈0.235) is below 80% (0.8) '
+        '— banner absent', (tester) async {
       final repo = _FakePartySessionRepo();
       final session = _makeSession(startedAt: _workedConsumedAt);
       final profile = _makeProfile(birthDate: _workedBirthDate);
@@ -1272,7 +1355,7 @@ void main() {
           profile: profile,
           prefs: _makePrefs(bacCapGramsPerL: 1.0),
           partyRepo: repo,
-          now: _workedConsumedAt,
+          now: _workedConsumedAt.add(_workedPeakElapsed),
         ),
       );
       await tester.pumpAndSettle();
@@ -1606,6 +1689,128 @@ void main() {
 
         expect(find.text('Add meal'), findsOneWidget);
         expect(find.textContaining('2 meals ·'), findsOneWidget);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 3b-3. Consume-time control (party-session.md §Party tab during a
+  // session): "Drink pace: N min", tappable to open a 0-60/5-min-step
+  // stepper that writes straight to PartySession.drinkConsumeMinutes via
+  // PartySessionRepository.updateDrinkConsumeMinutes.
+  // -------------------------------------------------------------------------
+
+  group('Consume-time control (party-session.md §Party tab)', () {
+    testWidgets(
+      'renders "Drink pace: N min" using the session\'s current value',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(
+          startedAt: _workedConsumedAt,
+          drinkConsumeMinutes: 25,
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Drink pace: 25 min'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('Drink pace: 25 min'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping the control opens the stepper; adjusting and tapping Done '
+      'calls PartySessionRepository.updateDrinkConsumeMinutes with the new '
+      'value',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(
+          startedAt: _workedConsumedAt,
+          drinkConsumeMinutes: 20,
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Drink pace: 20 min'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Drink pace: 20 min'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Drink pace'), findsOneWidget);
+        expect(find.text('20 min'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('drink_consume_minutes_stepper_increment')),
+        );
+        await tester.pump();
+        expect(find.text('25 min'), findsOneWidget);
+
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateDrinkConsumeMinutesCalls, [25]);
+      },
+    );
+
+    testWidgets(
+      'dismissing the stepper without tapping Done does not call the '
+      'repository',
+      (tester) async {
+        final repo = _FakePartySessionRepo();
+        final session = _makeSession(
+          startedAt: _workedConsumedAt,
+          drinkConsumeMinutes: 20,
+        );
+        final profile = _makeProfile(birthDate: _workedBirthDate);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            session: session,
+            profile: profile,
+            partyRepo: repo,
+            now: _workedConsumedAt,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Drink pace: 20 min'),
+          300.0,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Drink pace: 20 min'));
+        await tester.pumpAndSettle();
+
+        // Dismiss the modal bottom sheet by tapping the barrier instead of
+        // Done.
+        await tester.tapAt(const Offset(20, 20));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateDrinkConsumeMinutesCalls, isEmpty);
       },
     );
   });

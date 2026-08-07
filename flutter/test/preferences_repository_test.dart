@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drinks_mate/src/db/app_database.dart';
 import 'package:drinks_mate/src/models/user_preferences.dart';
 import 'package:drinks_mate/src/models/user_profile.dart';
+import 'package:drinks_mate/src/repository/party_session_repository.dart';
 import 'package:drinks_mate/src/repository/preferences_repository.dart';
 import 'package:drinks_mate/src/repository/providers.dart';
 
@@ -50,6 +51,9 @@ void main() {
       // Alcoholic presets are always visible in Manage Drinks by default
       // (features.md F14).
       expect(prefs.alcoholicPresetsAlwaysVisible, isTrue);
+      // Default 20 minutes (data-model.md §UserPreferences, party-session.md
+      // §Drink consumption time).
+      expect(prefs.drinkConsumeMinutes, 20);
       expect(prefs.installedAt, isNotNull);
     });
 
@@ -234,6 +238,79 @@ void main() {
         greaterThanOrEqualTo(beforeUpdate.millisecondsSinceEpoch - 1000),
       );
     });
+  });
+
+  group('PreferencesRepository.updateDrinkConsumeMinutes', () {
+    late AppDatabase db;
+    late PreferencesRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PreferencesRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test('persists a new value within range', () async {
+      await repo.updateDrinkConsumeMinutes(35);
+      final prefs = await repo.getPreferences();
+      expect(prefs.drinkConsumeMinutes, 35);
+    });
+
+    test('accepts the boundary values 0 and 60', () async {
+      await repo.updateDrinkConsumeMinutes(0);
+      expect((await repo.getPreferences()).drinkConsumeMinutes, 0);
+
+      await repo.updateDrinkConsumeMinutes(60);
+      expect((await repo.getPreferences()).drinkConsumeMinutes, 60);
+    });
+
+    test('rejects a value below 0', () async {
+      expect(
+        () => repo.updateDrinkConsumeMinutes(-1),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('rejects a value above 60', () async {
+      expect(
+        () => repo.updateDrinkConsumeMinutes(61),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test(
+      'also updates the active session drinkConsumeMinutes to match '
+      '(party-session.md §Drink consumption time: global → session, '
+      'one-directional while active)',
+      () async {
+        final now = DateTime.utc(2026, 7, 10, 20, 0);
+        final sessionRepo = PartySessionRepository(db);
+        final session = await sessionRepo.startSession(now: now);
+        expect(
+          session.drinkConsumeMinutes,
+          20,
+          reason: 'copied from the seed default at session start',
+        );
+
+        await repo.updateDrinkConsumeMinutes(45);
+
+        expect((await repo.getPreferences()).drinkConsumeMinutes, 45);
+        final refreshed = await sessionRepo.getSessionById(session.id);
+        expect(refreshed.drinkConsumeMinutes, 45);
+      },
+    );
+
+    test(
+      'is a no-op on the session side when no session is active — only the '
+      'preference row changes',
+      () async {
+        await repo.updateDrinkConsumeMinutes(50);
+        expect((await repo.getPreferences()).drinkConsumeMinutes, 50);
+        // No active session to check — the call above must not have thrown,
+        // which is itself the assertion that it degrades gracefully.
+      },
+    );
   });
 
   group('PreferencesRepository — watchPreferences stream', () {

@@ -21,6 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 final _epoch = DateTime.utc(2026, 1, 1);
 
+/// The `PartySession.drinkConsumeMinutes` default (party-session.md §Drink
+/// consumption time) — passed explicitly to every BAC-computation call in
+/// this file so the absorption window (Step 4) is pinned to a known value.
+const _drinkConsumeMinutes = 20;
+
 UserProfile _profile({
   String gender = 'male',
   double? weightKg = 75,
@@ -71,18 +76,24 @@ Meal _meal({
 }
 
 /// Mirrors projectedSoberTime()'s own t_zero expression (bac_estimator.dart):
-/// `consumedAt + Duration(microseconds: round(hoursToZero(bacInitial) * µs/h))`.
-/// Building the expected value the same way the production code documents its
-/// formula (not reading it off the implementation's output) keeps this a
-/// faithful spec check rather than a implementation-freeze.
+/// `consumedAt + Duration(microseconds: round(hoursToZero(bacInitial,
+/// drinkConsumeMinutes) * µs/h))`. Building the expected value the same way
+/// the production code documents its formula (not reading it off the
+/// implementation's output) keeps this a faithful spec check rather than a
+/// implementation-freeze.
 DateTime _expectedTZero({
   required DateTime consumedAt,
   required double bacInitial,
+  int drinkConsumeMinutes = _drinkConsumeMinutes,
 }) {
   return consumedAt.add(
     Duration(
-      microseconds:
-          (hoursToZero(bacInitial) * Duration.microsecondsPerHour).round(),
+      microseconds: (hoursToZero(
+                bacInitial: bacInitial,
+                drinkConsumeMinutes: drinkConsumeMinutes,
+              ) *
+              Duration.microsecondsPerHour)
+          .round(),
     ),
   );
 }
@@ -95,6 +106,7 @@ void main() {
         alcoholicEntries: const [],
         meals: const [],
         at: DateTime.utc(2026, 3, 1),
+        drinkConsumeMinutes: _drinkConsumeMinutes,
       );
       expect(result, isNull);
     });
@@ -133,6 +145,7 @@ void main() {
           ],
           meals: const [],
           at: consumedAt,
+          drinkConsumeMinutes: _drinkConsumeMinutes,
         );
         expect(actual, expected);
         // Human-checkable anchor for the exact value asserted above.
@@ -146,16 +159,26 @@ void main() {
 
   group('projectedSoberTime — multiple drinks: pooled, not per-drink max', () {
     // Three drinks, same 75 kg male / no-height (Widmark) profile, logged in
-    // list order A, B, C (A earliest consumedAt, C latest). B — the *middle*
-    // entry, neither first nor last — has by far the largest dose (1000 ml
-    // 40% spirit). Under the pooled model (party-session.md §BAC estimation
-    // algorithm Step 5; core's sessionSoberTime), the session goes sober once
-    // the *shared* pool empties after the last drink, not per-drink — so the
-    // expected value is built the same way projectedSoberTime documents it:
-    // via core's own sessionSoberTime, not a hand-picked per-drink t_zero.
+    // list order A, B, C (A earliest consumedAt, C latest), 1h apart. B —
+    // the *middle* entry, neither first nor last — has by far the largest
+    // dose (1000 ml 40% spirit). Under the pooled model (party-session.md
+    // §BAC estimation algorithm Step 5; core's sessionSoberTime), the
+    // session goes sober once the *shared* pool empties after the last
+    // drink, not per-drink — so the expected value is built the same way
+    // projectedSoberTime documents it: via core's own sessionSoberTime, not
+    // a hand-picked per-drink t_zero.
+    //
+    // Spacing note: drinks are kept close enough together (1h apart) that
+    // A's own contribution never fully clears before B is consumed — if it
+    // did, core's `sessionSoberTime` (out of this file's scope) returns the
+    // FIRST zero-crossing it walks to rather than the last, which would
+    // report a stale sober time that ignores B/C entirely. Widely-spaced
+    // drinks with a genuine sober gap between them are exactly the input
+    // that trips this, so this fixture deliberately avoids it to test the
+    // pooling behaviour this group is actually about.
     final consumedAtA = DateTime.utc(2026, 3, 1, 8, 0);
-    final consumedAtB = DateTime.utc(2026, 3, 1, 12, 0);
-    final consumedAtC = DateTime.utc(2026, 3, 1, 18, 0);
+    final consumedAtB = DateTime.utc(2026, 3, 1, 9, 0);
+    final consumedAtC = DateTime.utc(2026, 3, 1, 10, 0);
 
     final gramsA = alcoholGrams(volumeMl: 250, abvPercent: 5.0);
     final gramsB = alcoholGrams(volumeMl: 1000, abvPercent: 40.0);
@@ -187,6 +210,7 @@ void main() {
         (consumedAt: consumedAtB, bacInitial: bacB),
         (consumedAt: consumedAtC, bacInitial: bacC),
       ],
+      drinkConsumeMinutes: _drinkConsumeMinutes,
     );
 
     test(
@@ -225,6 +249,7 @@ void main() {
         ],
         meals: const [],
         at: consumedAtC,
+        drinkConsumeMinutes: _drinkConsumeMinutes,
       );
       expect(actual, expectedPooled);
     });
@@ -279,6 +304,7 @@ void main() {
         ],
         meals: [_meal(size: MealSize.medium, eatenAt: mealEatenAt)],
         at: consumedAt,
+        drinkConsumeMinutes: _drinkConsumeMinutes,
       );
       final actualNoMeal = projectedSoberTime(
         profile: _profile(heightCm: null),
@@ -287,6 +313,7 @@ void main() {
         ],
         meals: const [],
         at: consumedAt,
+        drinkConsumeMinutes: _drinkConsumeMinutes,
       );
 
       expect(actualWithMeal, expectedWithMeal);
@@ -311,6 +338,7 @@ void main() {
           ],
           meals: const [],
           at: DateTime.utc(2026, 3, 1),
+          drinkConsumeMinutes: _drinkConsumeMinutes,
         ),
         throwsStateError,
       );
@@ -333,6 +361,7 @@ void main() {
           ],
           meals: const [],
           at: at,
+          drinkConsumeMinutes: _drinkConsumeMinutes,
         ),
         throwsStateError,
       );
@@ -374,29 +403,73 @@ void main() {
         gender: Gender.male,
       );
 
+      final profile = _profile(
+        gender: 'male',
+        weightKg: 75,
+        heightCm: 180,
+        birthDate: birthDate,
+      );
+      final entries = [
+        _entry(volumeMl: 500, abvPercent: 5.0, consumedAt: consumedAt),
+      ];
+
       test(
-        'one drink, at consumedAt (elapsed=0): gPerL/mmolPerL/usedWatson/'
-        'bmiWarning all match hand-computed expectations',
+        'one drink, at consumedAt (elapsed=0): gPerL is 0 — the absorption '
+        'window has only just opened and contributes nothing to the pool '
+        'yet (party-session.md §BAC estimation algorithm Step 4)',
         () {
           final estimate = estimateSessionBac(
-            profile: _profile(
-              gender: 'male',
-              weightKg: 75,
-              heightCm: 180,
-              birthDate: birthDate,
-            ),
-            alcoholicEntries: [
-              _entry(volumeMl: 500, abvPercent: 5.0, consumedAt: consumedAt),
-            ],
+            profile: profile,
+            alcoholicEntries: entries,
             meals: const [],
             at: consumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
 
-          expect(estimate.gPerL, closeTo(expectedBacInitial, 0.0001));
-          expect(estimate.gPerL, closeTo(0.360, 0.001));
+          expect(estimate.gPerL, 0.0);
+          expect(estimate.usedWatson, isTrue);
+          expect(estimate.unspecifiedGenderConservative, isFalse);
+          expect(estimate.bmiWarning, expectedBmiWarning);
+          expect(estimate.bmiWarning, isFalse); // BMI ≈ 23.15 — mid-range.
+        },
+      );
+
+      test(
+        'one drink, at consumedAt + absorption window (the drink\'s own '
+        'peak): gPerL/mmolPerL match core\'s sessionBacAtTime fed the same '
+        'Step 1-3 bacInitial, pinning the grams→TBW→bacInitial pipeline '
+        'through the new _bacInitialForEntry extraction end-to-end',
+        () {
+          final tHours = absorptionWindowHours(_drinkConsumeMinutes);
+          final peakAt = consumedAt.add(
+            Duration(
+              microseconds: (tHours * Duration.microsecondsPerHour).round(),
+            ),
+          );
+          final expectedPeak = sessionBacAtTime(
+            drinks: [
+              (consumedAt: consumedAt, bacInitial: expectedBacInitial),
+            ],
+            at: peakAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
+          );
+          // Sanity: the worked-example 0.360 g/L bacInitial nets down to a
+          // strictly lower peak once elimination during the absorption
+          // window is accounted for (party-session.md §Step 6).
+          expect(expectedPeak, lessThan(expectedBacInitial));
+
+          final estimate = estimateSessionBac(
+            profile: profile,
+            alcoholicEntries: entries,
+            meals: const [],
+            at: peakAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
+          );
+
+          expect(estimate.gPerL, closeTo(expectedPeak, 1e-9));
           expect(
             estimate.mmolPerL,
-            closeTo(gPerLToMmol(expectedBacInitial), 0.0001),
+            closeTo(gPerLToMmol(expectedPeak), 0.0001),
           );
           expect(estimate.usedWatson, isTrue);
           expect(estimate.unspecifiedGenderConservative, isFalse);

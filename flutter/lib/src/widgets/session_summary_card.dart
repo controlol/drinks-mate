@@ -25,6 +25,7 @@ class SessionSummaryCard extends StatefulWidget {
     this.expandable = false,
     this.multiDayPosition,
     this.onViewFullSession,
+    this.showDrinkConsumeMinutes = false,
   });
 
   final SessionDaySummary summary;
@@ -50,6 +51,14 @@ class SessionSummaryCard extends StatefulWidget {
   /// expand). Only the History day drill-down's call site passes this — S9
   /// never does, since S9 already is the full-session view.
   final VoidCallback? onViewFullSession;
+
+  /// Shows `summary.session.drinkConsumeMinutes` as read-only text in the
+  /// expanded content, after the total-grams line and before the BAC chart
+  /// (user-experience.md §S9: "the session's drink-consume-time setting
+  /// (frozen at `endedAt`, read-only)"). Only S9's ended-mode header passes
+  /// `true` — the History day drill-down usage of this same card leaves it
+  /// false, since that field is only specified for S9.
+  final bool showDrinkConsumeMinutes;
 
   @override
   State<SessionSummaryCard> createState() => _SessionSummaryCardState();
@@ -144,6 +153,10 @@ class _SessionSummaryCardState extends State<SessionSummaryCard> {
                   Text(
                     'Total consumed alcohol: ${summary.totalAlcoholGrams.round()} g',
                   ),
+                  if (widget.showDrinkConsumeMinutes)
+                    Text(
+                      'Drink pace: ${summary.session.drinkConsumeMinutes} min',
+                    ),
                   if (summary.lifetimeBacChart != null) ...[
                     const SizedBox(height: 8),
                     SessionLifetimeBacChart(series: summary.lifetimeBacChart!),

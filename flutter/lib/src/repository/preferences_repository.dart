@@ -157,6 +157,41 @@ class PreferencesRepository {
         ),
       );
 
+  /// Update the global drink-consume-time preference (minutes, 0–60).
+  /// If a session is currently active, its own `drinkConsumeMinutes` is
+  /// updated to match in the same operation — party-session.md §Drink
+  /// consumption time: "changing the global setting ... updates
+  /// PartySession.drinkConsumeMinutes directly" while active. Editing the
+  /// session's own inline control (the Party tab) is the opposite
+  /// direction and does NOT come through here — see
+  /// `PartySessionRepository.updateDrinkConsumeMinutes`.
+  ///
+  /// Throws [ArgumentError] if [minutes] is outside 0–60.
+  Future<void> updateDrinkConsumeMinutes(int minutes) async {
+    if (minutes < 0 || minutes > 60) {
+      throw ArgumentError.value(minutes, 'minutes', 'must be 0–60');
+    }
+    final now = DateTime.now().toUtc();
+    await _db.transaction(() async {
+      await _db.updatePreferences(
+        UserPreferencesTableCompanion(
+          drinkConsumeMinutes: Value(minutes),
+          updatedAt: Value(now),
+        ),
+      );
+      final active = await _db.getActiveSession();
+      if (active != null) {
+        await _db.updatePartySessionFields(
+          active.id,
+          PartySessionsCompanion(
+            drinkConsumeMinutes: Value(minutes),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // UserProfile — watch / upsert
   // ---------------------------------------------------------------------------
@@ -285,6 +320,7 @@ class PreferencesRepository {
         soberEstimateNotifEnabled: row.soberEstimateNotifEnabled,
         alcoholicPresetsAlwaysVisible: row.alcoholicPresetsAlwaysVisible,
         drinkSortMode: PresetSortMode.fromStored(row.drinkSortMode),
+        drinkConsumeMinutes: row.drinkConsumeMinutes,
         installedAt: DateTime.fromMillisecondsSinceEpoch(
           row.installedAt,
           isUtc: true,

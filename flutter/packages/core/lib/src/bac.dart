@@ -17,6 +17,10 @@ const double eliminationBetaGPerLPerHour = 0.15;
 /// g/L → mmol/L conversion factor (display-only).
 const double gPerLToMmolPerL = 21.7;
 
+/// Fixed model constant — party-session.md §Drink consumption time
+/// "Where the numbers come from". Not user-configurable.
+const int absorptionDelayMinutes = 30;
+
 /// Unspecified uses the **female** factor/coefficients throughout (conservative
 /// = higher estimate). See Parity Rulebook note.
 enum Gender { male, female, unspecified }
@@ -107,84 +111,171 @@ double bacAtTime({required double bacInitial, required double hoursSince}) =>
 /// Step 6 — g/L → mmol/L (display-only).
 double gPerLToMmol(double gPerL) => gPerL * gPerLToMmolPerL;
 
-/// Hours for a single drink's contribution to decay from [bacInitial] to
-/// zero under zero-order elimination at β (party-session.md §Absorbing
-/// orphan drinks: `t_zero = consumedAt + BAC_initial / β`; also the
-/// sober-estimate notification's projected-zero time, notifications.md
-/// §Party Mode notifications).
-double hoursToZero(double bacInitial) =>
-    bacInitial / eliminationBetaGPerLPerHour;
+/// Step 4 — this session's absorption window, in hours.
+///
+/// `T_hours = (drinkConsumeMinutes + ABSORPTION_DELAY_MINUTES) / 60`
+/// (party-session.md §Drink consumption time). Never zero — the fixed
+/// 30-minute [absorptionDelayMinutes] delay always applies, even at the
+/// fastest `drinkConsumeMinutes` setting (0).
+double absorptionWindowHours(int drinkConsumeMinutes) =>
+    (drinkConsumeMinutes + absorptionDelayMinutes) / 60.0;
+
+/// Total time from `consumedAt` until this drink's own contribution returns
+/// to 0 g/L (party-session.md §Step 6 "Emergent property" / §Absorbing
+/// orphan drinks).
+///
+/// Equals `bacInitial / β` whenever this drink's absorption rate
+/// `r = bacInitial / absorptionWindowHours(drinkConsumeMinutes)` exceeds β —
+/// identical to the pre-absorption-window formula and independent of the
+/// absorption window itself; only the curve's *shape* changes, not the total
+/// duration. When `r <= β` (drunk so slowly that elimination keeps pace with
+/// absorption), the drink never accumulates residual BAC at all, so the
+/// answer is 0.
+double hoursToZero({
+  required double bacInitial,
+  required int drinkConsumeMinutes,
+}) {
+  final r = bacInitial / absorptionWindowHours(drinkConsumeMinutes);
+  if (r <= eliminationBetaGPerLPerHour) return 0.0;
+  return bacInitial / eliminationBetaGPerLPerHour;
+}
 
 /// One drink's already meal-modified initial BAC ([bacInitialForDrink]) and
 /// the time it was consumed — the input unit for [sessionBacAtTime] and
 /// [sessionSoberTime].
 typedef SessionDrink = ({DateTime consumedAt, double bacInitial});
 
-/// Steps 4–5 (session total) — current BAC across every drink in a session,
-/// under a single shared elimination pool rather than per-drink independent
-/// decay.
+/// A point on the pooled event-timeline walk (party-session.md §Step 6):
+/// [pool] is the running total at [time], and [rate] is the net rate
+/// (g/L/hour, already netted against β) that governs the segment *after*
+/// [time] — i.e. after this timestamp's rate-change events have all been
+/// applied. Shared by [sessionBacAtTime] and [sessionSoberTime] via
+/// [_sessionBreakpoints] so both read the same walk rather than duplicating
+/// it.
+typedef _Breakpoint = ({DateTime time, double pool, double rate});
+
+/// Step 6 — builds the sorted event-timeline breakpoints for [drinks] under
+/// the session-wide absorption window [drinkConsumeMinutes]. Empty when
+/// [drinks] is empty.
 ///
-/// The body eliminates alcohol at one fixed rate β regardless of how many
-/// drinks contributed to it, so [drinks] are folded in consumption order
-/// into one running total: each drink adds its own [bacInitial] to the
-/// pool, and the pool decays at β for the elapsed time between additions,
-/// floored at 0. Summing each drink's own independently-decaying
-/// [bacAtTime] instead over-eliminates by β for every additional drink
-/// still "active" at once — the whole-body rate gets multiplied by however
-/// many separate drinks haven't individually decayed to 0 yet, which is not
-/// how elimination works (party-session.md §BAC estimation algorithm
-/// Step 5).
+/// Each drink contributes a `+r` rate-change event at `consumedAt` (starts
+/// absorbing) and a `−r` event at `consumedAt + T_hours` (finishes
+/// absorbing), where `r = bacInitial / T_hours` (Step 4). Events sharing the
+/// exact same instant are summed into one combined rate change before the
+/// pool is advanced, rather than being applied as separate zero-duration
+/// steps — this is what lets two drinks' absorption windows end/start at the
+/// same moment without a spurious floor in between. Walking forward from
+/// `pool = 0` at a baseline rate of `−β` (elimination is always active) and
+/// applying `pool = max(0, pool + rate × elapsedHours)` between events
+/// directly generalises the pre-absorption-window "decay the pool, then add
+/// the next drink's BAC_initial" loop — that loop is the special case where
+/// every `T_hours` is negligible — and keeps its single-shared-β fix: the
+/// net rate is always one β against however many drinks are concurrently
+/// absorbing, never `N × β`.
+List<_Breakpoint> _sessionBreakpoints({
+  required Iterable<SessionDrink> drinks,
+  required int drinkConsumeMinutes,
+}) {
+  final list = drinks.toList();
+  if (list.isEmpty) return const [];
+
+  final tHours = absorptionWindowHours(drinkConsumeMinutes);
+  final windowMicros = (tHours * Duration.microsecondsPerHour).round();
+
+  final deltas = <DateTime, double>{};
+  for (final drink in list) {
+    final r = drink.bacInitial / tHours;
+    deltas.update(drink.consumedAt, (v) => v + r, ifAbsent: () => r);
+    final endsAt = drink.consumedAt.add(Duration(microseconds: windowMicros));
+    deltas.update(endsAt, (v) => v - r, ifAbsent: () => -r);
+  }
+  final times = deltas.keys.toList()..sort();
+
+  final breakpoints = <_Breakpoint>[];
+  var pool = 0.0;
+  var rate = -eliminationBetaGPerLPerHour;
+  DateTime? prev;
+  for (final t in times) {
+    if (prev != null) {
+      final elapsedHours =
+          t.difference(prev).inMicroseconds / Duration.microsecondsPerHour;
+      pool = math.max(0.0, pool + rate * elapsedHours);
+    }
+    rate += deltas[t]!;
+    breakpoints.add((time: t, pool: pool, rate: rate));
+    prev = t;
+  }
+  return breakpoints;
+}
+
+/// Steps 4–6 (session total) — current BAC across every drink in a session,
+/// under a single shared elimination pool and per-drink absorption window
+/// rather than instant absorption or per-drink independent decay
+/// (party-session.md §BAC estimation algorithm Step 6).
 ///
-/// Drinks after [at] are ignored (a drink consumed exactly at [at] counts in
-/// full), matching "already-consumed drinks only" elsewhere in the session
-/// BAC calculation. [drinks] need not be
-/// pre-sorted.
+/// Walks [_sessionBreakpoints] up to [at] and advances the pool from the
+/// last governing breakpoint at its net rate. Drinks after [at] are ignored
+/// (a drink consumed exactly at [at] counts in full, since its `+r` event
+/// lands exactly at [at]), matching "already-consumed drinks only" elsewhere
+/// in the session BAC calculation. [drinks] need not be pre-sorted.
 double sessionBacAtTime({
   required Iterable<SessionDrink> drinks,
   required DateTime at,
+  required int drinkConsumeMinutes,
 }) {
-  final sorted = drinks.where((d) => !d.consumedAt.isAfter(at)).toList()
-    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
-  if (sorted.isEmpty) return 0.0;
+  final breakpoints = _sessionBreakpoints(
+    drinks: drinks,
+    drinkConsumeMinutes: drinkConsumeMinutes,
+  );
+  if (breakpoints.isEmpty) return 0.0;
 
-  var pool = 0.0;
-  var last = sorted.first.consumedAt;
-  for (final drink in sorted) {
-    pool = _decay(pool, last, drink.consumedAt);
-    pool += drink.bacInitial;
-    last = drink.consumedAt;
+  _Breakpoint? governing;
+  for (final bp in breakpoints) {
+    if (bp.time.isAfter(at)) break;
+    governing = bp;
   }
-  return _decay(pool, last, at);
+  // `at` is before the first drink was even consumed.
+  if (governing == null) return 0.0;
+
+  final elapsedHours = at.difference(governing.time).inMicroseconds /
+      Duration.microsecondsPerHour;
+  return math.max(0.0, governing.pool + governing.rate * elapsedHours);
 }
 
 /// Projected time the session's pooled BAC ([sessionBacAtTime]) returns to
-/// 0 g/L, or `null` if [drinks] is empty. Folds every drink into the same
-/// running pool as [sessionBacAtTime], then projects [hoursToZero] forward
-/// from the final drink's post-fold state — the session goes sober once,
-/// when that shared pool empties, not per-drink.
-DateTime? sessionSoberTime({required Iterable<SessionDrink> drinks}) {
-  final sorted = drinks.toList()
-    ..sort((a, b) => a.consumedAt.compareTo(b.consumedAt));
-  if (sorted.isEmpty) return null;
+/// 0 g/L for good, or `null` if [drinks] is empty.
+///
+/// Walks the same [_sessionBreakpoints] as [sessionBacAtTime] and reads off
+/// only the *last* breakpoint's `(pool, rate)` — deliberately not the first
+/// zero-crossing found while scanning: a session can have a genuine sober
+/// gap (one drink's contribution fully decays before a later drink starts
+/// absorbing), and the pool rising again after such a gap means an earlier
+/// crossing is not the projected sober time. By construction every drink's
+/// absorption window is finite, so every `+r`/`−r` pair has been applied by
+/// the last breakpoint — its `rate` has always settled back to exactly `−β`
+/// by then, with nothing left to rise again. [_sessionBreakpoints]'s own
+/// walk already floors at 0 at every step (correctly handling any
+/// intermediate dip-then-rise), so the last breakpoint's `pool` is already
+/// the correct starting point for a final, uninterrupted `−β` decay.
+DateTime? sessionSoberTime({
+  required Iterable<SessionDrink> drinks,
+  required int drinkConsumeMinutes,
+}) {
+  final breakpoints = _sessionBreakpoints(
+    drinks: drinks,
+    drinkConsumeMinutes: drinkConsumeMinutes,
+  );
+  if (breakpoints.isEmpty) return null;
 
-  var pool = 0.0;
-  var last = sorted.first.consumedAt;
-  for (final drink in sorted) {
-    pool = _decay(pool, last, drink.consumedAt);
-    pool += drink.bacInitial;
-    last = drink.consumedAt;
-  }
-  return last.add(
+  final last = breakpoints.last;
+  if (last.pool <= 0) return last.time;
+
+  final hoursToFloor = last.pool / -last.rate;
+  return last.time.add(
     Duration(
-      microseconds: (hoursToZero(pool) * Duration.microsecondsPerHour).round(),
+      microseconds: (hoursToFloor * Duration.microsecondsPerHour).round(),
     ),
   );
-}
-
-double _decay(double bac, DateTime from, DateTime to) {
-  final hours =
-      to.difference(from).inMicroseconds / Duration.microsecondsPerHour;
-  return math.max(0.0, bac - eliminationBetaGPerLPerHour * hours);
 }
 
 /// Step 2/3 combined — picks Watson (height available) or Widmark (height

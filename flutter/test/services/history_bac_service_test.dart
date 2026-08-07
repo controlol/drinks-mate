@@ -158,6 +158,7 @@ double _simulateGridMax({
   required List<DrinkEntry> entries,
   required List<Meal> meals,
   required UserProfile profile,
+  required int drinkConsumeMinutes,
   Duration interval = const Duration(minutes: 15),
 }) {
   var max = 0.0;
@@ -169,6 +170,7 @@ double _simulateGridMax({
       alcoholicEntries: entries,
       meals: meals,
       at: t,
+      drinkConsumeMinutes: drinkConsumeMinutes,
     );
     if (estimate.gPerL > max) max = estimate.gPerL;
     lastSampled = t == overlapEnd;
@@ -180,11 +182,18 @@ double _simulateGridMax({
       alcoholicEntries: entries,
       meals: meals,
       at: overlapEnd,
+      drinkConsumeMinutes: drinkConsumeMinutes,
     );
     if (estimate.gPerL > max) max = estimate.gPerL;
   }
   return max;
 }
+
+/// The `PartySession.drinkConsumeMinutes` default (party-session.md §Drink
+/// consumption time) — used throughout this file's fixtures via [_session]'s
+/// own default, so BAC-computation call sites mirror it explicitly rather
+/// than hand-typing `20` at each site.
+const _defaultDrinkConsumeMinutes = 20;
 
 void main() {
   // ---------------------------------------------------------------------------
@@ -264,9 +273,28 @@ void main() {
 
       expect(buckets, hasLength(3));
 
-      // Day 1 [Jul 1 05:00, Jul 2 05:00): overlapStart == consumedAt.
+      // Day 1 [Jul 1 05:00, Jul 2 05:00): overlapStart == session.startedAt
+      // == consumedAt, i.e. elapsed=0 at the very first grid sample — under
+      // the absorption-window model (party-session.md §BAC estimation
+      // algorithm Step 4) the true peak sits ~50 min later, not at
+      // consumedAt itself, so the expected value is the grid-sampled max
+      // (mirroring `_maxBacForWindow`'s own grid, not the raw combined
+      // bacInitial).
       expect(buckets[0].dayStart, DateTime.utc(2026, 7, 1, 5, 0));
-      expect(buckets[0].maxGPerL, closeTo(twoBeerInitial, 0.001));
+      expect(
+        buckets[0].maxGPerL,
+        closeTo(
+          _simulateGridMax(
+            overlapStart: consumedAt,
+            overlapEnd: DateTime.utc(2026, 7, 2, 5, 0),
+            entries: entries,
+            meals: const [],
+            profile: _profile(),
+            drinkConsumeMinutes: _defaultDrinkConsumeMinutes,
+          ),
+          1e-9,
+        ),
+      );
 
       // Day 2 [Jul 2 05:00, Jul 3 05:00): the session still touches (ends
       // 10:00 that day), but day 2's own window starts ~17h after
@@ -404,10 +432,29 @@ void main() {
       );
 
       expect(buckets, hasLength(1));
-      // sessionA peaks at ~oneBeerInitial (0.18), sessionB at ~twoBeerInitial
-      // (0.36) — the bucket must reflect sessionB's higher peak.
-      expect(oneBeerInitial, lessThan(twoBeerInitial));
-      expect(buckets[0].maxGPerL, closeTo(twoBeerInitial, 0.001));
+      // sessionA (1 beer) peaks lower than sessionB (2 beers) — the bucket
+      // must reflect sessionB's higher, grid-sampled peak (not the raw
+      // undecayed bacInitial figures, which the absorption-window model no
+      // longer reaches at any single instant — party-session.md §BAC
+      // estimation algorithm Step 4).
+      final gridA = _simulateGridMax(
+        overlapStart: DateTime.utc(2026, 7, 10, 8, 0),
+        overlapEnd: DateTime.utc(2026, 7, 10, 9, 0),
+        entries: [entries[0]],
+        meals: const [],
+        profile: _profile(),
+        drinkConsumeMinutes: _defaultDrinkConsumeMinutes,
+      );
+      final gridB = _simulateGridMax(
+        overlapStart: DateTime.utc(2026, 7, 10, 20, 0),
+        overlapEnd: DateTime.utc(2026, 7, 10, 21, 0),
+        entries: [entries[1], entries[2]],
+        meals: const [],
+        profile: _profile(),
+        drinkConsumeMinutes: _defaultDrinkConsumeMinutes,
+      );
+      expect(gridA, lessThan(gridB));
+      expect(buckets[0].maxGPerL, closeTo(gridB, 1e-9));
     });
   });
 
@@ -603,6 +650,7 @@ void main() {
         entries: entries,
         meals: const [],
         profile: profile,
+        drinkConsumeMinutes: _defaultDrinkConsumeMinutes,
       );
 
       final buckets = computeMaxBacPerDay(
@@ -731,9 +779,11 @@ void main() {
     });
 
     test('peakBacGPerL reflects only that day\'s sampled window', () {
-      // Single dose, consumed exactly at the session/day start so the
-      // grid's first sample captures the exact undecayed peak — avoids the
-      // multi-drink summation issue flagged separately in this file.
+      // Single dose, consumed exactly at the session/day start. Under the
+      // absorption-window model the grid's first sample (elapsed=0) is
+      // 0 g/L, not the undecayed dose — cross-check against the same
+      // grid-sampled max the implementation computes, not a hand-derived
+      // bacInitial figure.
       final session = _session(
         id: 's1',
         startedAt: day2Start,
@@ -753,7 +803,15 @@ void main() {
         now: day2Start.add(const Duration(hours: 2)),
       );
 
-      expect(summary.peakBacGPerL, closeTo(oneBeerInitial, 0.001));
+      final expected = _simulateGridMax(
+        overlapStart: day2Start,
+        overlapEnd: day2Start.add(const Duration(hours: 2)),
+        entries: entries,
+        meals: const [],
+        profile: _profile(),
+        drinkConsumeMinutes: _defaultDrinkConsumeMinutes,
+      );
+      expect(summary.peakBacGPerL, closeTo(expected, 1e-9));
     });
 
     test(
@@ -961,6 +1019,7 @@ void main() {
         meals: const [],
         profile: _profile(),
         now: endedAt,
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       expect(series.axisStart, startedAt.toLocal());
@@ -981,6 +1040,7 @@ void main() {
         meals: const [],
         profile: _profile(),
         now: now,
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       expect(series.axisEnd, now.toLocal());
@@ -1004,6 +1064,7 @@ void main() {
         meals: const [],
         profile: _profile(),
         now: startedAt,
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       expect(series.axisEnd.isAtSameMomentAs(series.axisStart), isTrue);
@@ -1027,6 +1088,7 @@ void main() {
         meals: const [],
         profile: _profile(),
         now: startedAt,
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       expect(series.axisEnd.isAtSameMomentAs(series.axisStart), isTrue);
@@ -1054,6 +1116,7 @@ void main() {
         profile: profile,
         now: endedAt,
         sampleInterval: const Duration(minutes: 5),
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       // 20-minute span / 5-minute interval = 5 points (0,5,10,15,20).
@@ -1066,12 +1129,15 @@ void main() {
           alcoholicEntries: consumedByPoint,
           meals: const [],
           at: point.time,
+          drinkConsumeMinutes: session.drinkConsumeMinutes,
         ).gPerL;
         expect(point.gPerL, closeTo(expected, 0.001));
       }
-      // The first point captures the undecayed peak exactly (sampled at
-      // startedAt itself).
-      expect(series.actual.first.gPerL, closeTo(oneBeerInitial, 0.001));
+      // The first point is sampled at elapsed=0 (startedAt itself) — under
+      // the absorption-window model that is always exactly 0 g/L, not the
+      // undecayed dose (party-session.md §BAC estimation algorithm Step 4:
+      // "contributes nothing to the pool before consumedAt").
+      expect(series.actual.first.gPerL, 0.0);
     });
 
     test('tickInterval matches bacChartTickInterval(axisEnd - axisStart)', () {
@@ -1086,6 +1152,7 @@ void main() {
         meals: const [],
         profile: _profile(),
         now: endedAt,
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
       );
 
       expect(
@@ -1296,10 +1363,13 @@ void main() {
           final endedAt = DateTime.utc(2026, 7, 21, 2, 0);
           final session =
               _session(id: 's1', startedAt: startedAt, endedAt: endedAt);
-          // Single dose consumed exactly at session start, so the grid's
-          // first sample captures the undecayed peak exactly (avoids the
+          // Single dose consumed exactly at session start — avoids the
           // multi-drink summation caveat documented in the regression group
-          // below).
+          // below. Under the absorption-window model the true peak sits
+          // partway through the grid, not at t=startedAt itself, so the
+          // expected value is the same grid-sampled max the implementation
+          // computes (`_simulateGridMax`), not a hand-derived bacInitial
+          // figure.
           final entries = [
             _entry(id: 'e1', consumedAt: startedAt, partySessionId: 's1'),
           ];
@@ -1312,22 +1382,15 @@ void main() {
             now: endedAt,
           );
 
-          expect(summary.peakBacGPerL, closeTo(oneBeerInitial, 0.001));
-          // Cross-check directly against estimateSessionBac at t=startedAt,
-          // per this task's instruction to verify against the estimator
-          // rather than an independently hand-computed magic number.
-          expect(
-            summary.peakBacGPerL,
-            closeTo(
-              estimateSessionBac(
-                profile: _profile(),
-                alcoholicEntries: entries,
-                meals: const [],
-                at: startedAt,
-              ).gPerL,
-              0.001,
-            ),
+          final expected = _simulateGridMax(
+            overlapStart: startedAt,
+            overlapEnd: endedAt,
+            entries: entries,
+            meals: const [],
+            profile: _profile(),
+            drinkConsumeMinutes: session.drinkConsumeMinutes,
           );
+          expect(summary.peakBacGPerL, closeTo(expected, 1e-9));
         },
       );
 
@@ -1690,19 +1753,23 @@ void main() {
   group('computeMaxBacPerDay — multi-drink over-reporting regression', () {
     test(
         'two drinks 3 hours apart (first fully eliminated before the second) '
-        'reports a peak near the higher single-dose value (~0.180 g/L), not '
-        'the sum of both undecayed doses (~0.359 g/L)', () {
+        "reports the grid-sampled max, not a figure inflated by counting "
+        "the not-yet-consumed second drink's undecayed dose", () {
       // Regression test for a fixed bug: `_maxBacForWindow` used to sample
       // `t = overlapStart` (before the session's later drinks were even
       // logged) while passing the session's *entire* entry list to
       // `estimateSessionBac`. Since `estimateSessionBac` clamps
       // `hoursSince` to >= 0 (bac_estimator.dart, "Clamp to >=0" comment),
       // a not-yet-consumed drink counted at its full undecayed
-      // `bacInitial` instead of 0, so this scenario used to report
-      // ~0.359 g/L (both drinks "already peaked" simultaneously) instead
-      // of the true peak of ~0.180 g/L (the first drink alone, fully
-      // eliminated ~1h12m before the second is even drunk at +3h). Fixed
-      // by filtering each sample to `consumedAt <= t` (`_sampleAt`).
+      // `bacInitial` instead of 0. Fixed by filtering each sample to
+      // `consumedAt <= t` (`_sampleAt`). The expected value below is the
+      // same grid-sampled max the implementation computes
+      // (`_simulateGridMax`) — under the absorption-window model neither
+      // drink's own undecayed `bacInitial` is ever reached at any single
+      // instant (party-session.md §BAC estimation algorithm Step 4), so the
+      // regression is instead pinned by asserting the reported peak stays
+      // well below what naively summing both drinks' undecayed doses would
+      // give.
       final rangeStart = DateTime.utc(2026, 7, 1, 5, 0);
       final rangeEnd = DateTime.utc(2026, 7, 2, 5, 0);
       final sessionStart = DateTime.utc(2026, 7, 1, 20, 0);
@@ -1729,8 +1796,21 @@ void main() {
         now: rangeEnd,
       );
 
+      final expected = _simulateGridMax(
+        overlapStart: sessionStart,
+        overlapEnd: session.endedAt!,
+        entries: entries,
+        meals: const [],
+        profile: _profile(),
+        drinkConsumeMinutes: session.drinkConsumeMinutes,
+      );
+
       expect(buckets, hasLength(1));
-      expect(buckets[0].maxGPerL, closeTo(oneBeerInitial, 0.01));
+      expect(buckets[0].maxGPerL, closeTo(expected, 1e-9));
+      // Both undecayed doses summed instantly would be ~2×oneBeerInitial —
+      // the reported peak must stay well clear of that to prove the second
+      // (not-yet-consumed) drink was never counted early.
+      expect(buckets[0].maxGPerL, lessThan(oneBeerInitial));
     });
   });
 }

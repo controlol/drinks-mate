@@ -100,6 +100,7 @@ void main() {
             soberEstimateNotifEnabled: false,
           ),
           estimate: _estimate(0.9), // well above 80% of any reasonable cap
+          projectedPeakGPerL: 0.9,
           capGPerL: 1.0,
           now: _epoch,
         );
@@ -126,6 +127,7 @@ void main() {
           session: session,
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.8),
+          projectedPeakGPerL: 0.8,
           capGPerL: 1.0,
           now: _epoch,
         );
@@ -141,6 +143,7 @@ void main() {
             soberEstimateNotifEnabled: false,
           ),
           estimate: _estimate(0.8),
+          projectedPeakGPerL: 0.8,
           capGPerL: 1.0,
           now: _epoch,
         );
@@ -169,6 +172,7 @@ void main() {
           session: _session(),
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.799), // cap 1.0 → 79.9%
+          projectedPeakGPerL: 0.799,
           capGPerL: 1.0,
           now: _epoch,
         );
@@ -192,6 +196,7 @@ void main() {
             session: _session(),
             prefs: _prefs(soberEstimateNotifEnabled: false),
             estimate: _estimate(0.8), // cap 1.0 → exactly 80%
+            projectedPeakGPerL: 0.8,
             capGPerL: 1.0,
             now: _epoch,
           );
@@ -199,6 +204,103 @@ void main() {
           final entry = svc.scheduled
               .singleWhere((e) => e.id == kApproachingCapNotificationId);
           expect(entry.body, contains('1.00 g/L'));
+          // Prospective wording (design/party-session.md): the trigger now
+          // fires off a projection, not a crossing that has already
+          // happened, so the copy must not claim a present-tense crossing.
+          expect(entry.body, contains('on track'));
+        },
+      );
+    },
+  );
+
+  group(
+    'Approaching-cap — driven by the projected peak, not the instant '
+    'estimate (design-system.md Parity Rulebook → "Approaching-cap '
+    'trigger": "project the pool forward ... fire if projected_peak_gPerL '
+    '>= 0.8 * capGPerL")',
+    () {
+      test(
+        'fires off a projected peak >= 80% of cap even though the instant '
+        "estimate.gPerL is well below 80% — a fresh drink whose ramp "
+        "hasn't caught up yet must still fire if its eventual peak clears "
+        'the cap',
+        () async {
+          final svc = FakeNotificationService();
+          final service = PartyNotificationService(
+            svc,
+            InMemoryPartyNotificationGuard(),
+          );
+
+          await service.sync(
+            session: _session(),
+            prefs: _prefs(soberEstimateNotifEnabled: false),
+            // The instant estimate is nowhere near the cap...
+            estimate: _estimate(0.1),
+            // ...but the projected peak (the BAC chart's dashed-segment
+            // projection through this drink's remaining absorption window)
+            // already clears 80% of the 1.0 g/L cap.
+            projectedPeakGPerL: 0.85,
+            capGPerL: 1.0,
+            now: _epoch,
+          );
+
+          expect(
+            svc.scheduled.any((e) => e.id == kApproachingCapNotificationId),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'does not fire when the projected peak stays below 80% of cap, '
+        'even if the instant estimate happens to already be at/above it '
+        '(the trigger reads only the projection, never the instant value)',
+        () async {
+          final svc = FakeNotificationService();
+          final service = PartyNotificationService(
+            svc,
+            InMemoryPartyNotificationGuard(),
+          );
+
+          await service.sync(
+            session: _session(),
+            prefs: _prefs(soberEstimateNotifEnabled: false),
+            estimate: _estimate(0.9),
+            projectedPeakGPerL: 0.5,
+            capGPerL: 1.0,
+            now: _epoch,
+          );
+
+          expect(
+            svc.scheduled.any((e) => e.id == kApproachingCapNotificationId),
+            isFalse,
+          );
+        },
+      );
+
+      test(
+        'projectedPeakGPerL defaults to 0.0 when omitted — a caller with '
+        'nothing to project (e.g. no chart data yet) never fires, rather '
+        'than accidentally suppressing on a missing-argument compile error',
+        () async {
+          final svc = FakeNotificationService();
+          final service = PartyNotificationService(
+            svc,
+            InMemoryPartyNotificationGuard(),
+          );
+
+          await service.sync(
+            session: _session(),
+            prefs: _prefs(soberEstimateNotifEnabled: false),
+            estimate: _estimate(0.95),
+            capGPerL: 1.0,
+            now: _epoch,
+          );
+
+          expect(
+            svc.scheduled.any((e) => e.id == kApproachingCapNotificationId),
+            isFalse,
+          );
         },
       );
     },
@@ -222,6 +324,7 @@ void main() {
           session: session,
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.8), // exactly 80%
+          projectedPeakGPerL: 0.8,
           capGPerL: 1.0,
           now: t1,
         );
@@ -229,6 +332,7 @@ void main() {
           session: session,
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.95), // second drink pushes it higher still
+          projectedPeakGPerL: 0.95,
           capGPerL: 1.0,
           now: t2,
         );
@@ -266,6 +370,7 @@ void main() {
           session: sessionA,
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.8),
+          projectedPeakGPerL: 0.8,
           capGPerL: 1.0,
           now: tA,
         );
@@ -277,6 +382,7 @@ void main() {
           session: sessionB,
           prefs: _prefs(soberEstimateNotifEnabled: false),
           estimate: _estimate(0.85),
+          projectedPeakGPerL: 0.85,
           capGPerL: 1.0,
           now: tB,
         );
@@ -487,6 +593,7 @@ void main() {
           session: session,
           prefs: _prefs(),
           estimate: _estimate(0.8),
+          projectedPeakGPerL: 0.8,
           capGPerL: 1.0,
           projectedSoberTime: _epoch.add(const Duration(hours: 2)),
           now: _epoch,
@@ -536,6 +643,7 @@ void main() {
             session: session,
             prefs: _prefs(),
             estimate: _estimate(0.8),
+            projectedPeakGPerL: 0.8,
             capGPerL: 1.0,
             projectedSoberTime: _epoch.add(const Duration(hours: 2)),
             now: _epoch,
@@ -553,6 +661,7 @@ void main() {
             session: session,
             prefs: _prefs(reminderEnabled: false),
             estimate: _estimate(0.8),
+            projectedPeakGPerL: 0.8,
             capGPerL: 1.0,
             projectedSoberTime: _epoch.add(const Duration(hours: 2)),
             now: _epoch,
@@ -589,6 +698,7 @@ void main() {
             session: _session(),
             prefs: _prefs(bacOnLockScreenEnabled: true),
             estimate: _estimate(0.8),
+            projectedPeakGPerL: 0.8,
             capGPerL: 1.0,
             projectedSoberTime: _epoch.add(const Duration(hours: 2)),
             now: _epoch,
@@ -616,6 +726,7 @@ void main() {
             session: _session(),
             prefs: _prefs(bacOnLockScreenEnabled: false),
             estimate: _estimate(0.8),
+            projectedPeakGPerL: 0.8,
             capGPerL: 1.0,
             projectedSoberTime: _epoch.add(const Duration(hours: 2)),
             now: _epoch,

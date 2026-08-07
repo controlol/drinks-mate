@@ -120,6 +120,11 @@ class PartySessionRepository {
       );
     }
 
+    // Snapshot the current global drink-consume-time preference onto the new
+    // session (party-session.md §Drink consumption time: "copied from the
+    // current global value when a session starts").
+    final prefs = await _db.getPreferences();
+
     final id = _uuid.v4();
     // Insert + absorption run in one transaction so a failure partway through
     // (e.g. orphanAbsorption's missing-profile precondition) can never leave
@@ -134,6 +139,7 @@ class PartySessionRepository {
           tokenValueMinor: Value(tokenValueMinor),
           tokenValueCurrency: Value(tokenValueCurrency),
           name: Value(normalizedName),
+          drinkConsumeMinutes: Value(prefs.drinkConsumeMinutes),
           createdAt: nowUtc,
           updatedAt: nowUtc,
         ),
@@ -142,6 +148,7 @@ class PartySessionRepository {
       await orphanAbsorption(
         newSessionId: id,
         startedAt: startedAtUtc,
+        drinkConsumeMinutes: prefs.drinkConsumeMinutes,
         now: nowUtc,
       );
     });
@@ -242,6 +249,31 @@ class PartySessionRepository {
       await _db.softDeletePartySession(id, nowUtc);
       await _db.detachSessionEntries(id, nowUtc);
     });
+  }
+
+  /// Update the active session's own drink-consume-time value directly
+  /// (the Party tab's inline control) — does NOT write back to the global
+  /// `UserPreferences.drinkConsumeMinutes` (party-session.md §Drink
+  /// consumption time — that direction is `PreferencesRepository.
+  /// updateDrinkConsumeMinutes`).
+  ///
+  /// Throws [ArgumentError] if [minutes] is outside 0–60, or [StateError] if
+  /// no session is active.
+  Future<void> updateDrinkConsumeMinutes(int minutes) async {
+    if (minutes < 0 || minutes > 60) {
+      throw ArgumentError.value(minutes, 'minutes', 'must be 0–60');
+    }
+    final active = await _db.getActiveSession();
+    if (active == null) {
+      throw StateError('No active party session.');
+    }
+    await _db.updatePartySessionFields(
+      active.id,
+      PartySessionsCompanion(
+        drinkConsumeMinutes: Value(minutes),
+        updatedAt: Value(DateTime.now().toUtc()),
+      ),
+    );
   }
 
   Future<DateTime> _autoEndMark(PartySessionRow session) async {
@@ -573,11 +605,17 @@ class PartySessionRepository {
   /// at [startedAt] (party-session.md §Absorbing orphan drinks when a later
   /// session starts; Parity Rulebook → "Orphan absorption").
   ///
-  /// Per orphan: `t_zero = consumedAt + BAC_initial / β`; absorbed iff
-  /// `t_zero > startedAt`, else the orphan stays decayed. `BAC_initial` uses
-  /// the live [UserProfile] (Watson TBW if height is set, else Widmark
-  /// fallback) — no meal modifier, since absorption is a yes/no decision on
-  /// residual BAC, not a value read at a point in time.
+  /// Per orphan: `t_zero = consumedAt + hoursToZero(BAC_initial, drinkConsumeMinutes)`;
+  /// absorbed iff `t_zero > startedAt`, else the orphan stays decayed.
+  /// `BAC_initial` uses the live [UserProfile] (Watson TBW if height is set,
+  /// else Widmark fallback) — no meal modifier, since absorption is a
+  /// yes/no decision on residual BAC, not a value read at a point in time.
+  /// [drinkConsumeMinutes] is the *new* session's value — an absorbed orphan
+  /// becomes part of that session and is governed by its absorption window
+  /// from that point on (party-session.md §Step 6 cross-reference). Per
+  /// Step 6's emergent property, a drink whose absorption rate `r` is at or
+  /// below `β` has `t_zero == consumedAt` (never after `startedAt`), so it
+  /// is never absorbed regardless of timing.
   ///
   /// Requires a [UserProfile] with `birthDate` set — Party Mode's own
   /// precondition (party-session.md §Required user inputs). Throws
@@ -589,6 +627,7 @@ class PartySessionRepository {
   Future<int> orphanAbsorption({
     required String newSessionId,
     required DateTime startedAt,
+    required int drinkConsumeMinutes,
     DateTime? now,
   }) async {
     final orphans = await _db.getOrphanAlcoholicEntries(_alcoholicTypeStrings);
@@ -637,8 +676,12 @@ class PartySessionRepository {
 
       final tZero = orphan.consumedAt.add(
         Duration(
-          microseconds:
-              (hoursToZero(bacInitial) * Duration.microsecondsPerHour).round(),
+          microseconds: (hoursToZero(
+                    bacInitial: bacInitial,
+                    drinkConsumeMinutes: drinkConsumeMinutes,
+                  ) *
+                  Duration.microsecondsPerHour)
+              .round(),
         ),
       );
 
@@ -1024,6 +1067,7 @@ class PartySessionRepository {
         tokenValueMinor: row.tokenValueMinor,
         tokenValueCurrency: row.tokenValueCurrency,
         name: row.name,
+        drinkConsumeMinutes: row.drinkConsumeMinutes,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,

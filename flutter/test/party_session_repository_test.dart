@@ -293,12 +293,14 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('AppDatabase — schema v5 (fresh onCreate)', () {
-    test('schemaVersion is 8 (app_database.dart)', () async {
-      // Source: app_database.dart schemaVersion getter — bumped to 8 for
-      // PartySessions.name (issue #102, data-model.md §PartySession).
+    test('schemaVersion is 9 (app_database.dart)', () async {
+      // Source: app_database.dart schemaVersion getter — bumped to 9 for
+      // UserPreferences/PartySessions.drinkConsumeMinutes (data-model.md
+      // §UserPreferences/§PartySession, party-session.md §Drink consumption
+      // time).
       final db = _memDb();
       addTearDown(db.close);
-      expect(db.schemaVersion, 8);
+      expect(db.schemaVersion, 9);
     });
 
     test(
@@ -510,11 +512,11 @@ void main() {
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        // This test opens the *real* AppDatabase (currently schema v8), so a
+        // This test opens the *real* AppDatabase (currently schema v9), so a
         // hand-built v3 file cascades through the "if (from < 4)", "if (from
-        // < 5)", "if (from < 6)", "if (from < 7)", and "if (from < 8)"
-        // onUpgrade blocks in one open — verified below.
-        expect(upgraded.schemaVersion, 8);
+        // < 5)", "if (from < 6)", "if (from < 7)", "if (from < 8)", and "if
+        // (from < 9)" onUpgrade blocks in one open — verified below.
+        expect(upgraded.schemaVersion, 9);
 
         final entries = await upgraded.select(upgraded.drinkEntries).get();
         final legacyEntry = entries.singleWhere((e) => e.id == 'legacy-1');
@@ -723,12 +725,12 @@ void main() {
         addTearDown(upgraded.close);
 
         // The running AppDatabase is always at the current schema version
-        // (8) after upgrade — this v5→v6 test only exercises the "if (from
+        // (9) after upgrade — this v5→v6 test only exercises the "if (from
         // < 6)" block in isolation (see PRAGMA user_version = 5 above); the
-        // subsequent "if (from < 7)" and "if (from < 8)" blocks still run
-        // since `from` is still < 7/< 8, adding manual_price_override and
-        // name too.
-        expect(upgraded.schemaVersion, 8);
+        // subsequent "if (from < 7)", "if (from < 8)", and "if (from < 9)"
+        // blocks still run since `from` is still below each threshold,
+        // adding manual_price_override, name, and drinkConsumeMinutes too.
+        expect(upgraded.schemaVersion, 9);
 
         // drink_entries.preset_id exists (ALTER TABLE ADD COLUMN) and is
         // null for the pre-existing row — its other snapshot fields survive
@@ -938,16 +940,16 @@ void main() {
             NULL);
         ''');
         // Mark this file as schema v6 so reopening with the real AppDatabase
-        // (schema v8) triggers onUpgrade(from: 6, to: 8), cascading through
-        // the "if (from < 7)" and "if (from < 8)" blocks (the v2-v6 blocks
-        // are no-ops since `from` is already 6).
+        // (schema v9) triggers onUpgrade(from: 6, to: 9), cascading through
+        // the "if (from < 7)", "if (from < 8)", and "if (from < 9)" blocks
+        // (the v2-v6 blocks are no-ops since `from` is already 6).
         await legacy.customStatement('PRAGMA user_version = 6;');
         await legacy.close();
 
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        expect(upgraded.schemaVersion, 8);
+        expect(upgraded.schemaVersion, 9);
 
         // drink_entries.manual_price_override exists (ALTER TABLE ADD
         // COLUMN ... DEFAULT) and is false for the pre-existing row — its
@@ -1142,16 +1144,16 @@ void main() {
             0, NULL, NULL, NULL, $legacyEpoch, $legacyEpoch, NULL);
         ''');
         // Mark this file as schema v7 so reopening with the real AppDatabase
-        // (schema v8) triggers only the real onUpgrade(from: 7, to: 8) "if
-        // (from < 8)" block (the v2-v7 blocks are no-ops since `from` is
-        // already 7).
+        // (schema v9) triggers the real onUpgrade(from: 7, to: 9), cascading
+        // through the "if (from < 8)" and "if (from < 9)" blocks (the v2-v7
+        // blocks are no-ops since `from` is already 7).
         await legacy.customStatement('PRAGMA user_version = 7;');
         await legacy.close();
 
         final upgraded = AppDatabase(NativeDatabase(dbFile));
         addTearDown(upgraded.close);
 
-        expect(upgraded.schemaVersion, 8);
+        expect(upgraded.schemaVersion, 9);
 
         // party_sessions.name exists (ALTER TABLE ADD COLUMN, nullable) and
         // is null for the pre-existing row — its other fields survive
@@ -1242,6 +1244,73 @@ void main() {
     test('rejects an invalid tokenName', () async {
       expect(
         () => repo.startSession(tokenName: ''),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test(
+      'copies the current global drinkConsumeMinutes onto the new session '
+      '(party-session.md §Drink consumption time: "copied from the current '
+      'global value when a session starts")',
+      () async {
+        // A non-default value so 20 (the column default) can't produce a
+        // false pass.
+        await PreferencesRepository(db).updateDrinkConsumeMinutes(40);
+
+        final session = await repo.startSession(
+          now: DateTime.utc(2026, 7, 10, 20, 0),
+        );
+
+        expect(session.drinkConsumeMinutes, 40);
+      },
+    );
+  });
+
+  group('PartySessionRepository.updateDrinkConsumeMinutes', () {
+    late AppDatabase db;
+    late PartySessionRepository repo;
+
+    setUp(() {
+      db = _memDb();
+      repo = PartySessionRepository(db);
+    });
+
+    tearDown(() => db.close());
+
+    test(
+      "updates the active session's own drinkConsumeMinutes — the Party "
+      'tab inline control, which does NOT write back to the global '
+      'UserPreferences (party-session.md §Drink consumption time)',
+      () async {
+        final now = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(now: now);
+
+        await repo.updateDrinkConsumeMinutes(15);
+
+        final refreshed = await repo.getSessionById(session.id);
+        expect(refreshed.drinkConsumeMinutes, 15);
+        // Global preference must be untouched — this control is one-off,
+        // session → global is never written.
+        final prefs = await PreferencesRepository(db).getPreferences();
+        expect(prefs.drinkConsumeMinutes, 20);
+      },
+    );
+
+    test('throws StateError when no session is active', () async {
+      expect(
+        () => repo.updateDrinkConsumeMinutes(15),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('throws ArgumentError when out of range', () async {
+      await repo.startSession(now: DateTime.utc(2026, 7, 10, 20, 0));
+      expect(
+        () => repo.updateDrinkConsumeMinutes(-1),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => repo.updateDrinkConsumeMinutes(61),
         throwsA(isA<ArgumentError>()),
       );
     });
@@ -1617,6 +1686,7 @@ void main() {
         final absorbedCount = await repo.orphanAbsorption(
           newSessionId: 'standalone-session-id',
           startedAt: startedAt,
+          drinkConsumeMinutes: 20,
           now: startedAt,
         );
 
@@ -1639,6 +1709,7 @@ void main() {
           () => repo.orphanAbsorption(
             newSessionId: 'session-x',
             startedAt: consumedAt,
+            drinkConsumeMinutes: 20,
           ),
           throwsA(isA<StateError>()),
         );
@@ -1659,6 +1730,7 @@ void main() {
           () => repo.orphanAbsorption(
             newSessionId: 'session-x',
             startedAt: consumedAt,
+            drinkConsumeMinutes: 20,
           ),
           throwsA(isA<StateError>()),
         );
@@ -1699,6 +1771,67 @@ void main() {
       final orphan = entries.singleWhere((e) => e.id == orphanId);
       expect(orphan.partySessionId, session.id);
     });
+
+    test(
+      'an orphan whose absorption rate r <= β under the NEW session\'s '
+      'drinkConsumeMinutes is never absorbed, no matter how soon the new '
+      'session starts (party-session.md §Step 6 emergent property: '
+      'r <= β -> hoursToZero == 0, so t_zero == consumedAt can never be '
+      'AFTER a startedAt at or after consumedAt)',
+      () async {
+        final db = _memDb();
+        addTearDown(db.close);
+        await _seedProfile(db, birthDate: birthDate);
+        // A small, single 250 ml 5% beer — well under the 500 ml worked-
+        // example dose used elsewhere in this group.
+        final smallGrams = alcoholGrams(volumeMl: 250, abvPercent: 5.0);
+        final smallBacInitial = bacInitialWatson(
+          alcoholGrams: smallGrams,
+          tbwLitres: tbw,
+        );
+        // drinkConsumeMinutes = 60 (top of the 0-60 range) maximises the
+        // absorption window and so minimises r for a fixed dose.
+        const newSessionDrinkConsumeMinutes = 60;
+        final r = smallBacInitial /
+            absorptionWindowHours(newSessionDrinkConsumeMinutes);
+        // NOTE: `hoursToZero` (core) isn't called directly here — this
+        // group already binds a local `hoursToZero` (the worked-example's
+        // hand-derived double, see above), which would shadow the core
+        // function. The r <= β check below is the same precondition core's
+        // `hoursToZero` uses internally to return 0.0 (bac.dart doc
+        // comment), so asserting it here is equivalent.
+        expect(
+          r,
+          lessThanOrEqualTo(eliminationBetaGPerLPerHour),
+          reason: 'fixture sanity: this dose/window combination must '
+              'actually land in the r <= β regime for the test below to '
+              'exercise it',
+        );
+
+        final orphanId = await _insertOrphanDrink(
+          db,
+          consumedAt: consumedAt,
+          volumeMl: 250,
+        );
+        await PreferencesRepository(db)
+            .updateDrinkConsumeMinutes(newSessionDrinkConsumeMinutes);
+        final repo = PartySessionRepository(db);
+
+        // Start the new session at the earliest possible instant relative
+        // to the orphan — the same instant it was consumed. Even this
+        // best-case timing must not absorb it, since t_zero == consumedAt
+        // is never strictly after any startedAt >= consumedAt.
+        final session = await repo.startSession(
+          startedAt: consumedAt,
+          now: consumedAt,
+        );
+
+        final entries = await db.select(db.drinkEntries).get();
+        final orphan = entries.singleWhere((e) => e.id == orphanId);
+        expect(orphan.partySessionId, isNull);
+        expect(session.drinkConsumeMinutes, newSessionDrinkConsumeMinutes);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -3066,6 +3199,56 @@ void main() {
         expect(row!.deletedAt, isNull);
         expect(row.endedAt!.isAtSameMomentAs(endAt), isTrue);
         expect(row.endReason, PartySessionEndReason.manual.stored);
+      },
+    );
+
+    test(
+      "drinkConsumeMinutes is frozen at the ended session's value — a "
+      'later global-preference change never touches it (data-model.md '
+      '§PartySession: "this field no longer changes, even if the global '
+      'preference changes afterward")',
+      () async {
+        final prefsRepo = PreferencesRepository(db);
+        // Non-default global value at session start, so the frozen value
+        // isn't accidentally the column default (20).
+        await prefsRepo.updateDrinkConsumeMinutes(30);
+
+        final startedAt = DateTime.utc(2026, 7, 10, 20, 0);
+        final session = await repo.startSession(
+          now: startedAt,
+          startedAt: startedAt,
+        );
+        expect(session.drinkConsumeMinutes, 30);
+
+        // At least one alcoholic drink so endSession doesn't discard the
+        // session instead of ending it (party-session.md §Zero-drink
+        // sessions are never saved).
+        await repo.logAlcoholicDrink(
+          preset: _beerPreset,
+          sessionId: session.id,
+          consumedAt: startedAt.add(const Duration(minutes: 5)),
+          now: startedAt.add(const Duration(minutes: 5)),
+        );
+
+        final endAt = startedAt.add(const Duration(hours: 1));
+        await repo.endSession(
+          session.id,
+          PartySessionEndReason.manual,
+          now: endAt,
+        );
+
+        final ended = await repo.getSessionById(session.id);
+        expect(ended.drinkConsumeMinutes, 30);
+
+        // Change the global preference after the session ended.
+        await prefsRepo.updateDrinkConsumeMinutes(55);
+
+        final reread = await repo.getSessionById(session.id);
+        expect(
+          reread.drinkConsumeMinutes,
+          30,
+          reason: 'frozen at endedAt; must not follow the global change',
+        );
       },
     );
   });

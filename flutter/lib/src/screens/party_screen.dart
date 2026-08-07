@@ -308,6 +308,7 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
       alcoholicEntries: alcoholicEntries,
       meals: mealsAsync.requireValue,
       at: now,
+      drinkConsumeMinutes: widget.session.drinkConsumeMinutes,
     );
     final cap = prefs?.bacCapGramsPerL;
     final approachingCap = cap != null &&
@@ -367,6 +368,8 @@ class _ActiveSessionViewState extends ConsumerState<_ActiveSessionView> {
                 meals: mealsAsync.requireValue,
                 now: now,
               ),
+              const SizedBox(height: 12),
+              _ConsumeTimeControl(session: widget.session),
               const SizedBox(height: 16),
               _SessionPricesControl(session: widget.session),
               const SizedBox(height: 12),
@@ -877,6 +880,7 @@ class _BacLineChartCardState extends State<_BacLineChartCard> {
       alcoholicEntries: widget.alcoholicEntries,
       meals: widget.meals,
       now: widget.now,
+      drinkConsumeMinutes: widget.session.drinkConsumeMinutes,
     );
     if (series == null) return const SizedBox.shrink();
 
@@ -1191,6 +1195,144 @@ class _MealIndicator extends ConsumerWidget {
         .read(partySessionRepositoryProvider)
         .addMeal(sessionId: sessionId, size: size);
   }
+}
+
+/// The consume-time control (party-session.md §Party tab during a session:
+/// "a small row showing the session's current `drinkConsumeMinutes` (e.g.
+/// 'Drink pace: 20 min')"). Tapping opens a stepper (0–60, 5-minute steps —
+/// same range as the Settings field) and, on a value change, writes straight
+/// to `PartySession.drinkConsumeMinutes` via
+/// `PartySessionRepository.updateDrinkConsumeMinutes` — the session's own
+/// inline control, distinct from the global Settings field, per "Global
+/// setting, mirrored per session, locked at end" in party-session.md. Only
+/// rendered by the active-session view; S9's ended-mode header shows the
+/// frozen value as read-only text instead (SessionSummaryCard's
+/// `showDrinkConsumeMinutes`).
+class _ConsumeTimeControl extends ConsumerWidget {
+  const _ConsumeTimeControl({required this.session});
+
+  final PartySession session;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Semantics(
+      label: SemanticsLabels.consumeTimeControl,
+      button: true,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openStepper(context, ref),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Drink pace: ${session.drinkConsumeMinutes} min',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openStepper(BuildContext context, WidgetRef ref) async {
+    final newValue = await showDrinkConsumeMinutesStepper(
+      context,
+      initial: session.drinkConsumeMinutes,
+    );
+    if (newValue == null || newValue == session.drinkConsumeMinutes) return;
+    await ref
+        .read(partySessionRepositoryProvider)
+        .updateDrinkConsumeMinutes(newValue);
+  }
+}
+
+/// Bottom-sheet stepper backing [_ConsumeTimeControl] — 0–60 minutes in
+/// 5-minute steps (party-session.md §Drink consumption time), clamped
+/// client-side by disabling the +/- buttons at the range ends. Returns null
+/// on dismiss without a change.
+Future<int?> showDrinkConsumeMinutesStepper(
+  BuildContext context, {
+  required int initial,
+}) {
+  const min = 0;
+  const max = 60;
+  const step = 5;
+
+  return showModalBottomSheet<int>(
+    context: context,
+    builder: (context) {
+      var value = initial;
+      return StatefulBuilder(
+        builder: (context, setState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Drink pace',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'How long you typically take to drink one — adjusts the '
+                  'BAC estimate.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      key: const Key('drink_consume_minutes_stepper_decrement'),
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: value > min
+                          ? () => setState(
+                              () => value = (value - step).clamp(min, max))
+                          : null,
+                    ),
+                    SizedBox(
+                      width: 72,
+                      child: Text(
+                        '$value min',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                    IconButton(
+                      key: const Key('drink_consume_minutes_stepper_increment'),
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: value < max
+                          ? () => setState(
+                              () => value = (value + step).clamp(min, max))
+                          : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(value),
+                  child: const Text('Done'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class _BmiWarningBanner extends StatelessWidget {

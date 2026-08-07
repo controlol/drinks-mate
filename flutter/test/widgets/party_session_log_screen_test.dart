@@ -185,6 +185,7 @@ PartySession _makeSession({
   String id = 's1',
   String? name,
   DateTime? endedAt,
+  int drinkConsumeMinutes = 20,
 }) {
   return PartySession(
     id: id,
@@ -192,6 +193,7 @@ PartySession _makeSession({
     startedAt: startedAt,
     endedAt: endedAt,
     useSessionPrices: false,
+    drinkConsumeMinutes: drinkConsumeMinutes,
     createdAt: startedAt,
     updatedAt: startedAt,
   );
@@ -1429,6 +1431,86 @@ void main() {
           expect(find.text('Ended: 11:15 PM'), findsOneWidget);
           expect(find.text('Total consumed alcohol: 43 g'), findsOneWidget);
           expect(find.byType(SessionLifetimeBacChart), findsOneWidget);
+        },
+      );
+
+      // -----------------------------------------------------------------
+      // Frozen drink-consume-time readout (party-session.md §Drink
+      // consumption time: "locked at end"; user-experience.md §S9: "the
+      // session's drink-consume-time setting (frozen at `endedAt`,
+      // read-only)"). Expanded header only, plain text — no edit
+      // affordance, matching every other frozen ended-session field on this
+      // screen.
+      // -----------------------------------------------------------------
+
+      testWidgets(
+        "tapping the ended-mode header also reveals the session's frozen "
+        'drink-consume-time value, as plain read-only text (no tap target)',
+        (tester) async {
+          final endedAt = startedAt.add(const Duration(hours: 3, minutes: 15));
+          final session = _makeSession(
+            startedAt: startedAt,
+            endedAt: endedAt,
+            drinkConsumeMinutes: 35,
+          );
+          final summary = SessionDaySummary(
+            session: session,
+            duration: const Duration(hours: 3, minutes: 15),
+            totalAlcoholicDrinks: 2,
+            mealsLoggedCount: 0,
+            peakBacGPerL: 0.36,
+            totalAlcoholGrams: 42.7,
+            lifetimeBacChart:
+                _chartSeries(axisStart: startedAt, axisEnd: endedAt),
+            asOf: endedAt,
+          );
+
+          await tester.pumpWidget(
+            _buildScreen(
+              sessionId: session.id,
+              activeSession: null,
+              entries: const [],
+              profile: _makeProfile(),
+              now: endedAt,
+              partyRepo: _FakePartySessionRepo(),
+              drinksRepo: _FakeDrinksRepo(),
+              endedSummary: summary,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Collapsed: not shown yet.
+          expect(find.textContaining('Drink pace:'), findsNothing);
+
+          await tester.tap(find.byIcon(Icons.expand_more));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Drink pace: 35 min'), findsOneWidget);
+          // Read-only: no stepper affordance on S9 (party-session.md §Party
+          // tab during a session: "an ended session's S9 header shows the
+          // frozen value as read-only text instead").
+          expect(
+            find.byKey(const Key('drink_consume_minutes_stepper_increment')),
+            findsNothing,
+          );
+          expect(
+            find.byKey(const Key('drink_consume_minutes_stepper_decrement')),
+            findsNothing,
+          );
+
+          // Tapping the frozen text does nothing navigable/interactive —
+          // it's plain Text, not wrapped in its own InkWell/GestureDetector
+          // (unlike the Party tab's tappable consume-time control).
+          final textWidget = tester.widget<Text>(
+            find.text('Drink pace: 35 min'),
+          );
+          expect(
+            find.ancestor(
+              of: find.byWidget(textWidget),
+              matching: find.byType(InkWell),
+            ),
+            findsOneWidget, // only the card's own expand/collapse InkWell.
+          );
         },
       );
 

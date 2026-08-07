@@ -25,7 +25,7 @@ const String kWaterGlassPresetId = 'f47ac10b-58cc-4372-a567-0e02b2c3d001';
 /// well-known ids for singleton records).
 const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 
-/// Phase-1 Drift database — schema version 8.
+/// Phase-1 Drift database — schema version 9.
 ///
 /// v1 (issue #1): empty schema baseline.
 /// v2 (issue #2): DrinkPreset + DrinkEntry tables + default-preset seeding.
@@ -47,6 +47,11 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 ///   sweep in `setSessionPrices` knows which entries to skip.
 /// v8 (issue #102): PartySessions gains name (nullable) — an optional,
 ///   user-set freeform session label.
+/// v9: UserPreferences and PartySessions both gain drinkConsumeMinutes
+///   (default 20) — data-model.md §UserPreferences/§PartySession,
+///   party-session.md §Drink consumption time. Global preference mirrored
+///   onto the active session at start and live while active; frozen at
+///   `endedAt`.
 ///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
@@ -70,7 +75,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -121,6 +126,19 @@ class AppDatabase extends _$AppDatabase {
           // "duplicate column name".
           if (from >= 4 && from < 8) {
             await m.addColumn(partySessions, partySessions.name);
+          }
+          if (from < 9) {
+            await m.addColumn(
+              userPreferencesTable,
+              userPreferencesTable.drinkConsumeMinutes,
+            );
+          }
+          // Same lower-bound reasoning as `name` above: `createTable` in
+          // `if (from < 4)` already builds today's Dart schema — which already
+          // includes `drinkConsumeMinutes` — so an upgrade starting below v4
+          // already has the column by the time this runs.
+          if (from >= 4 && from < 9) {
+            await m.addColumn(partySessions, partySessions.drinkConsumeMinutes);
           }
         },
         beforeOpen: (_) async {
@@ -356,6 +374,7 @@ class AppDatabase extends _$AppDatabase {
       // unless the user opts into session-only visibility (features.md F14).
       alcoholicPresetsAlwaysVisible: const Value(true),
       drinkSortMode: const Value('recentlyUsed'),
+      drinkConsumeMinutes: const Value(20),
       installedAt: now.millisecondsSinceEpoch,
       createdAt: now,
       updatedAt: now,

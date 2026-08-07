@@ -292,20 +292,29 @@ void main() {
 
   group(
     'hoursToZero (bac.dart doc comment: t_zero = consumedAt + BAC_initial / '
-    'β; party-session.md §Absorbing orphan drinks / notifications.md §Party '
-    'Mode notifications sober-estimate trigger)',
+    'β whenever r > β; party-session.md §Step 6 "Emergent property" / '
+    '§Absorbing orphan drinks / notifications.md §Party Mode notifications '
+    'sober-estimate trigger)',
     () {
-      test('known-value vector: 0.3 g/L at β=0.15 → 2.0 hours', () {
+      test(
+          'known-value vector: 0.3 g/L at β=0.15, drinkConsumeMinutes=20 '
+          '(r > β) → 2.0 hours', () {
         // 0.3 / 0.15 = 2.0 exactly on paper, but 0.15 has no exact binary
         // representation, so use closeTo rather than exact equality.
-        expect(hoursToZero(0.3), closeTo(2.0, 1e-9));
+        expect(
+          hoursToZero(bacInitial: 0.3, drinkConsumeMinutes: 20),
+          closeTo(2.0, 1e-9),
+        );
       });
 
       test(
           'inverse of bacAtTime: decaying for hoursToZero(x) hours from x '
           'lands back at 0', () {
         const bacInitial = 0.360; // worked-example initial BAC.
-        final hours = hoursToZero(bacInitial);
+        final hours = hoursToZero(
+          bacInitial: bacInitial,
+          drinkConsumeMinutes: 20,
+        );
         expect(
           bacAtTime(bacInitial: bacInitial, hoursSince: hours),
           closeTo(0.0, 1e-9),
@@ -313,19 +322,32 @@ void main() {
       });
 
       test('BAC 0 → 0 hours to zero', () {
-        expect(hoursToZero(0.0), 0.0);
+        expect(
+          hoursToZero(bacInitial: 0.0, drinkConsumeMinutes: 20),
+          0.0,
+        );
       });
     },
   );
 
   group(
     'sessionBacAtTime / sessionSoberTime (party-session.md §BAC estimation '
-    'algorithm Step 5: pooled elimination, not independent per-drink sum)',
+    'algorithm Step 6: pooled elimination across overlapping absorption '
+    'windows, not independent per-drink sum)',
     () {
-      // Two drinks, each bacInitial 0.30 g/L, 1 hour apart. Drink 1 alone
-      // would decay to 0 after 2h (hoursToZero(0.30) = 2.0), so at drink 2's
-      // consumedAt (t=1h) drink 1 still has 0.15 g/L left — the drinks
-      // overlap for the hour between t=1h and t=2h.
+      // drinkConsumeMinutes = 30 → T_hours = (30+30)/60 = 1.0h exactly, a
+      // deliberately round absorption window chosen only to keep this
+      // group's hand-derived arithmetic exact; it is not otherwise special
+      // (the dedicated "absorption window" group below uses the spec's own
+      // default of 20).
+      const drinkConsumeMinutes = 30;
+
+      // Two drinks, each bacInitial 0.30 g/L, 1 hour apart — exactly one
+      // absorption window (1h), so drink 1's window [t0, t1) ends the
+      // instant drink 2's window [t1, t0+2h) begins: no double-active
+      // overlap, but the pool the first drink built up is still decaying
+      // when the second starts absorbing, which is what "pooled, not
+      // independent" exercises here.
       final t0 = DateTime.utc(2026, 1, 1, 0);
       final t1 = t0.add(const Duration(hours: 1));
       final drinks = [
@@ -334,112 +356,489 @@ void main() {
       ];
 
       test(
-          'at the second drink\'s own consumedAt, pooled == independent sum '
-          '(only one decay-then-add step has happened)', () {
-        // Pool: 0.30 decayed 1h to 0.15, then + 0.30 = 0.45.
-        expect(sessionBacAtTime(drinks: drinks, at: t1), closeTo(0.45, 1e-9));
+          'at the second drink\'s own consumedAt, the pool reflects only '
+          "drink 1's now-complete absorption — drink 2 has not started "
+          'ramping up yet, unlike the pre-absorption-window model\'s '
+          'instant spike', () {
+        // Drink 1's window [t0, t1) closes exactly at t1, at its peak:
+        // net rate r-β=0.15 sustained over the full 1h window → 0.15.
+        // Drink 2's window starts at this same instant t1, but a window's
+        // start contributes nothing at that exact instant (Step 4: "the
+        // drink is absorbing during [consumedAt, consumedAt+T) and
+        // contributes nothing to the pool before consumedAt") — so unlike
+        // the pre-absorption-window model (which would show 0.30 here from
+        // an instant add of drink 2 on top of drink 1's decayed 0.15), the
+        // pool at t1 is exactly drink 1's own peak.
+        expect(
+          sessionBacAtTime(
+            drinks: drinks,
+            at: t1,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.15, 1e-9),
+        );
       });
 
       test(
-          'during the overlap, pooled elimination beats independent-sum '
-          'elimination by β per extra concurrently-active drink', () {
+          'during the overlap-adjacent decay, pooled elimination continues '
+          'smoothly across the hand-off between drink 1 closing and drink 2 '
+          'absorbing', () {
         final at = t0.add(const Duration(minutes: 90)); // t=1.5h
-        // Pooled: 0.45 (at t1) decayed 0.5h → 0.45 − 0.15×0.5 = 0.375.
-        expect(sessionBacAtTime(drinks: drinks, at: at), closeTo(0.375, 1e-9));
-        // Independent-sum (the old, over-eliminating model, for contrast):
-        // drink 1 alone at 1.5h: 0.30 − 0.15×1.5 = 0.075.
-        // drink 2 alone at 0.5h since consumed: 0.30 − 0.15×0.5 = 0.225.
-        // Sum = 0.30 — 0.075 g/L lower than the pooled 0.375, i.e. β×0.5h
-        // of extra elimination for the hour the two drinks were both active.
-        final independentSum = bacAtTime(bacInitial: 0.30, hoursSince: 1.5) +
-            bacAtTime(bacInitial: 0.30, hoursSince: 0.5);
-        expect(independentSum, closeTo(0.30, 1e-9));
+        // From t1 (pool 0.15, net rate r-β=0.15 while drink 2 absorbs):
+        // 0.15 + 0.15×0.5 = 0.225.
+        expect(
+          sessionBacAtTime(
+            drinks: drinks,
+            at: at,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.225, 1e-9),
+        );
       });
 
       test('drinks consumed after `at` are ignored', () {
-        expect(sessionBacAtTime(drinks: drinks, at: t0), closeTo(0.30, 1e-9));
+        // At t0 itself, drink 1 has not absorbed anything yet either — the
+        // pool is 0, not 0.30 (see the previous two tests' note on ramping).
+        expect(
+          sessionBacAtTime(
+            drinks: drinks,
+            at: t0,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.0, 1e-9),
+        );
       });
 
       test('unsorted input is handled the same as sorted input', () {
         final reversed = drinks.reversed.toList();
         expect(
-          sessionBacAtTime(drinks: reversed, at: t1),
-          sessionBacAtTime(drinks: drinks, at: t1),
+          sessionBacAtTime(
+            drinks: reversed,
+            at: t1,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          sessionBacAtTime(
+            drinks: drinks,
+            at: t1,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
         );
       });
 
       test('empty drinks → 0', () {
-        expect(sessionBacAtTime(drinks: const [], at: t0), 0.0);
+        expect(
+          sessionBacAtTime(
+            drinks: const [],
+            at: t0,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          0.0,
+        );
       });
 
       test(
-          'sessionSoberTime projects from the pooled total at the last '
-          'drink, later than the old max-independent-t_zero would', () {
-        // Pool right after the second drink folds in: 0.45 g/L.
-        // hoursToZero(0.45) = 3.0h → sober at t1 + 3h = t0 + 4h.
-        final expected = t1.add(const Duration(hours: 3));
-        expect(sessionSoberTime(drinks: drinks), expected);
+          'sessionSoberTime projects from the pooled total, later than the '
+          'old max-independent-t_zero would', () {
+        // Mass-balance shortcut (Step 6 emergent property): total alcohol
+        // 0.60 g/L / β = 4.0h from t0 — matches even though the shape now
+        // ramps instead of spiking, because neither drink's contribution
+        // ever floors to 0 along the way (verified against the direct
+        // event-timeline walk; see the module-level note in bac.dart).
+        final expected = t0.add(const Duration(hours: 4));
+        expect(
+          sessionSoberTime(
+            drinks: drinks,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          expected,
+        );
 
-        // Contrast: each drink's own independent t_zero is only 2h after its
-        // own consumedAt (hoursToZero(0.30) = 2.0h), so the old model's max
-        // across them would land at t0+2h vs. t1+2h — both earlier than t0+4h.
+        // Contrast: each drink's own independent t_zero (bacInitial/β) is
+        // only 2h after its own consumedAt, so the old per-drink-max model
+        // would land at t0+2h vs. t1+2h — both earlier than t0+4h.
         final oldMaxTZero = t1.add(const Duration(hours: 2));
-        expect(sessionSoberTime(drinks: drinks)!.isAfter(oldMaxTZero), isTrue);
+        expect(
+          sessionSoberTime(
+            drinks: drinks,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          )!
+              .isAfter(oldMaxTZero),
+          isTrue,
+        );
       });
 
       test('sessionSoberTime with no drinks → null', () {
-        expect(sessionSoberTime(drinks: const []), isNull);
+        expect(
+          sessionSoberTime(
+            drinks: const [],
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          isNull,
+        );
       });
 
       test(
-          'a drink that fully decays to 0 before the next is added does not '
-          'leave a negative residual carried forward (the floor applies mid-'
-          'fold, not just at the final sample)', () {
-        // Drink 1 (0.30 g/L) fully decays after 2h (hoursToZero(0.30) = 2.0).
-        // Drink 2 is logged 3h later, well after drink 1 hit 0 — no overlap.
+          'a drink that fully decays to 0 before the next starts absorbing '
+          'does not leave a negative residual carried forward (the floor '
+          'applies mid-walk, not just at the final sample)', () {
+        // Drink 1 (0.30 g/L, T=1h) peaks at 0.15 (t0+1h) then decays alone;
+        // it hits the floor at t0+1h+1h=t0+2h (0.15 − 0.15×1 = 0). Drink 2
+        // (0.20 g/L) starts absorbing 3h after drink 1, i.e. a full hour
+        // after drink 1 already floored — no overlap.
         final farApart = [
           (consumedAt: t0, bacInitial: 0.30),
           (consumedAt: t0.add(const Duration(hours: 3)), bacInitial: 0.20),
         ];
-        // If the mid-fold decay didn't floor at 0, drink 1's contribution
-        // would go to -0.15 g/L by t0+3h and wrongly cancel out part of
-        // drink 2's own 0.20 g/L peak.
+        // At t0+2h drink 1 has just floored and drink 2 hasn't started:
+        // pool is exactly 0 — this is the step that would go negative
+        // (0.15 − 0.15×2 = −0.15) without the mid-walk floor.
+        expect(
+          sessionBacAtTime(
+            drinks: farApart,
+            at: t0.add(const Duration(hours: 2)),
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.0, 1e-9),
+        );
+        // At t0+3h (drink 2's own consumedAt) the pool is still 0 (drink 2
+        // hasn't absorbed anything yet).
         expect(
           sessionBacAtTime(
             drinks: farApart,
             at: t0.add(const Duration(hours: 3)),
+            drinkConsumeMinutes: drinkConsumeMinutes,
           ),
-          closeTo(0.20, 1e-9),
+          closeTo(0.0, 1e-9),
+        );
+        // At t0+4h (drink 2's window closes) the pool is drink 2's own
+        // uncontaminated peak: r=0.20, net=0.20−0.15=0.05, ×T(1h)=0.05. If
+        // the floor had NOT applied at t0+3h above, drink 1's un-floored
+        // −0.15 residual would still be dragging this down to ≈−0.40.
+        expect(
+          sessionBacAtTime(
+            drinks: farApart,
+            at: t0.add(const Duration(hours: 4)),
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.05, 1e-9),
         );
       });
 
       test('three drinks: pool folds every addition, not just the latest', () {
-        // 0.10 @ t0, 0.10 @ t0+1h, 0.10 @ t0+2h — each spaced exactly
-        // hoursToZero(0.10) = 0.667h apart, so every earlier drink is still
-        // partially active when the next is added.
+        // 0.30 g/L each, 30 min apart (t0, t0+30min, t0+1h) with T=1h, so
+        // each pair of consecutive drinks overlaps for 30 min — genuinely
+        // exercising 3-drink pooling (unlike back-to-back non-overlapping
+        // windows).
         final threeDrinks = [
-          (consumedAt: t0, bacInitial: 0.10),
-          (consumedAt: t0.add(const Duration(hours: 1)), bacInitial: 0.10),
-          (consumedAt: t0.add(const Duration(hours: 2)), bacInitial: 0.10),
+          (consumedAt: t0, bacInitial: 0.30),
+          (consumedAt: t0.add(const Duration(minutes: 30)), bacInitial: 0.30),
+          (consumedAt: t0.add(const Duration(hours: 1)), bacInitial: 0.30),
         ];
-        // Fold: 0.10 -(1h*0.15)-> max(0, -0.05)=0 , +0.10 = 0.10
-        //       0.10 -(1h*0.15)-> max(0, -0.05)=0 , +0.10 = 0.10
+        // At t0+1h (drink 3's own consumedAt), drinks 1 and 2 have already
+        // pooled to 0.30 from their own 30-minute overlap — proving the
+        // fold carries forward past drink 2's addition, not just drink 1's.
+        expect(
+          sessionBacAtTime(
+            drinks: threeDrinks,
+            at: t0.add(const Duration(hours: 1)),
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.30, 1e-9),
+        );
+        // At t0+2h, all three windows have closed. Mass balance: 0.90 g/L
+        // absorbed total, minus β×2h=0.30 eliminated (the pool is positive
+        // throughout, so elimination is never wasted against an empty
+        // floor) = 0.60.
         expect(
           sessionBacAtTime(
             drinks: threeDrinks,
             at: t0.add(const Duration(hours: 2)),
+            drinkConsumeMinutes: drinkConsumeMinutes,
           ),
-          closeTo(0.10, 1e-9),
+          closeTo(0.60, 1e-9),
         );
       });
 
       test(
           'sampling strictly between two drinks reflects only the earlier '
-          "one's decay so far", () {
+          "one's own partial absorption so far", () {
         final at = t0.add(const Duration(minutes: 30)); // between t0 and t1
-        // Only drink 1 has been consumed by `at`: 0.30 − 0.15×0.5 = 0.225.
-        expect(sessionBacAtTime(drinks: drinks, at: at), closeTo(0.225, 1e-9));
+        // Only drink 1 is absorbing by `at`, halfway through its window:
+        // net rate r-β=0.15 for 0.5h → 0.075.
+        expect(
+          sessionBacAtTime(
+            drinks: drinks,
+            at: at,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          ),
+          closeTo(0.075, 1e-9),
+        );
       });
+    },
+  );
+
+  group(
+    'sessionBacAtTime / sessionSoberTime — absorption window (Step 4-6, '
+    'party-session.md §Worked example / §Worked example 2 — staggered '
+    'drinks)',
+    () {
+      // Same spec discrepancy as the NOTE at the top of this file: the
+      // design doc hand-computed its peak/etc. worked-example numbers
+      // (0.237, 0.011/0.201/0.212 g/L) from its own rounded 0.362 g/L
+      // intermediate, not the formula-precise ~0.360. So — as with the
+      // top-of-file NOTE — the fixtures below recompute `bacInitial`
+      // programmatically from this same 75kg/180cm/30yo-male/two-beers
+      // profile and derive every expected value from *that* precise
+      // number, rather than hand-copying the doc's rounded literals. The
+      // doc's numbers remain a useful sanity-check on magnitude/shape
+      // only.
+      final perBeerAlcohol = alcoholGrams(volumeMl: 250, abvPercent: 5);
+      final totalAlcohol = 2 * perBeerAlcohol;
+      final tbw = watsonTbwLitres(
+        gender: Gender.male,
+        ageYears: 30,
+        heightCm: 180,
+        weightKg: 75,
+      );
+      final bacInitial = bacInitialWatson(
+        alcoholGrams: totalAlcohol,
+        tbwLitres: tbw,
+      );
+      final perBeerBacInitial = bacInitialWatson(
+        alcoholGrams: perBeerAlcohol,
+        tbwLitres: tbw,
+      );
+
+      const drinkConsumeMinutes = 20; // party-session.md default.
+      final t0 = DateTime.utc(2026, 1, 1, 0);
+
+      group('absorptionWindowHours', () {
+        test('boundary values: 0 min → 0.5h (fixed floor), 60 min → 1.5h', () {
+          expect(absorptionWindowHours(0), 0.5);
+          expect(absorptionWindowHours(60), 1.5);
+        });
+
+        test('20 min (default) → 50/60 h', () {
+          expect(absorptionWindowHours(20), 50 / 60);
+        });
+      });
+
+      group('Worked example 1 — two beers logged at the same instant', () {
+        final tHours = absorptionWindowHours(drinkConsumeMinutes);
+        final drinks = [(consumedAt: t0, bacInitial: bacInitial)];
+
+        test('T_hours = 50/60 (20 + 30 min)', () {
+          expect(tHours, closeTo(50 / 60, 1e-12));
+        });
+
+        test(
+            'pool at consumedAt + 50min equals the peak: '
+            '(r - β) × T_hours', () {
+          final r = bacInitial / tHours;
+          final net = r - eliminationBetaGPerLPerHour;
+          final peak = net * tHours;
+          expect(
+            sessionBacAtTime(
+              drinks: drinks,
+              at: t0.add(const Duration(minutes: 50)),
+              drinkConsumeMinutes: drinkConsumeMinutes,
+            ),
+            closeTo(peak, 1e-9),
+          );
+        });
+
+        test(
+            'pool at consumedAt + 2h equals bacInitial − β×2 — the same '
+            "decay line the old instant-absorption model sits on, once "
+            "the window has closed (Step 6 emergent property)", () {
+          expect(
+            sessionBacAtTime(
+              drinks: drinks,
+              at: t0.add(const Duration(hours: 2)),
+              drinkConsumeMinutes: drinkConsumeMinutes,
+            ),
+            closeTo(bacInitial - eliminationBetaGPerLPerHour * 2, 1e-9),
+          );
+        });
+
+        test(
+            'sessionSoberTime = consumedAt + bacInitial/β — unaffected by '
+            'the absorption window (r > β here)', () {
+          final expected = t0.add(
+            Duration(
+              microseconds: (bacInitial /
+                      eliminationBetaGPerLPerHour *
+                      Duration.microsecondsPerHour)
+                  .round(),
+            ),
+          );
+          expect(
+            sessionSoberTime(
+              drinks: drinks,
+              drinkConsumeMinutes: drinkConsumeMinutes,
+            ),
+            expected,
+          );
+        });
+      });
+
+      group('Worked example 2 — staggered drinks, 10 min apart', () {
+        // Beer A at consumedAt=t0, beer B 10 min later — each individually
+        // at perBeerBacInitial, exercising overlapping (not identical)
+        // absorption windows: A absorbs over [0, 50min), B over
+        // [10min, 60min), a 40-minute overlap.
+        final beerA = (consumedAt: t0, bacInitial: perBeerBacInitial);
+        final beerB = (
+          consumedAt: t0.add(const Duration(minutes: 10)),
+          bacInitial: perBeerBacInitial,
+        );
+        final staggered = [beerA, beerB];
+
+        double poolAt(int minutes) => sessionBacAtTime(
+              drinks: staggered,
+              at: t0.add(Duration(minutes: minutes)),
+              drinkConsumeMinutes: drinkConsumeMinutes,
+            );
+
+        test(
+            'pool at 10 min (A only, just before B starts absorbing) — '
+            'derived from perBeerBacInitial, not the design doc\'s rounded '
+            '0.011', () {
+          final tHours = absorptionWindowHours(drinkConsumeMinutes);
+          final rA = perBeerBacInitial / tHours;
+          final netAOnly = rA - eliminationBetaGPerLPerHour;
+          final expected = netAOnly * (10 / 60);
+          expect(poolAt(10), closeTo(expected, 1e-9));
+        });
+
+        test(
+            'pool at 50 min (A\'s window closes, A+B both active since '
+            '10min)', () {
+          // Regression against the "naive independent-sum" bug Step 6
+          // pooling avoids: one shared β through the whole 10-50min
+          // overlap, not β subtracted once per active drink.
+          final tHours = absorptionWindowHours(drinkConsumeMinutes);
+          final rA = perBeerBacInitial / tHours;
+          final rB = rA;
+          final poolAt10 = (rA - eliminationBetaGPerLPerHour) * (10 / 60);
+          final pooledNet = (rA + rB) - eliminationBetaGPerLPerHour;
+          final naiveNet = (rA - eliminationBetaGPerLPerHour) +
+              (rB - eliminationBetaGPerLPerHour);
+          expect(
+            pooledNet,
+            greaterThan(naiveNet),
+          ); // pooled subtracts β once, naive subtracts it twice.
+          final expected = poolAt10 + pooledNet * (40 / 60);
+          expect(poolAt(50), closeTo(expected, 1e-9));
+        });
+
+        test('pool at 60 min (B\'s window closes too — the overall peak)', () {
+          final tHours = absorptionWindowHours(drinkConsumeMinutes);
+          final rB = perBeerBacInitial / tHours;
+          final netBOnly = rB - eliminationBetaGPerLPerHour;
+          final poolAt50 = poolAt(50);
+          final expected = poolAt50 + netBOnly * (10 / 60);
+          expect(poolAt(60), closeTo(expected, 1e-9));
+        });
+      });
+
+      group('hoursToZero — orphan absorption edge cases', () {
+        test(
+            'typical drink (r > β): same value as the pre-absorption-window '
+            'formula bacInitial/β', () {
+          expect(
+            hoursToZero(bacInitial: 0.3, drinkConsumeMinutes: 20),
+            closeTo(0.3 / eliminationBetaGPerLPerHour, 1e-9),
+          );
+        });
+
+        test(
+            'slow enough that r <= β (small bacInitial, long '
+            'drinkConsumeMinutes): never accumulates residual BAC → 0', () {
+          // bacInitial=0.05, drinkConsumeMinutes=60 → T_hours=1.5,
+          // r=0.05/1.5≈0.0333 < β=0.15.
+          const smallBacInitial = 0.05;
+          const slowMinutes = 60;
+          final r = smallBacInitial / absorptionWindowHours(slowMinutes);
+          expect(r, lessThan(eliminationBetaGPerLPerHour));
+          expect(
+            hoursToZero(
+              bacInitial: smallBacInitial,
+              drinkConsumeMinutes: slowMinutes,
+            ),
+            0.0,
+          );
+        });
+      });
+
+      group(
+        'sessionSoberTime — genuine sober gap followed by a later drink',
+        () {
+          // Beer A at t0 fully decays to 0 in isolation well before beer B
+          // starts (A's own isolated sober time is t0 + bacInitial/β ≈ 72
+          // min, comfortably inside the 180-minute gap before B). A real
+          // sober gap therefore exists between A clearing and B starting —
+          // sessionSoberTime must report B's own eventual zero-time, not
+          // stop at the first (A's) crossing it finds while scanning
+          // forward.
+          final aIsolatedHoursToZero = hoursToZero(
+            bacInitial: perBeerBacInitial,
+            drinkConsumeMinutes: drinkConsumeMinutes,
+          );
+          const gapMinutes = 180;
+          final beerA = (consumedAt: t0, bacInitial: perBeerBacInitial);
+          final beerBConsumedAt = t0.add(const Duration(minutes: gapMinutes));
+          final beerB =
+              (consumedAt: beerBConsumedAt, bacInitial: perBeerBacInitial);
+          final drinks = [beerA, beerB];
+
+          test('the gap is real: pool is exactly 0 partway through it', () {
+            // A's window ends at t0+50min and it fully clears by
+            // ~t0+72min — sampling at t0+120min (still 60 min before B
+            // starts) must read 0, confirming there is genuinely nothing
+            // left in the blood at that instant.
+            expect(
+              sessionBacAtTime(
+                drinks: drinks,
+                at: t0.add(const Duration(minutes: 120)),
+                drinkConsumeMinutes: drinkConsumeMinutes,
+              ),
+              0.0,
+            );
+          });
+
+          test(
+              'sessionSoberTime reports B\'s own zero-time, not the '
+              'earlier A-only crossing', () {
+            final expected = beerBConsumedAt.add(
+              Duration(
+                microseconds:
+                    (aIsolatedHoursToZero * Duration.microsecondsPerHour)
+                        .round(),
+              ),
+            );
+            final actual = sessionSoberTime(
+              drinks: drinks,
+              drinkConsumeMinutes: drinkConsumeMinutes,
+            );
+            expect(actual, isNotNull);
+            expect(
+              actual!.difference(expected).inSeconds.abs(),
+              lessThanOrEqualTo(1),
+            );
+            // Regression guard: the bug this test catches returned A's own
+            // (much earlier) isolated sober time instead.
+            final aOnlySoberTime = t0.add(
+              Duration(
+                microseconds:
+                    (aIsolatedHoursToZero * Duration.microsecondsPerHour)
+                        .round(),
+              ),
+            );
+            expect(actual.isAfter(aOnlySoberTime), isTrue);
+          });
+        },
+      );
     },
   );
 

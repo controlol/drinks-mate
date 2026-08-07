@@ -15,6 +15,7 @@ import '../models/session_day_summary.dart';
 import '../models/user_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/app_info_service.dart';
+import '../services/bac_chart_series.dart';
 import '../services/bac_estimator.dart';
 import '../services/goal_celebration_guard.dart';
 import '../services/history_bac_service.dart';
@@ -776,19 +777,41 @@ final partyNotificationSyncProvider = Provider<void>((ref) {
     alcoholicEntries: alcoholicEntries,
     meals: meals,
     at: now,
+    drinkConsumeMinutes: session.drinkConsumeMinutes,
   );
   final soberTime = projectedSoberTime(
     profile: profile,
     alcoholicEntries: alcoholicEntries,
     meals: meals,
     at: now,
+    drinkConsumeMinutes: session.drinkConsumeMinutes,
   );
+
+  // Approaching-cap trigger input (design-system.md Parity Rulebook →
+  // "Approaching-cap trigger"): the projected peak across every
+  // currently-absorbing drink's remaining absorption window, reusing the
+  // BAC line chart's own dashed-segment projection rather than a separate
+  // computation. Falls back to the instant estimate when there's no
+  // projected segment yet (e.g. the empty-state window before the first
+  // drink, or "now" already sitting at the projected end).
+  final series = buildBacChartSeries(
+    profile: profile,
+    sessionStartedAt: session.startedAt,
+    alcoholicEntries: alcoholicEntries,
+    meals: meals,
+    now: now,
+    drinkConsumeMinutes: session.drinkConsumeMinutes,
+  );
+  final projectedPeakGPerL = series == null || series.projected.isEmpty
+      ? estimate.gPerL
+      : series.projected.map((p) => p.gPerL).reduce((a, b) => a > b ? a : b);
 
   unawaited(
     service.sync(
       session: session,
       prefs: prefs,
       estimate: estimate,
+      projectedPeakGPerL: projectedPeakGPerL,
       capGPerL: prefs.bacCapGramsPerL,
       projectedSoberTime: soberTime,
       now: now,

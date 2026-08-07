@@ -26,6 +26,7 @@ class UserPreferences {
     required this.soberEstimateNotifEnabled,
     required this.alcoholicPresetsAlwaysVisible,
     this.drinkSortMode = PresetSortMode.recentlyUsed,
+    this.drinkConsumeMinutes = 20,
     required this.installedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -84,6 +85,16 @@ class UserPreferences {
   /// picker (features.md F14 §Sort modes). Default `recentlyUsed`.
   final PresetSortMode drinkSortMode;
 
+  /// How long, in minutes, the user typically takes to consume one drink —
+  /// data-model.md §UserPreferences, party-session.md §Drink consumption
+  /// time. Range 0–60 (UI enforces 5-min steps). Mirrored onto the active
+  /// [PartySession] at start and live while active; frozen there at
+  /// `endedAt`. Defaults to 20, matching the DB column default — the
+  /// default here only matters for in-memory fixtures that don't round-trip
+  /// through the repository, since every persisted read supplies it
+  /// explicitly.
+  final int drinkConsumeMinutes;
+
   /// When the local database was first created on this device.
   final DateTime installedAt;
 
@@ -110,6 +121,7 @@ class UserPreferences {
     bool? soberEstimateNotifEnabled,
     bool? alcoholicPresetsAlwaysVisible,
     PresetSortMode? drinkSortMode,
+    int? drinkConsumeMinutes,
     DateTime? installedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -143,6 +155,7 @@ class UserPreferences {
       alcoholicPresetsAlwaysVisible:
           alcoholicPresetsAlwaysVisible ?? this.alcoholicPresetsAlwaysVisible,
       drinkSortMode: drinkSortMode ?? this.drinkSortMode,
+      drinkConsumeMinutes: drinkConsumeMinutes ?? this.drinkConsumeMinutes,
       installedAt: installedAt ?? this.installedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

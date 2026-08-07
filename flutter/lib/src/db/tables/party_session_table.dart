@@ -38,6 +38,20 @@ class PartySessions extends Table {
   /// before storage — never the raw user input.
   TextColumn get name => text().nullable()();
 
+  /// Schema v9 addition. Copied from `UserPreferences.drinkConsumeMinutes`
+  /// when the session starts; mirrors the global value live while the
+  /// session is active (`endedAt IS NULL`), and is frozen at whatever value
+  /// was in effect the instant `endedAt` is set — data-model.md §PartySession,
+  /// party-session.md §Drink consumption time. `.withDefault(20)` (rather
+  /// than a bare non-nullable column) exists only so the migration can
+  /// backfill pre-existing session rows with a value — those already-ended
+  /// historical sessions never recompute their BAC display, so inheriting
+  /// the current global default of 20 is an acceptable one-time
+  /// approximation (same "frozen history" principle as the rest of this
+  /// schema); every row written from here on always sets this explicitly.
+  IntColumn get drinkConsumeMinutes =>
+      integer().withDefault(const Constant(20))();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
