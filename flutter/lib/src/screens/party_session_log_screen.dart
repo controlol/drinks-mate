@@ -195,7 +195,11 @@ class _ActiveLog extends ConsumerWidget {
                         fmt: fmt,
                         defaultCurrency: defaultCurrency,
                       ),
-                    _MealItem(:final meal) => _MealRow(meal: meal, now: now),
+                    _MealItem(:final meal) => _MealRow(
+                        meal: meal,
+                        now: now,
+                        active: true,
+                      ),
                   },
               ],
             ),
@@ -437,6 +441,7 @@ class _EndedLog extends ConsumerWidget {
                         _MealItem(:final meal) => _MealRow(
                             meal: meal,
                             now: now,
+                            active: false,
                           ),
                       },
                   ],
@@ -561,17 +566,20 @@ class _EntryRow extends ConsumerWidget {
 }
 
 /// A meal merged into S9's entry list (user-experience.md §S9: "visually
-/// distinct (meal icon, size, and time)"). Always display-only — no tap or
-/// delete affordance, in either session mode; meals stay editable only from
-/// the Party tab's meal indicator.
-class _MealRow extends StatelessWidget {
-  const _MealRow({required this.meal, required this.now});
+/// distinct (meal icon, size, and time)"). In active-session mode, tapping
+/// opens the meal-size picker and a delete button sits on the row — the
+/// same edit/delete affordances as [_EntryRow], and the only place a logged
+/// meal can be edited or deleted. Ended-session mode is display-only, same
+/// as drink rows.
+class _MealRow extends ConsumerWidget {
+  const _MealRow({required this.meal, required this.now, required this.active});
 
   final Meal meal;
   final DateTime now;
+  final bool active;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final label = '${mealSizeLabel(meal.size)} meal';
     final timeLabel = relativeTimeAgo(meal.eatenAt, now);
     final primary = Theme.of(context).colorScheme.primary;
@@ -585,8 +593,55 @@ class _MealRow extends StatelessWidget {
         ),
         title: Text(label),
         subtitle: Text(timeLabel),
+        onTap: active ? () => _editSize(context, ref) : null,
+        trailing: !active
+            ? null
+            : Semantics(
+                label: SemanticsLabels.deleteMealButton,
+                button: true,
+                excludeSemantics: true,
+                child: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _confirmDelete(context, ref),
+                  tooltip: 'Delete',
+                ),
+              ),
       ),
     );
+  }
+
+  Future<void> _editSize(BuildContext context, WidgetRef ref) async {
+    final size = await showEditMealSizePrompt(context, initial: meal.size);
+    if (size == null || !context.mounted) return;
+    await ref
+        .read(partySessionRepositoryProvider)
+        .updateMeal(id: meal.id, size: size);
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete meal?'),
+        content: Text(
+          'Remove this ${mealSizeLabel(meal.size).toLowerCase()} meal from '
+          'this session? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(partySessionRepositoryProvider).deleteMeal(meal.id);
+    }
   }
 }
 
