@@ -61,6 +61,7 @@ BacEstimate estimateSessionBac({
   required List<DrinkEntry> alcoholicEntries,
   required List<Meal> meals,
   required DateTime at,
+  required int drinkConsumeMinutes,
 }) {
   if (alcoholicEntries.isEmpty) return BacEstimate.zero;
 
@@ -89,7 +90,11 @@ BacEstimate estimateSessionBac({
         ),
       )
       .toList();
-  final totalGPerL = sessionBacAtTime(drinks: drinks, at: at);
+  final totalGPerL = sessionBacAtTime(
+    drinks: drinks,
+    at: at,
+    drinkConsumeMinutes: drinkConsumeMinutes,
+  );
 
   var bmiWarning = false;
   if (usedWatson) {
@@ -125,6 +130,7 @@ DateTime? projectedSoberTime({
   required List<DrinkEntry> alcoholicEntries,
   required List<Meal> meals,
   required DateTime at,
+  required int drinkConsumeMinutes,
 }) {
   if (alcoholicEntries.isEmpty) return null;
 
@@ -157,7 +163,10 @@ DateTime? projectedSoberTime({
         ),
       )
       .toList();
-  return sessionSoberTime(drinks: drinks);
+  return sessionSoberTime(
+    drinks: drinks,
+    drinkConsumeMinutes: drinkConsumeMinutes,
+  );
 }
 
 double _bacInitialForEntry({

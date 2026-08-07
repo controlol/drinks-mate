@@ -40,6 +40,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 final _epoch = DateTime.utc(2020, 1, 1);
 
+/// The `PartySession.drinkConsumeMinutes` default (party-session.md §Drink
+/// consumption time) — passed explicitly to every BAC-computation call in
+/// this file, mirroring the value `buildBacChartSeries`'s real caller
+/// (`party_screen.dart`) reads from the session.
+const _drinkConsumeMinutes = 20;
+
 // Birthdate ~30 years and 1 month before consumedAt (not exactly 30 calendar
 // years) — same margin-of-safety convention as party_screen_test.dart's
 // _workedBirthDate: age.dart's `floor((today - birthDate) / 365.25)` rounds
@@ -113,6 +119,7 @@ void main() {
             alcoholicEntries: const [],
             meals: const [],
             now: startedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
 
           expect(series, isNotNull);
@@ -145,6 +152,7 @@ void main() {
             alcoholicEntries: const [],
             meals: const [],
             now: startedAt.add(const Duration(hours: 5)),
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
 
           expect(series, isNotNull);
@@ -175,6 +183,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
           expect(series, isNotNull);
 
@@ -183,6 +192,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             at: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           )!;
           expect(
             series!.axisEnd,
@@ -202,6 +212,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
           expect(series!.axisEnd.minute, anyOf(0, 30));
           expect(series.axisEnd.second, 0);
@@ -217,6 +228,7 @@ void main() {
           alcoholicEntries: entries,
           meals: const [],
           now: _workedConsumedAt,
+          drinkConsumeMinutes: _drinkConsumeMinutes,
         );
         expect(series!.axisStart, _workedConsumedAt.toLocal());
       });
@@ -231,6 +243,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
           expect(
             series!.tickInterval,
@@ -259,6 +272,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: now,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
 
           expect(series, isNotNull);
@@ -280,6 +294,7 @@ void main() {
               alcoholicEntries: entries,
               meals: const [],
               at: point.time.toUtc(),
+              drinkConsumeMinutes: _drinkConsumeMinutes,
             ).gPerL;
             expect(point.gPerL, closeTo(expected, 0.001));
           }
@@ -297,6 +312,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           )!;
           // Push `now` well past axisEnd.
           final farFuture = probe.axisEnd.toUtc().add(const Duration(days: 1));
@@ -307,6 +323,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: farFuture,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           );
 
           expect(series, isNotNull);
@@ -328,11 +345,17 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: _workedConsumedAt,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           )!;
 
           expect(series.actual, hasLength(1));
           expect(series.actual.single.time, series.axisStart);
-          expect(series.actual.single.gPerL, closeTo(_workedBacInitial, 0.001));
+          // At now == consumedAt, elapsed=0 — under the absorption-window
+          // model (party-session.md §BAC estimation algorithm Step 4) the
+          // drink's own window has only just opened and contributes
+          // nothing yet, so the single actual point is always exactly
+          // 0 g/L, not the undecayed bacInitial.
+          expect(series.actual.single.gPerL, 0.0);
           expect(series.projected, isNotEmpty);
           expect(series.projected.last.time, series.axisEnd);
         },
@@ -366,6 +389,7 @@ void main() {
             alcoholicEntries: entries,
             meals: const [],
             now: now,
+            drinkConsumeMinutes: _drinkConsumeMinutes,
           )!;
 
           expect(series.projected, isNotEmpty);
@@ -382,6 +406,7 @@ void main() {
               alcoholicEntries: consumedByPoint,
               meals: const [],
               at: point.time,
+              drinkConsumeMinutes: _drinkConsumeMinutes,
             ).gPerL;
             expect(point.gPerL, closeTo(expected, 0.001));
 
@@ -394,6 +419,7 @@ void main() {
                 alcoholicEntries: [normalEntry],
                 meals: const [],
                 at: point.time,
+                drinkConsumeMinutes: _drinkConsumeMinutes,
               ).gPerL;
               expect(point.gPerL, closeTo(withoutFuture, 0.001));
             }

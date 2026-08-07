@@ -23,8 +23,11 @@ const int kSoberEstimateNotificationId = 500;
 /// (notifications.md §Party Mode notifications; party-session.md
 /// §Notifications during a session):
 ///
-/// - **Approaching cap** — fires once, the first time estimated BAC reaches
-///   80% of the personal cap this session.
+/// - **Approaching cap** — fires once, evaluated per drink log: the first
+///   time the *projected peak* BAC (through every currently-absorbing
+///   drink's remaining absorption window) reaches 80% of the personal cap
+///   this session (design-system.md Parity Rulebook → "Approaching-cap
+///   trigger").
 /// - **Sober estimate** — a single notification at the projected time BAC
 ///   returns to 0 g/L; rescheduled whenever a new drink/meal changes that
 ///   projection.
@@ -44,15 +47,22 @@ class PartyNotificationService {
   /// types from the current session/preferences/BAC state.
   ///
   /// [session] is the active session, or `null` when none is active (either
-  /// never started, or just ended — manually or via auto-timeout). [estimate]
-  /// and [capGPerL] feed the approaching-cap check; [projectedSoberTime] is
-  /// the session-wide projected return-to-zero time (`null` before the first
-  /// alcoholic drink is logged). [now] defaults to [DateTime.now] and exists
-  /// so callers/tests can pin it.
+  /// never started, or just ended — manually or via auto-timeout). [capGPerL]
+  /// is the personal BAC cap; [projectedPeakGPerL] is the approaching-cap
+  /// trigger's own input — the projected peak BAC across every
+  /// currently-absorbing drink's remaining absorption window, reusing the
+  /// BAC line chart's dashed-segment projection (design-system.md Parity
+  /// Rulebook → "Approaching-cap trigger"), *not* [estimate]'s instant
+  /// value. Defaults to `0.0` (never approaching) when the caller has
+  /// nothing to project, e.g. before the first drink. [projectedSoberTime]
+  /// is the session-wide projected return-to-zero time (`null` before the
+  /// first alcoholic drink is logged). [now] defaults to [DateTime.now] and
+  /// exists so callers/tests can pin it.
   Future<void> sync({
     required PartySession? session,
     required UserPreferences prefs,
     BacEstimate estimate = BacEstimate.zero,
+    double projectedPeakGPerL = 0.0,
     double? capGPerL,
     DateTime? projectedSoberTime,
     DateTime? now,
@@ -78,7 +88,7 @@ class PartyNotificationService {
     await _syncApproachingCap(
       session: session,
       prefs: prefs,
-      estimate: estimate,
+      projectedPeakGPerL: projectedPeakGPerL,
       capGPerL: capGPerL,
       now: nowLocal,
       visibility: visibility,
@@ -94,7 +104,7 @@ class PartyNotificationService {
   Future<void> _syncApproachingCap({
     required PartySession session,
     required UserPreferences prefs,
-    required BacEstimate estimate,
+    required double projectedPeakGPerL,
     required double? capGPerL,
     required DateTime now,
     required NotificationVisibility visibility,
@@ -105,7 +115,7 @@ class PartyNotificationService {
     }
 
     final approaching = isApproachingCap(
-      bacGPerL: estimate.gPerL,
+      bacGPerL: projectedPeakGPerL,
       capGPerL: capGPerL,
     );
     if (!approaching) return;
@@ -117,8 +127,8 @@ class PartyNotificationService {
     await _notifications.scheduleOnce(
       id: kApproachingCapNotificationId,
       title: 'Drinks Mate',
-      body: "You've reached 80% of your personal BAC cap "
-          '(${capGPerL.toStringAsFixed(2)} g/L).',
+      body: "You're on track to reach 80% of your personal BAC cap "
+          '(${capGPerL.toStringAsFixed(2)} g/L) as this drink absorbs.',
       channelId: kPartyModeChannelId,
       scheduledTime: now.add(const Duration(seconds: 1)),
       payload: 'approaching_cap',

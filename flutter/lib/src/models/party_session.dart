@@ -34,6 +34,7 @@ class PartySession {
     this.tokenValueMinor,
     this.tokenValueCurrency,
     this.name,
+    this.drinkConsumeMinutes = 20,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -65,6 +66,16 @@ class PartySession {
   /// normalised (control chars stripped, trimmed, ≤40 chars) — see
   /// `normalizePartySessionName` (Parity Rulebook → "PartySession name").
   final String? name;
+
+  /// Copied from `UserPreferences.drinkConsumeMinutes` when the session
+  /// starts. While active (`endedAt == null`), mirrors the global
+  /// preference (and the session's own inline control) live; once
+  /// `endedAt` is set, this value is frozen permanently — data-model.md
+  /// §PartySession, party-session.md §Drink consumption time. Defaults to
+  /// 20, matching the DB column default — the default here only matters
+  /// for in-memory fixtures, since every persisted read supplies it
+  /// explicitly.
+  final int drinkConsumeMinutes;
 
   final DateTime createdAt;
   final DateTime updatedAt;

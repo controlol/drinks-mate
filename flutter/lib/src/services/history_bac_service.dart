@@ -170,6 +170,7 @@ SessionDaySummary buildSessionDaySummary({
           meals: sessionMeals,
           profile: profile,
           now: now,
+          drinkConsumeMinutes: session.drinkConsumeMinutes,
         )
       : null;
 
@@ -203,6 +204,7 @@ BacChartSeries buildSessionLifetimeBacSeries({
   required List<Meal> meals,
   required UserProfile profile,
   required DateTime now,
+  required int drinkConsumeMinutes,
   Duration sampleInterval = const Duration(minutes: 5),
 }) {
   final axisStart = session.startedAt.toLocal();
@@ -215,7 +217,8 @@ BacChartSeries buildSessionLifetimeBacSeries({
     points.add(
       BacChartPoint(
         time: t,
-        gPerL: _sampleAt(t, profile, alcoholicEntries, meals),
+        gPerL:
+            _sampleAt(t, profile, alcoholicEntries, meals, drinkConsumeMinutes),
       ),
     );
     t = t.add(sampleInterval);
@@ -223,7 +226,8 @@ BacChartSeries buildSessionLifetimeBacSeries({
   points.add(
     BacChartPoint(
       time: axisEnd,
-      gPerL: _sampleAt(axisEnd, profile, alcoholicEntries, meals),
+      gPerL: _sampleAt(
+          axisEnd, profile, alcoholicEntries, meals, drinkConsumeMinutes),
     ),
   );
 
@@ -299,6 +303,7 @@ SessionDaySummary buildSessionSummary({
           meals: sessionMeals,
           profile: profile,
           now: now,
+          drinkConsumeMinutes: session.drinkConsumeMinutes,
         )
       : null;
 
@@ -394,7 +399,13 @@ double? _maxBacForWindow({
     var t = overlapStart;
     var lastSampled = false;
     while (!t.isAfter(overlapEnd)) {
-      final gPerL = _sampleAt(t, profile, sessionEntries, sessionMeals);
+      final gPerL = _sampleAt(
+        t,
+        profile,
+        sessionEntries,
+        sessionMeals,
+        session.drinkConsumeMinutes,
+      );
       if (gPerL > windowMax!) windowMax = gPerL;
       lastSampled = t == overlapEnd;
       t = t.add(sampleInterval);
@@ -408,6 +419,7 @@ double? _maxBacForWindow({
         profile,
         sessionEntries,
         sessionMeals,
+        session.drinkConsumeMinutes,
       );
       if (gPerL > windowMax!) windowMax = gPerL;
     }
@@ -431,6 +443,7 @@ double _sampleAt(
   UserProfile profile,
   List<DrinkEntry> entries,
   List<Meal> meals,
+  int drinkConsumeMinutes,
 ) {
   final consumedByT = entries.where((e) => !e.consumedAt.isAfter(t)).toList();
   return estimateSessionBac(
@@ -438,6 +451,7 @@ double _sampleAt(
     alcoholicEntries: consumedByT,
     meals: meals,
     at: t,
+    drinkConsumeMinutes: drinkConsumeMinutes,
   ).gPerL;
 }
 

@@ -29,6 +29,7 @@ BacChartSeries? buildBacChartSeries({
   required List<DrinkEntry> alcoholicEntries,
   required List<Meal> meals,
   required DateTime now,
+  required int drinkConsumeMinutes,
   Duration sampleInterval = const Duration(minutes: 5),
 }) {
   if (alcoholicEntries.isEmpty) {
@@ -51,6 +52,7 @@ BacChartSeries? buildBacChartSeries({
     alcoholicEntries: alcoholicEntries,
     meals: meals,
     at: now,
+    drinkConsumeMinutes: drinkConsumeMinutes,
   );
   if (soberTime == null) return null;
 
@@ -66,6 +68,7 @@ BacChartSeries? buildBacChartSeries({
     profile: profile,
     entries: alcoholicEntries,
     meals: meals,
+    drinkConsumeMinutes: drinkConsumeMinutes,
   );
 
   final projected = actualEnd.isBefore(axisEnd)
@@ -76,6 +79,7 @@ BacChartSeries? buildBacChartSeries({
           profile: profile,
           entries: alcoholicEntries,
           meals: meals,
+          drinkConsumeMinutes: drinkConsumeMinutes,
         )
       : const <BacChartPoint>[];
 
@@ -95,17 +99,24 @@ List<BacChartPoint> _samplePoints({
   required UserProfile profile,
   required List<DrinkEntry> entries,
   required List<Meal> meals,
+  required int drinkConsumeMinutes,
 }) {
   final points = <BacChartPoint>[];
   var t = from;
   while (t.isBefore(to)) {
     points.add(
-      BacChartPoint(time: t, gPerL: _gPerLAt(t, profile, entries, meals)),
+      BacChartPoint(
+        time: t,
+        gPerL: _gPerLAt(t, profile, entries, meals, drinkConsumeMinutes),
+      ),
     );
     t = t.add(interval);
   }
   points.add(
-    BacChartPoint(time: to, gPerL: _gPerLAt(to, profile, entries, meals)),
+    BacChartPoint(
+      time: to,
+      gPerL: _gPerLAt(to, profile, entries, meals, drinkConsumeMinutes),
+    ),
   );
   return points;
 }
@@ -125,6 +136,7 @@ double _gPerLAt(
   UserProfile profile,
   List<DrinkEntry> entries,
   List<Meal> meals,
+  int drinkConsumeMinutes,
 ) {
   final consumedByT = entries.where((e) => !e.consumedAt.isAfter(t)).toList();
   return estimateSessionBac(
@@ -132,5 +144,6 @@ double _gPerLAt(
     alcoholicEntries: consumedByT,
     meals: meals,
     at: t,
+    drinkConsumeMinutes: drinkConsumeMinutes,
   ).gPerL;
 }

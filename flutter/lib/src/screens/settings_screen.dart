@@ -526,6 +526,11 @@ class _PartyModeSection extends ConsumerWidget {
             if (v != null && v > 0) repo.updateBacCap(v);
           },
         ),
+        _DrinkConsumeMinutesField(
+          key: const Key('settings_drink_consume_minutes_field'),
+          value: prefs.drinkConsumeMinutes,
+          onChanged: repo.updateDrinkConsumeMinutes,
+        ),
         SwitchListTile(
           key: const Key('settings_approaching_cap_switch'),
           title: const Text('Approaching-cap notification'),
@@ -751,6 +756,68 @@ class _SettingsNumberFieldState extends State<_SettingsNumberField> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Time to consume a drink" stepper (party-session.md §Drink consumption
+/// time / user-experience.md §S4 Settings, Party Mode: "minutes, default 20,
+/// range 0–60 in 5-minute steps"). A +/- row rather than free-text entry —
+/// unlike [_SettingsNumberField]'s BAC cap, this value is a modelling
+/// parameter with a small, fixed step, not an arbitrary decimal the user
+/// might want to type. `onChanged` fires the already-clamped, already-step-
+/// aligned value, so callers can wire it straight to
+/// `PreferencesRepository.updateDrinkConsumeMinutes` without re-validating.
+class _DrinkConsumeMinutesField extends StatelessWidget {
+  const _DrinkConsumeMinutesField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  static const _min = 0;
+  static const _max = 60;
+  static const _step = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Time to consume a drink',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            tooltip: 'Decrease',
+            onPressed: value > _min
+                ? () => onChanged((value - _step).clamp(_min, _max))
+                : null,
+          ),
+          SizedBox(
+            width: 56,
+            child: Text(
+              '$value min',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Increase',
+            onPressed: value < _max
+                ? () => onChanged((value + _step).clamp(_min, _max))
+                : null,
+          ),
         ],
       ),
     );

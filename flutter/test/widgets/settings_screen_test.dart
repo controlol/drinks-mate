@@ -134,6 +134,16 @@ class _FakePreferencesRepo extends PreferencesRepository {
     lastBacCap = bacCapGramsPerL;
   }
 
+  final List<int> drinkConsumeMinutesCalls = [];
+
+  @override
+  Future<void> updateDrinkConsumeMinutes(int minutes) async {
+    if (minutes < 0 || minutes > 60) {
+      throw ArgumentError.value(minutes, 'minutes', 'must be within 0-60');
+    }
+    drinkConsumeMinutesCalls.add(minutes);
+  }
+
   @override
   Future<void> updatePartyModeSettings({
     bool? bacOnLockScreenEnabled,
@@ -194,6 +204,7 @@ UserPreferences _makePrefs({
   bool approachingCapNotifEnabled = false,
   bool soberEstimateNotifEnabled = false,
   bool alcoholicPresetsAlwaysVisible = true,
+  int drinkConsumeMinutes = 20,
 }) {
   return UserPreferences(
     id: kUserPreferencesId,
@@ -214,6 +225,7 @@ UserPreferences _makePrefs({
     approachingCapNotifEnabled: approachingCapNotifEnabled,
     soberEstimateNotifEnabled: soberEstimateNotifEnabled,
     alcoholicPresetsAlwaysVisible: alcoholicPresetsAlwaysVisible,
+    drinkConsumeMinutes: drinkConsumeMinutes,
     installedAt: _epoch,
     createdAt: _epoch,
     updatedAt: _epoch,
@@ -751,6 +763,134 @@ void main() {
 
     expect(repo.bacCapCalled, isTrue);
     expect(repo.lastBacCap, closeTo(0.5, 0.001));
+  });
+
+  group('Party Mode (18+): "Time to consume a drink" field', () {
+    final now = DateTime.now();
+    final adultBirthDate =
+        _isoDate(DateTime(now.year - 30, now.month, now.day));
+
+    Finder fieldFinder() =>
+        find.byKey(const Key('settings_drink_consume_minutes_field'));
+    Finder incrementFinder() => find.descendant(
+          of: fieldFinder(),
+          matching: find.widgetWithIcon(IconButton, Icons.add_circle_outline),
+        );
+    Finder decrementFinder() => find.descendant(
+          of: fieldFinder(),
+          matching:
+              find.widgetWithIcon(IconButton, Icons.remove_circle_outline),
+        );
+
+    testWidgets('renders the current value', (tester) async {
+      final repo = _FakePreferencesRepo();
+      final profile = _makeProfile(birthDate: adultBirthDate);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          prefs: _makePrefs(drinkConsumeMinutes: 20),
+          profile: profile,
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      await _scrollToVisible(tester, fieldFinder());
+      expect(
+        find.descendant(of: fieldFinder(), matching: find.text('20 min')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping "+" calls updateDrinkConsumeMinutes with value + 5',
+        (tester) async {
+      final repo = _FakePreferencesRepo();
+      final profile = _makeProfile(birthDate: adultBirthDate);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          prefs: _makePrefs(drinkConsumeMinutes: 20),
+          profile: profile,
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      await _scrollToVisible(tester, fieldFinder());
+      await tester.tap(incrementFinder());
+      await tester.pump();
+
+      expect(repo.drinkConsumeMinutesCalls, [25]);
+    });
+
+    testWidgets('tapping "-" calls updateDrinkConsumeMinutes with value - 5',
+        (tester) async {
+      final repo = _FakePreferencesRepo();
+      final profile = _makeProfile(birthDate: adultBirthDate);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          prefs: _makePrefs(drinkConsumeMinutes: 20),
+          profile: profile,
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      await _scrollToVisible(tester, fieldFinder());
+      await tester.tap(decrementFinder());
+      await tester.pump();
+
+      expect(repo.drinkConsumeMinutesCalls, [15]);
+    });
+
+    testWidgets(
+        'at the 0-minute floor, "-" is disabled and clamps client-side '
+        '(never calls the repository with a negative value)', (tester) async {
+      final repo = _FakePreferencesRepo();
+      final profile = _makeProfile(birthDate: adultBirthDate);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          prefs: _makePrefs(drinkConsumeMinutes: 0),
+          profile: profile,
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      await _scrollToVisible(tester, fieldFinder());
+      final decrementButton = tester.widget<IconButton>(decrementFinder());
+      expect(decrementButton.onPressed, isNull);
+
+      await tester.tap(decrementFinder(), warnIfMissed: false);
+      await tester.pump();
+      expect(repo.drinkConsumeMinutesCalls, isEmpty);
+    });
+
+    testWidgets(
+        'at the 60-minute ceiling, "+" is disabled and clamps client-side '
+        '(never calls the repository above 60)', (tester) async {
+      final repo = _FakePreferencesRepo();
+      final profile = _makeProfile(birthDate: adultBirthDate);
+
+      await tester.pumpWidget(
+        _buildScreen(
+          prefs: _makePrefs(drinkConsumeMinutes: 60),
+          profile: profile,
+          repo: repo,
+        ),
+      );
+      await tester.pump();
+
+      await _scrollToVisible(tester, fieldFinder());
+      final incrementButton = tester.widget<IconButton>(incrementFinder());
+      expect(incrementButton.onPressed, isNull);
+
+      await tester.tap(incrementFinder(), warnIfMissed: false);
+      await tester.pump();
+      expect(repo.drinkConsumeMinutesCalls, isEmpty);
+    });
   });
 
   testWidgets(

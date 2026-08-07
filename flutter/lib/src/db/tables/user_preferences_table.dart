@@ -74,6 +74,13 @@ class UserPreferencesTable extends Table {
   TextColumn get drinkSortMode =>
       text().withDefault(const Constant('recentlyUsed'))();
 
+  /// Schema v9 addition. How long, in minutes, the user typically takes to
+  /// consume one drink — data-model.md §UserPreferences, party-session.md
+  /// §Drink consumption time. Range 0–60 (UI enforces 5-min steps). Default
+  /// 20. Mirrored onto the active PartySession; frozen there at `endedAt`.
+  IntColumn get drinkConsumeMinutes =>
+      integer().withDefault(const Constant(20))();
+
   /// Epoch-milliseconds of when the local database was first created.
   /// Set once in beforeOpen; never changes.
   IntColumn get installedAt => integer()();

@@ -165,6 +165,7 @@ class _ActiveLog extends ConsumerWidget {
       alcoholicEntries: alcoholicEntries,
       meals: meals,
       at: now,
+      drinkConsumeMinutes: session.drinkConsumeMinutes,
     );
     final elapsed = now.difference(session.startedAt);
 
@@ -400,6 +401,7 @@ class _EndedLog extends ConsumerWidget {
             SessionSummaryCard(
               summary: summary,
               expandable: true,
+              showDrinkConsumeMinutes: true,
               onEditName: () async {
                 await showEditSessionNameDialog(context, ref, summary.session);
                 if (!context.mounted) return;
