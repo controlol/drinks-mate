@@ -53,6 +53,12 @@ const String kUserPreferencesId = 'a0000000-0000-0000-0000-000000000001';
 ///   onto the active session at start and live while active; frozen at
 ///   `endedAt`.
 ///
+/// Downgrades are supported: Drift routes them through the same [onUpgrade]
+/// callback (with `from > to`), where every `from < N` block is skipped, so a
+/// downgrade drops no columns and just lowers `user_version`. Older app builds
+/// read the surplus (nullable/defaulted) columns cleanly. A later re-upgrade is
+/// safe because each column add is idempotent (see `_addColumnIfAbsent`).
+///
 /// Phase-2-only entities (Account / Friendship / ShareSetting) must never
 /// appear here (C0/C1).
 ///
@@ -83,9 +89,24 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
         },
         onUpgrade: (m, from, to) async {
-          // Add an `if (from < N)` block for each schema version bump.
-          // Each block must be cumulative — a user upgrading directly from v1
-          // to v5 must run every earlier block in sequence.
+          // Drift runs this same callback for downgrades too (from > to). We
+          // never delete columns on downgrade — SQLite tolerates surplus
+          // columns and every column we add is nullable or defaulted, so an
+          // older app reads a newer file cleanly. A downgrade therefore skips
+          // every `from < N` block below and just lowers `user_version`.
+          //
+          // Because of that, a downgrade→re-upgrade round-trip re-enters these
+          // blocks with the newer columns already physically present. Every
+          // column add goes through [_addColumnIfAbsent], which no-ops when the
+          // column already exists rather than throwing "duplicate column name".
+          // That idempotency also covers the case where a column was already
+          // materialised by `createTable` (built from today's Dart schema) in
+          // an earlier block — so the plain `from < N` guards below no longer
+          // need the fragile lower-bound arithmetic that previously worked
+          // around that.
+          //
+          // Each block must still be cumulative — a user upgrading directly
+          // from v1 to v9 runs every earlier block in sequence.
           if (from < 2) {
             await m.createTable(drinkPresets);
             await m.createTable(drinkEntries);
@@ -98,54 +119,59 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(partySessions);
             await m.createTable(partySessionPrices);
             await m.createTable(meals);
-            await m.addColumn(drinkEntries, drinkEntries.partySessionId);
-            await m.addColumn(drinkEntries, drinkEntries.priceTokens);
-            await m.addColumn(drinkEntries, drinkEntries.tokenValueMinor);
-            await m.addColumn(drinkEntries, drinkEntries.tokenValueCurrency);
+            await _addColumnIfAbsent(
+              m,
+              drinkEntries,
+              drinkEntries.partySessionId,
+            );
+            await _addColumnIfAbsent(m, drinkEntries, drinkEntries.priceTokens);
+            await _addColumnIfAbsent(
+              m,
+              drinkEntries,
+              drinkEntries.tokenValueMinor,
+            );
+            await _addColumnIfAbsent(
+              m,
+              drinkEntries,
+              drinkEntries.tokenValueCurrency,
+            );
           }
           if (from < 5) {
-            await m.addColumn(
+            await _addColumnIfAbsent(
+              m,
               userPreferencesTable,
               userPreferencesTable.alcoholicPresetsAlwaysVisible,
             );
           }
           if (from < 6) {
-            await m.addColumn(drinkEntries, drinkEntries.presetId);
-            await m.addColumn(
+            await _addColumnIfAbsent(m, drinkEntries, drinkEntries.presetId);
+            await _addColumnIfAbsent(
+              m,
               userPreferencesTable,
               userPreferencesTable.drinkSortMode,
             );
           }
           if (from < 7) {
-            await m.addColumn(drinkEntries, drinkEntries.manualPriceOverride);
+            await _addColumnIfAbsent(
+              m,
+              drinkEntries,
+              drinkEntries.manualPriceOverride,
+            );
           }
-          // Lower-bounded at 4 (not just `from < 8`): `createTable` above
-          // builds the table from today's Dart schema — which already
-          // includes `name` — so an upgrade starting below v4 already has
-          // the column by the time this runs; adding it again would throw
-          // "duplicate column name".
-          if (from >= 4 && from < 8) {
-            await m.addColumn(partySessions, partySessions.name);
+          if (from < 8) {
+            await _addColumnIfAbsent(m, partySessions, partySessions.name);
           }
-          // Lower-bounded at 3 (not just `from < 9`): `createTable` in the
-          // `if (from < 3)` block above builds `userPreferencesTable` from
-          // today's Dart schema — which already includes
-          // `drinkConsumeMinutes` — so an upgrade starting below v3 already
-          // has the column by the time this runs; adding it again would
-          // throw "duplicate column name" (same failure mode as `name` and
-          // `partySessions.drinkConsumeMinutes` below).
-          if (from >= 3 && from < 9) {
-            await m.addColumn(
+          if (from < 9) {
+            await _addColumnIfAbsent(
+              m,
               userPreferencesTable,
               userPreferencesTable.drinkConsumeMinutes,
             );
-          }
-          // Same lower-bound reasoning as `name` above: `createTable` in
-          // `if (from < 4)` already builds today's Dart schema — which already
-          // includes `drinkConsumeMinutes` — so an upgrade starting below v4
-          // already has the column by the time this runs.
-          if (from >= 4 && from < 9) {
-            await m.addColumn(partySessions, partySessions.drinkConsumeMinutes);
+            await _addColumnIfAbsent(
+              m,
+              partySessions,
+              partySessions.drinkConsumeMinutes,
+            );
           }
         },
         beforeOpen: (_) async {
@@ -153,6 +179,31 @@ class AppDatabase extends _$AppDatabase {
           await _seedDefaultPreferences();
         },
       );
+
+  /// Idempotent [Migrator.addColumn]: adds [column] to [table] only when it is
+  /// not already present, otherwise no-ops.
+  ///
+  /// SQLite's `ALTER TABLE ... ADD COLUMN` throws "duplicate column name" if the
+  /// column exists. That happens on a downgrade→re-upgrade round-trip (the
+  /// newer columns are never dropped on downgrade) and when a column was already
+  /// materialised by `createTable` in an earlier onUpgrade block. Guarding on
+  /// the live schema makes every add safe to re-run.
+  Future<void> _addColumnIfAbsent(
+    Migrator m,
+    TableInfo<Table, dynamic> table,
+    GeneratedColumn<Object> column,
+  ) async {
+    if (await _columnExists(table.actualTableName, column.name)) return;
+    await m.addColumn(table, column);
+  }
+
+  /// Whether [table] already has a column named [column] in the live SQLite
+  /// schema. Reads `PRAGMA table_info`, whose result rows expose the column
+  /// name under `name`.
+  Future<bool> _columnExists(String table, String column) async {
+    final rows = await customSelect('PRAGMA table_info($table)').get();
+    return rows.any((row) => row.read<String>('name') == column);
+  }
 
   // ---------------------------------------------------------------------------
   // Seeding — F14 default non-alcoholic presets
