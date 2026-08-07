@@ -159,13 +159,13 @@ When the user later starts a session (manually, or by accepting the prompt on a 
 The rule is applied **per orphan drink**:
 
 - For each orphan drink, compute its individual `BAC_initial` using the user's profile (Step 3 of the algorithm).
-- Compute the time at which that individual contribution would decay to zero: `t_zero = consumedAt + BAC_initial / β`.
+- Compute the time at which that individual contribution would decay to zero: `t_zero = consumedAt + BAC_initial / β` — valid as-is whenever that drink's absorption rate `r` (Step 4) exceeds `β`, per [Step 6's emergent property](#step-6--current-bac-pooled-across-drinks-and-absorption-windows): the total consumedAt-to-zero duration is unaffected by the absorption window, only the shape of the curve in between is. In the rare case `r <= β`, the drink never accumulates residual BAC at all — use `t_zero = consumedAt` (it never absorbs into a later session).
 - If `t_zero > startedAt` of the new session, the orphan still has residual BAC and is absorbed: the drink's `consumedAt` falls within the session's `[startedAt, endedAt)` window for BAC computation, and it appears in the session's drink list ([user-experience.md → S9 Party Session Log](./user-experience.md#s9--party-session-log)).
 - Otherwise the orphan has fully decayed and stays orphaned. It remains visible in history but does not contribute to the new session.
 
-`BAC_initial / β` is just the time the model says it takes that drink's contribution to reach 0 from its peak, used here only as the absorb/discard cutoff. We do not need to track partial decay separately for this check — once absorbed, the drink's `consumedAt`/`BAC_initial` feed into the pooled Step 5 calculation like any other session drink, which handles a partially-decayed drink correctly.
+We do not need to track partial decay separately for this check — once absorbed, the drink's `consumedAt`/`BAC_initial`/`drinkConsumeMinutes` feed into the pooled Step 6 calculation like any other session drink, which handles a partially-absorbed or partially-decayed drink correctly.
 
-This per-orphan `t_zero` check is itself a per-drink-independent-decay approximation — the same kind Step 5 deliberately moved away from — applied only to decide absorb-vs-discard for orphans considered one at a time. With two or more overlapping orphans (e.g. logged close together, each below the discard threshold alone but still summing to residual BAC in the now-canonical pooled model), this check can discard an orphan whose alcohol a pooled read of the pre-session drinks would still count. Known, accepted approximation for Phase 1, not something Step 5's pooling fix addresses — revisit if orphan absorption proves to under-count in practice.
+This per-orphan `t_zero` check is itself a per-drink-independent-decay approximation — the same kind Step 6 deliberately moved away from for the canonical pool — applied only to decide absorb-vs-discard for orphans considered one at a time. With two or more overlapping orphans (e.g. logged close together, each below the discard threshold alone but still summing to residual BAC in the now-canonical pooled model), this check can discard an orphan whose alcohol a pooled read of the pre-session drinks would still count. Known, accepted approximation for Phase 1, not something Step 6's pooling fix addresses — revisit if orphan absorption proves to under-count in practice.
 
 #### Implications
 
@@ -259,7 +259,7 @@ Apply the modifier to that drink's `BAC_initial`:
 BAC_initial' = BAC_initial × modifier
 ```
 
-Then continue with the elimination model (Step 4 onward). Each drink can carry a different modifier depending on which meals are still effective when it is consumed.
+Then continue with the absorption-window and elimination model ([Step 4](#step-4--absorption-window) onward). Each drink can carry a different modifier depending on which meals are still effective when it is consumed.
 
 #### Practical cutoff
 
@@ -274,6 +274,39 @@ The chosen multipliers (0.95 / 0.85 / 0.75) are conservative compared to publish
 ### Meals from previous sessions
 
 For simplicity, only meals attached to the **active** session contribute to the modifier. A meal logged in a previous session that would technically still be in window does not carry over. This is a known small inaccuracy, accepted in exchange for a clean session-scoped model.
+
+**Relationship to the absorption window (below).** The meal modifier and the absorption window are deliberately **independent** mechanisms in phase 1 — the meal modifier keeps scaling `BAC_initial` down exactly as described above, and the absorption window (a separate delay before that scaled value is fully in the blood) is layered on top. They are not unified into a single "food widens the absorption window" model, even though that would be the more physiologically correct fix for the AUC understatement flagged in "Honest caveat about the model" above — that unification is deliberately deferred; see [issue #133](https://github.com/controlol/drinks-mate/issues/133) for the reasoning and what a future pass would need to change.
+
+## Drink consumption time
+
+Two distinct delays sit between "drink logged" and "alcohol actually in the blood," and phase 1's BAC model accounts for both as a single combined **absorption window**, used in [Step 4](#step-4--absorption-window) of the algorithm below:
+
+1. **How long the user takes to actually drink it** — downing a shot versus nursing a glass of wine over an hour. This is a real behavioural difference between users and occasions, and the only one the app asks about.
+2. **How long it then takes to cross the stomach/gut wall into the bloodstream** — driven by gastric emptying, not by drinking speed. Nobody can accurately self-report their own gastric absorption rate, so phase 1 models it as one fixed constant rather than a second user-facing setting (see "Where the numbers come from" below).
+
+### The two components
+
+- **`drinkConsumeMinutes`** — user-configurable. Stored globally on [`UserPreferences`](./data-model.md#userpreferences) and mirrored onto [`PartySession`](./data-model.md#partysession) (session-scoped, live while active, frozen at `endedAt`). Default **20 minutes**; range 0–60, editable in 5-minute steps. Settings surface: [user-experience.md → S4 Settings](./user-experience.md#s4--settings), Party Mode section.
+- **`ABSORPTION_DELAY_MINUTES`** — a fixed model constant, **30 minutes**, not exposed to the user anywhere.
+
+```
+T_minutes = drinkConsumeMinutes + ABSORPTION_DELAY_MINUTES
+```
+
+`T` is never zero — even at the fastest `drinkConsumeMinutes` setting (0), the fixed 30-minute physiological delay still applies. This is a deliberate floor: a truly-instant BAC spike is not physiologically real, no matter how fast the drink is consumed.
+
+**Why the range stops at 60, not further.** [Step 6's emergent property](#step-6--current-bac-pooled-across-drinks-and-absorption-windows) means a drink whose absorption rate `r` drops to `β` or below never registers any BAC at all — it's metabolised as fast as it's absorbed. For a typical single drink and profile, that crossover lands around `drinkConsumeMinutes ≈ 40–45 min` (e.g. a 75 kg male's 250 ml 5% beer: `r <= β` once `T_hours >= 0.181 / 0.15 ≈ 1.2 h`, i.e. `drinkConsumeMinutes >= ~42 min`) — comfortably above the default of 20. A range that ran further (e.g. to 120) would spend most of its span in "a typical single drink shows 0.00 g/L the whole time" — real zero-order behaviour, but one that reads as a bug rather than a feature to most users. Capping at 60 keeps the slow-sipping realism (a nursed drink genuinely peaks lower and later) without living mostly past that cliff.
+
+### Global setting, mirrored per session, locked at end
+
+- `UserPreferences.drinkConsumeMinutes` is editable any time from Settings → Party Mode, whether or not a session is active.
+- When a session **starts**, `PartySession.drinkConsumeMinutes` is copied from the current global value.
+- While the session is **active** (`endedAt IS NULL`), changing the global setting — or the session's own inline control on the [Party tab](./user-experience.md#s7--party) (see "Party tab during a session" below) — updates `PartySession.drinkConsumeMinutes` directly, and every drink already logged in the session recomputes its BAC contribution against the new value immediately. Unlike session pricing, this needs **no retroactive sweep** of `DrinkEntry` rows (compare [→ Editing prices during a session](#editing-prices-during-a-session)): `drinkConsumeMinutes` is a modeling parameter read live at BAC-computation time, never snapshotted onto a drink.
+- When the session **ends**, `PartySession.drinkConsumeMinutes` stops tracking the global setting and holds whatever value was in effect at `endedAt`, permanently — changing the global setting afterward has no effect on the ended session's own BAC history. Because the field mirrors the global value continuously right up to that instant, "locked in, and equal to the global setting at the moment the session ended" falls out automatically; no separate copy step is needed at end-time beyond simply no longer mirroring further changes.
+
+### Where the numbers come from
+
+Mitchell et al. (2014) had fasted subjects drink 0.5 g EtOH/kg **over 20 minutes** and measured peak BAC — timed from the *start* of drinking — at 36±10 min (vodka/tonic), 54±14 min (wine), and 62±23 min (beer). Subtracting the 20-minute drinking window leaves roughly 16–42 minutes of further absorption delay after swallowing, depending on beverage. `ABSORPTION_DELAY_MINUTES = 30` sits in the middle of that range as one flat constant — phase 1 does not vary it by beverage type, matching the app's existing appetite for simplification elsewhere (the meal modifier's flat size buckets, one `β` for all users). See "References" below.
 
 ## Pricing during a session
 
@@ -421,31 +454,45 @@ Per drink, with `meal_modifier` as described in the "Meals" section above (`1.00
   BAC_initial_g_per_L = alcohol_grams / (weight_kg × r) × meal_modifier
   ```
 
-### Step 4 — elimination over time
+### Step 4 — absorption window
 
-The body eliminates alcohol at a roughly linear rate (zero-order kinetics) once absorbed. Use:
+Each drink's alcohol enters the bloodstream over a window, not instantly. See [Drink consumption time](#drink-consumption-time) above for where the two inputs come from.
+
+```
+T_hours = (drinkConsumeMinutes + ABSORPTION_DELAY_MINUTES) / 60      (ABSORPTION_DELAY_MINUTES = 30, fixed)
+r = BAC_initial / T_hours                                            (g/L per hour — this drink's constant absorption rate)
+```
+
+`drinkConsumeMinutes` comes from the owning `PartySession`. `BAC_initial` is this drink's Step 3 value, already carrying its meal modifier. The drink is **absorbing** during `[consumedAt, consumedAt + T_hours)` and contributes nothing to the pool before `consumedAt`.
+
+### Step 5 — elimination rate
+
+The body eliminates alcohol at a roughly linear rate (zero-order kinetics) whenever there is alcohol in the blood — **including while a drink is still absorbing**, not only afterward. Use:
 
 ```
 β = 0.15 g/L per hour   (default)
 ```
 
-`β` typically ranges from 0.10 to 0.20 g/L/h across individuals. `0.15` is a common midpoint used in forensic and educational calculators.
+`β` typically ranges from 0.10 to 0.20 g/L/h across individuals. `0.15` is a common midpoint used in forensic and educational calculators, and lines up with the ~15 mg%/h average reported in the pharmacokinetics literature (1 g/L = 100 mg%).
 
-### Step 5 — current BAC
+### Step 6 — current BAC (pooled across drinks and absorption windows)
 
-For a single drink consumed at time `t_drink`:
+The blood alcohol pool has one net rate of change at any instant: the sum of the absorption rates `r` of every drink currently inside its window, minus `β` — floored at 0, since the pool cannot go negative.
 
 ```
-BAC(t) = max(0, BAC_initial − β × (t − t_drink))
+net_rate(t) = (sum of r_i for every drink i with consumedAt_i <= t < consumedAt_i + T_hours_i) − β
 ```
 
-For multiple drinks, the body eliminates alcohol at one fixed rate `β` regardless of how many drinks contributed to it — fold every drink into a single running pool rather than summing each drink's independently-decaying contribution. Process drinks in consumption order: decay the pool at `β` for the elapsed time since the previous drink (floored at 0), then add the new drink's own `BAC_initial`; the current estimate is that pool decayed at `β` from the last drink to now (floored at 0).
+To compute the pool at a query time `t_query`, walk the session's drinks in consumption order and build a sorted timeline of **rate-change events**: each drink contributes a `+r_i` event at `consumedAt_i` (starts absorbing) and a `−r_i` event at `consumedAt_i + T_hours_i` (finishes absorbing). Starting from `pool = 0` before the first drink, step through the events in chronological order up to `t_query`:
 
-Summing each drink's contribution independently — a natural-looking simplification — over-eliminates: whenever `N` drinks are each still individually above 0, the effective elimination rate becomes `N × β` instead of the fixed `β` the body actually uses, so a dense session (many drinks close together) crashes to an implausible `0 g/L` while drinking is still ongoing. The pooled model avoids this. The two models agree whenever there's no overlap between drinks — either they're logged at the exact same instant (zero elapsed decay to disagree over, as in the two-beer worked example below), or each drink's contribution has already fully decayed to 0 before the next is logged (nothing left to double-eliminate) — and diverge only in between, while more than one drink's contribution is still positive at once.
+1. Advance the pool across the elapsed time to the next event (or to `t_query`, if that comes first) at the current net rate, flooring at 0: `pool = max(0, pool + net_rate × elapsed_hours)`.
+2. Apply the event (add or subtract `r_i` to/from the running rate) and continue.
 
-Phase 1 uses an **immediate-absorption** model: each drink's alcohol is treated as entering the bloodstream at `consumedAt`, with the meal modifier (see "Meals") capturing the bulk of food's effect on peak BAC. A more physiologically accurate delayed-absorption model would require additional inputs per drink (drink type beyond ABV, sipping rate, recent food state) that hurt the fast-logging goal and aren't justified for an estimate that already carries strong disclaimers. Worth revisiting in a later phase if the existing inputs prove insufficient.
+This directly generalises the single running-pool loop this step used before absorption windows existed — "decay the pool, then add the next drink's `BAC_initial`" is the special case where every `T_hours_i` is negligible — and it inherits the same over-elimination fix that loop was built to avoid: one shared `β` at every instant, never `N × β` for `N` simultaneously-active drinks (summing each drink's contribution independently over-eliminates for exactly that reason, and remains wrong for the same reason here).
 
-### Step 6 — formats for display
+**Emergent property, worth relying on elsewhere in this spec:** for a drink absorbed in isolation (no overlap with another drink's window) with `r_i > β`, the *total elapsed time from `consumedAt` until that drink's contribution returns to 0* is exactly `BAC_initial / β` — identical to the old instant-absorption formula, and independent of `T_hours`. Only the **shape** changes: a lower, later peak that catches up to the same straight decay line the instant the window closes (`BAC_initial − β × (t − consumedAt)`, unchanged), not the total time the alcohol is in the system. This is why the [orphan absorption rule](#absorbing-orphan-drinks-when-a-later-session-starts) below needs no formula change for the common case. The property only breaks down when `r_i <= β` — drunk so slowly that elimination keeps pace with absorption: the drink's contribution never rises off 0 and is fully metabolised as fast as it enters the blood. That is real, intended zero-order behaviour, not a bug; treat it as `t_zero = consumedAt` (no residual ever accumulates).
+
+### Step 7 — formats for display
 
 The app shows BAC in `g/L` as the primary value and `mmol/L` as a secondary value:
 
@@ -457,22 +504,44 @@ BAC_mmol_per_L = BAC_g_per_L × 21.7
 
 ### Worked example (sanity check)
 
-A 75 kg, 180 cm, 30-year-old male starts a session and drinks two 250 ml beers at 5% ABV at the same time.
+A 75 kg, 180 cm, 30-year-old male starts a session (default `drinkConsumeMinutes = 20`) and drinks two 250 ml beers at 5% ABV at the same time — so both share `T_hours = (20 + 30) / 60 = 0.833 h` (50 min).
 
 - Alcohol per beer: `250 × 0.05 × 0.789 = 9.86 g`
 - Total alcohol: `19.73 g`
 - TBW: `2.447 − 0.09516 × 30 + 0.1074 × 180 + 0.3362 × 75 = 43.93 L`
-- BAC initial: `(19.73 × 0.806) / 43.93 = 0.362 g/L (≈ 7.85 mmol/L)`
-- After 2 hours: `0.362 − 0.15 × 2 = 0.062 g/L (≈ 1.34 mmol/L)`
-- After ~2.4 hours: ~0 g/L
-- If no further alcohol is logged, the session auto-ends 12 hours after that last beer's `consumedAt`.
+- BAC initial (Step 3, combined — both beers logged at the same instant): `(19.73 × 0.806) / 43.93 = 0.362 g/L (≈ 7.85 mmol/L)`
+- Absorption rate (Step 4): `r = 0.362 / 0.833 = 0.434 g/L/h`
+- Net rate while absorbing (Steps 5–6): `0.434 − 0.15 = 0.284 g/L/h`
+- **Peak, at `consumedAt + 50 min`:** `0.284 × 0.833 = 0.237 g/L (≈ 5.14 mmol/L)` — lower than, and 50 minutes later than, the pre-absorption-window model's instant peak of `0.362 g/L` at `consumedAt`.
+- After 2 hours (70 minutes past the peak, fully outside the absorption window): `0.237 − 0.15 × (2 − 0.833) = 0.062 g/L (≈ 1.34 mmol/L)` — **identical to what the old instant-absorption model gives at the same clock time** (`0.362 − 0.15 × 2 = 0.062`), which is exactly the emergent property from Step 6: once every drink's absorption window has closed, the two models sit on the same decay line.
+- Time to zero: `consumedAt + 0.362 / 0.15 ≈ consumedAt + 2h25min` — also unchanged from the old model, since `r (0.434) > β (0.15)` for this drink (Step 6's emergent property applies). This total duration is independent of `drinkConsumeMinutes` entirely, as the invariant predicts.
+- If no further alcohol is logged, the session auto-ends 12 hours after that last beer's `consumedAt`, unchanged.
+
+### Worked example 2 — staggered drinks (pooling stress test)
+
+Same profile and settings as above, but the two beers are logged **10 minutes apart** instead of together — this is the case that actually exercises Step 6's event-timeline pooling, since the two absorption windows overlap without being identical.
+
+- Beer A at `consumedAt = 0 min`; Beer B at `consumedAt = 10 min`. Each alone: `BAC_initial = (9.86 × 0.806) / 43.93 = 0.181 g/L`, `T_hours = 0.833 h` (50 min), `r = 0.181 / 0.833 = 0.217 g/L/h`.
+- Beer A absorbs over `[0, 50 min)`; Beer B absorbs over `[10 min, 60 min)` — a 40-minute overlap where both are simultaneously ramping.
+- Event timeline and pool (`net_rate = active_r_sum − β`, floored at 0):
+
+  | Segment (min) | Active | net_rate (g/L/h) | Pool at segment end (g/L) |
+  | ------------- | ------ | ----------------- | -------------------------- |
+  | 0–10   | A only    | `0.217 − 0.15 = 0.067` | `0.067 × (10/60) = 0.011` |
+  | 10–50  | A + B     | `0.434 − 0.15 = 0.284` | `0.011 + 0.284 × (40/60) = 0.201` |
+  | 50–60  | B only    | `0.217 − 0.15 = 0.067` | `0.201 + 0.067 × (10/60) = 0.212` |
+  | 60+    | neither   | `−0.15` | decays from `0.212` |
+
+- **Peak: `0.212 g/L` at `t = 60 min`** (when B's window closes) — lower than either the single-drink instant peak (`0.181`×2 if summed naively) or the simultaneous-logging Worked Example 1's peak (`0.237` at 50 min), because spreading the same two drinks further apart in time gives elimination more opportunity to act before the second drink's mass fully lands.
+- Time to zero from `t = 0`: mass-balance shortcut (Step 6) still applies since the pool never touches the floor before its final decay — total time `= (0.181 + 0.181) / 0.15 = 2.413 h ≈ 145 min`, i.e. zero at `t ≈ 60 min + 85 min`. Matches a direct decay-from-peak calculation: `0.212 / 0.15 = 1.41 h ≈ 85 min` after the peak.
+- **What this pins:** the pooled algorithm uses one shared `β` throughout the 30-minute overlap (`0.542 − 0.15`, not `0.271 − 0.15 − 0.15`) — the same over-elimination fix Step 6 carries forward, now also proven across overlapping absorption windows, not just overlapping post-absorption decay.
 
 ## BAC goal (cap)
 
 - The user can set a personal cap, configured in settings, expressed in **g/L** (with the mmol/L equivalent shown). Default: **off** (no cap).
 - The cap is a single persistent setting and applies whenever a session is active. It is not per-session.
 - During an active session the [Party tab](./user-experience.md#s7--party) shows current estimated BAC versus the cap, with a clear visual indicator when the user is approaching or above the cap.
-- The "approaching cap" notification fires when a logged drink pushes the estimated BAC to **80% or more** of the cap (inclusive boundary — see Parity Rulebook "Approaching-cap trigger").
+- The "approaching cap" notification fires when a logged drink's **projected peak** (see "Notifications during a session" below) reaches **80% or more** of the cap (inclusive boundary — see Parity Rulebook "Approaching-cap trigger"). Because this fires on a forward projection rather than the instant value, the notification copy must read prospectively ("on track to approach your cap," not "you have reached") — actual current BAC can be well below 80% at the moment it fires.
 - The cap is a personal goal, not a legal threshold. The UI must not present it as a "safe to drive" line under any circumstances.
 
 ### Relation to legal limits
@@ -488,8 +557,8 @@ Settings show these limits as reference values inside the Party Mode section, wi
 
 When a session is active, the standard hydration reminders ([notifications.md](./notifications.md)) continue to behave as normal. Two additional notifications, both off by default, become eligible to fire:
 
-- **Approaching cap.** When the user logs a drink that pushes the estimated BAC to **80% or more** of the cap (inclusive), the app sends a notification.
-- **Sober estimate.** When the estimated BAC returns to 0 g/L, the app sends a single notification ("Estimated BAC is back to 0 — remember this is an estimate."). The user can disable this independently.
+- **Approaching cap.** Evaluated once, at the moment a drink is logged: project the pool forward through every currently-absorbing drink's remaining window — assuming no further drinks are logged — and find its peak. This is the same forward projection the [BAC line chart](#bac-line-chart)'s dashed segment already computes, reused here rather than built separately. If that projected peak is **80% or more** of the cap (inclusive), the app sends the notification immediately. This is a deliberate change from the pre-absorption-window rule ("pushes the estimated BAC to ≥80% *right now*"), which stops being meaningful once a drink's effect is spread over a window instead of landing instantly — projecting forward preserves the "warn as soon as you log something that matters" intent instead of silently going quiet. Logging a further drink re-projects from the new pool state and can fire again if the newly-projected peak newly clears the threshold.
+- **Sober estimate.** When the estimated BAC returns to 0 g/L, the app sends a single notification ("Estimated BAC is back to 0 — remember this is an estimate."). The user can disable this independently. Scheduled against the session's projected zero-time, which — per [Step 6's emergent property](#step-6--current-bac-pooled-across-drinks-and-absorption-windows) — is unaffected by the absorption window as long as every drink's absorption rate exceeds β. In the rare case a drink is consumed so slowly that it never accumulates residual BAC (`r <= β`), there is no "return to 0" to notify about for that drink's contribution — it never left 0.
 
 When the session ends (manually or automatically), neither of these notifications fires until a new session is active.
 
@@ -502,6 +571,7 @@ When a session is active, the [Party tab](./user-experience.md#s7--party) displa
 - A **quick-log widget for alcohol**, directly below the BAC line chart card: the same two-tap-to-log pattern as [S1's "Quick Log" grid](./user-experience.md#s1--today-home), scoped to alcoholic presets only. Shows the **top 2** alcoholic presets, always sorted by most-recently-used (automatic — no manual reordering), no scrolling. Tapping a tile logs that preset directly into the active session, same as the "Log alcohol" action.
 - Number of alcoholic drinks logged this session and total grams of alcohol. This line is tappable and opens S9, same as the summary card above.
 - A small **meal indicator** labelled "Add meal" — the label is constant, whether or not a meal has been logged yet. Once at least one meal has been logged this session, the count and relative time since the last one appears right-aligned on the same row (e.g. "2 meals · 45 min ago"). Tapping the indicator, anywhere on the row, opens the meal-size prompt to log a new meal. Editing or deleting an already-logged meal is done from [S9 Party Session Log](./user-experience.md#s9--party-session-log), the single authoritative place for meal edits and deletes, matching the drink-editing model.
+- A **consume-time control**: a small row showing the session's current `drinkConsumeMinutes` (e.g. "Drink pace: 20 min"). Tapping it opens a stepper to adjust the value in 5-minute steps (0–60), same range as the global setting. Editing here updates `PartySession.drinkConsumeMinutes` directly and re-renders the BAC summary and chart immediately — see [Drink consumption time](./party-session.md#drink-consumption-time). Only shown while the session is active; an ended session's [S9](./user-experience.md#s9--party-session-log) header shows the frozen value as read-only text instead.
 - A **session-prices control**: a small toggle showing the current `useSessionPrices` state and a "Manage prices" link that opens the per-session price table. When session prices are off but overrides exist, the toggle reads "Session prices: off — using regular prices".
 - A **session totals** strip showing money spent (grouped by currency) and tokens used so far in this session. The token value money-equivalent is shown if `tokenValueMinor` is set.
 - A full-width **"Log alcohol"** action, persistent at the bottom of the screen (sitting above the tab bar, outside the scrolling content) — same sticky treatment as S1's "Log drink" button. **End session** stays as an ordinary in-flow action above it, not sticky.
@@ -524,6 +594,7 @@ A line chart inside the active-session section visualising the estimated BAC ove
 - **Solid** segment: from `startedAt` to **now**. Plots the actual estimate based on drinks already logged.
 - **Dashed** segment: from **now** to the rounded end time. This is the projection. The dashed segment also has a **subtle red tint** in the chart background behind it (a low-opacity red wash on the plot area to the right of "now"). The visual signal: solid + clear background = past/present, dashed + reddish background = predicted.
 - A subtle vertical reference line at "now" marks the transition.
+- **No vertical jumps.** Each logged drink shows as the start of a smooth linear rise (its absorption window, [Step 4](#step-4--absorption-window)) rather than an instant vertical step — this falls directly out of the pooled BAC algorithm and needs no special-casing in the chart: the plotted curve is already piecewise-linear across the whole session. The curve's *shape* depends only on the logged drinks, the session's `drinkConsumeMinutes`, and any meals — never on "now" — so "now" only moves the solid/dashed divider along an already-fully-determined line; it does not itself trigger a reshape (see "Re-rendering" below).
 
 **Empty state**
 - The chart area is reserved and rendered from the moment the session starts, even before any drink is logged — this avoids a layout jump when the first drink lands. Before the first alcoholic drink, it shows a **flat line at 0.00 g/L** across a default three-hour window (`startedAt` to `startedAt + 3h`), with no dashed projection segment (there is nothing to project yet) and no "now" marker. The user's cap, if set, still draws as a dashed horizontal reference line. The moment the first drink is logged, the chart switches to the normal solid/dashed rendering described above, re-scaled to the real projected end time.
@@ -563,9 +634,13 @@ The algorithm above is based on:
 - E.M.P. Widmark (1932), "Die theoretischen Grundlagen und die praktische Verwendbarkeit der gerichtlich-medizinischen Alkoholbestimmung."
 - P.E. Watson, I.D. Watson, R.D. Batt (1981), "Total body water volumes for adult males and females estimated from simple anthropometric measurements." *Am J Clin Nutr* 33:27–39.
 - A.W. Jones (2010 / 2020), reviews on alcohol pharmacokinetics — see Wikipedia's BAC article and the NIH PMC review linked below for accessible summaries.
+- M.C. Mitchell Jr., E.C. Teigen, C.S. Ramchandani (2014), "Absorption and Peak Blood Alcohol Concentration After Drinking Beer, Wine, or Spirits." *Alcoholism: Clinical and Experimental Research* 38(5):1200–1204 — source of the [`ABSORPTION_DELAY_MINUTES` default](#where-the-numbers-come-from).
+- NCBI StatPearls, "Physiology, Zero- and First-Order Kinetics" — background on why ethanol elimination is zero-order and absorption is first-order.
 
 Authoritative public summaries:
 
 - [Blood alcohol content — Wikipedia](https://en.wikipedia.org/wiki/Blood_alcohol_content)
 - [Alcohol calculations and their uncertainty — NIH PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC4361698/)
 - [Total body water is the preferred method to use in forensic blood-alcohol calculations — ScienceDirect / PubMed 33099270](https://pubmed.ncbi.nlm.nih.gov/33099270/)
+- [Absorption rate constant — Wikipedia](https://en.wikipedia.org/wiki/Absorption_rate_constant)
+- [Physiology, Zero- and First-Order Kinetics — NCBI Bookshelf NBK499866](https://www.ncbi.nlm.nih.gov/books/NBK499866/)
