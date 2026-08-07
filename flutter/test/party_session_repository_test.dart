@@ -2,7 +2,13 @@ import 'dart:io';
 
 import 'package:core/core.dart';
 import 'package:drift/drift.dart'
-    show GeneratedDatabase, Table, TableInfo, Value, driftRuntimeOptions;
+    show
+        GeneratedDatabase,
+        MigrationStrategy,
+        Table,
+        TableInfo,
+        Value,
+        driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -285,6 +291,29 @@ class _LegacyDbV7 extends GeneratedDatabase {
 
   @override
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
+}
+
+/// Simulates an *older* app build (schema v7) opening a file that a newer v9
+/// build already migrated. Drift routes the version drop through `onUpgrade`
+/// with `from > to`; a real older build never drops columns, so its onUpgrade
+/// is a no-op here. After it runs, drift lowers `user_version` to 7 while the
+/// v8/v9 columns stay physically present — the exact state that a subsequent
+/// re-upgrade must tolerate. Used by the downgrade→re-upgrade round-trip test.
+class _DowngradeStubDbV7 extends GeneratedDatabase {
+  _DowngradeStubDbV7(super.executor);
+
+  @override
+  int get schemaVersion => 7;
+
+  @override
+  Iterable<TableInfo<Table, dynamic>> get allTables => const [];
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          // An older build never drops columns on downgrade.
+        },
+      );
 }
 
 void main() {
@@ -1186,6 +1215,80 @@ void main() {
           now: DateTime.utc(2026, 7, 10),
         );
         expect(session.name, "Sarah's birthday");
+      },
+    );
+  });
+
+  group('AppDatabase — downgrade → re-upgrade round-trip (idempotent adds)',
+      () {
+    test(
+      'v9 file downgraded to v7 (columns retained) re-upgrades to v9 without '
+      '"duplicate column name" and preserves data',
+      () async {
+        // Guards the downgrade contract: a v9 build migrates a file, an older
+        // v7 build later opens it (drift lowers user_version to 7 but drops no
+        // columns — see _DowngradeStubDbV7), then a v9 build opens it again.
+        // The re-upgrade re-enters the "if (from < 8)"/"if (from < 9)" blocks
+        // with party_sessions.name + both drink_consume_minutes columns
+        // already present; _addColumnIfAbsent must no-op instead of throwing.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'party_session_downgrade_test',
+        );
+        addTearDown(() => tempDir.delete(recursive: true));
+        final dbFile = File(p.join(tempDir.path, 'roundtrip.sqlite'));
+        final now = DateTime.utc(2026, 7, 10, 12, 0);
+
+        // 1. Fresh v9 database with a session carrying a NON-default
+        //    drinkConsumeMinutes (45, not the column default of 20) so we can
+        //    later prove the re-upgrade didn't re-run ADD COLUMN and clobber
+        //    it back to the default.
+        final v9 = AppDatabase(NativeDatabase(dbFile));
+        await v9.insertPartySession(
+          PartySessionsCompanion.insert(
+            id: 'round-trip-session',
+            startedAt: now,
+            useSessionPrices: false,
+            name: const Value('Original name'),
+            drinkConsumeMinutes: const Value(45),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        expect(v9.schemaVersion, 9);
+        await v9.close();
+
+        // 2. Older v7 build opens the file: version drops to 7, columns stay.
+        final downgraded = _DowngradeStubDbV7(NativeDatabase(dbFile));
+        await downgraded.customStatement('SELECT 1;'); // force ensureOpen
+        final versionRow =
+            await downgraded.customSelect('PRAGMA user_version;').getSingle();
+        expect(
+          versionRow.read<int>('user_version'),
+          7,
+          reason: 'older build lowers user_version but keeps the columns',
+        );
+        await downgraded.close();
+
+        // 3. Re-upgrade with the real v9 AppDatabase — must not throw.
+        final reupgraded = AppDatabase(NativeDatabase(dbFile));
+        addTearDown(reupgraded.close);
+        expect(reupgraded.schemaVersion, 9);
+
+        final session = await reupgraded.getPartySessionById(
+          'round-trip-session',
+        );
+        expect(
+          session,
+          isNotNull,
+          reason: 'row must survive the down/up round-trip',
+        );
+        expect(session!.name, 'Original name');
+        expect(
+          session.drinkConsumeMinutes,
+          45,
+          reason: 'idempotent add skipped ADD COLUMN, so the existing value is '
+              'untouched — not reset to the column default of 20',
+        );
       },
     );
   });
